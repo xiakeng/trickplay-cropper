@@ -1,0 +1,3 @@
+# Coordinate preview caching without global serialization
+
+Trickplay Cropper coordinates each Preview Cache Entry with a process-local keyed lock, while requests share a Cache Tree lease and empty-directory pruning takes a brief writer-preferred exclusive lease one directory at a time. Cleanup streams candidates from a fixed run boundary, revalidates them under the entry lock, and refuses reparse-point traversal; this keeps different previews concurrent while preventing generation, response, deletion, and directory-pruning races, with atomic no-overwrite publication as the final guard against activity outside the process.
