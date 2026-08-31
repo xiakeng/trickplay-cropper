@@ -1,6 +1,6 @@
 # Trickplay Cropper v1 Specification
 
-- Status: Candidate for approval in GitHub issue #12
+- Status: Approved in GitHub issue #12
 - Implementation target: v1.0.0.0
 - Plugin ID: `630fb758-9a29-4f2c-a54c-95793651bb8a`
 
