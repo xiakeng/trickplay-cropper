@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    name: Build, test, and package
+    runs-on: ubuntu-24.04
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "9.0.317"
+
+      - name: Restore locked dependencies
+        run: dotnet restore TrickplayCropper.sln --locked-mode
+
+      - name: Build Release
+        run: dotnet build TrickplayCropper.sln --configuration Release --no-restore
+
+      - name: Run unit tests
+        run: >-
+          dotnet test tests/Jellyfin.Plugin.TrickplayCropper.UnitTests/Jellyfin.Plugin.TrickplayCropper.UnitTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --collect:"XPlat Code Coverage"
+          --results-directory artifacts/coverage/unit
+
+      - name: Run component tests
+        run: >-
+          dotnet test tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/Jellyfin.Plugin.TrickplayCropper.ComponentTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --collect:"XPlat Code Coverage"
+          --results-directory artifacts/coverage/component
+
+      - name: Test package validator
+        run: python3 -m unittest scripts.tests.test_validate_package
+
+      - name: Upload coverage for inspection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: coverage
+          if-no-files-found: error
+          path: artifacts/coverage/**/coverage.cobertura.xml
+
+      - name: Package production project with JPRM
+        id: package
+        uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
+        with:
+          path: src/Jellyfin.Plugin.TrickplayCropper
+          output: artifacts/package
+          dotnet-config: Release
+          dotnet-target: net9.0
+          verbosity: info
+
+      - name: Validate package
+        run: python3 scripts/validate_package.py "${{ steps.package.outputs.artifact }}"
+
+      - name: Create SHA-256 checksum
+        run: sha256sum "${{ steps.package.outputs.artifact }}" > "${{ steps.package.outputs.artifact }}.sha256"
+
+      - name: Upload installable package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: trickplay-cropper-1.0.0.0
+          if-no-files-found: error
+          path: |
+            ${{ steps.package.outputs.artifact }}
+            ${{ steps.package.outputs.artifact }}.sha256

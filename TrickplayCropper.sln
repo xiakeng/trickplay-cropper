@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.TrickplayCropper", "src/Jellyfin.Plugin.TrickplayCropper/Jellyfin.Plugin.TrickplayCropper.csproj", "{8C3E9019-ED1B-4C1F-B9C4-8BA963578A78}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.TrickplayCropper.UnitTests", "tests/Jellyfin.Plugin.TrickplayCropper.UnitTests/Jellyfin.Plugin.TrickplayCropper.UnitTests.csproj", "{EA89D8C6-5BC7-4D0A-9952-327493D9AC08}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.TrickplayCropper.ComponentTests", "tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/Jellyfin.Plugin.TrickplayCropper.ComponentTests.csproj", "{CE027E51-1174-4649-8B43-8F5E13D3FFEB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8C3E9019-ED1B-4C1F-B9C4-8BA963578A78}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C3E9019-ED1B-4C1F-B9C4-8BA963578A78}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C3E9019-ED1B-4C1F-B9C4-8BA963578A78}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C3E9019-ED1B-4C1F-B9C4-8BA963578A78}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EA89D8C6-5BC7-4D0A-9952-327493D9AC08}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA89D8C6-5BC7-4D0A-9952-327493D9AC08}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA89D8C6-5BC7-4D0A-9952-327493D9AC08}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA89D8C6-5BC7-4D0A-9952-327493D9AC08}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE027E51-1174-4649-8B43-8F5E13D3FFEB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE027E51-1174-4649-8B43-8F5E13D3FFEB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE027E51-1174-4649-8B43-8F5E13D3FFEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE027E51-1174-4649-8B43-8F5E13D3FFEB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
