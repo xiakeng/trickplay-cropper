@@ -1,13 +1,15 @@
----
-name: "Trickplay Cropper"
-guid: "630fb758-9a29-4f2c-a54c-95793651bb8a"
-version: "1.0.0.0"
-targetAbi: "10.11.0.0"
-framework: "net9.0"
-overview: "Return cropped trickplay previews through an authenticated API."
-description: "Provides authenticated single-frame JPEG previews from Jellyfin-owned trickplay data."
-category: "General"
-owner: "xiakeng"
-artifacts:
-  - "Jellyfin.Plugin.TrickplayCropper.dll"
-changelog: "Initial v1 package foundation."
+{
+  "name": "Trickplay Cropper",
+  "guid": "630fb758-9a29-4f2c-a54c-95793651bb8a",
+  "version": "1.0.0.0",
+  "targetAbi": "10.11.0.0",
+  "framework": "net9.0",
+  "overview": "Return authenticated Trickplay Previews from Jellyfin-owned Source Sprites.",
+  "description": "Provides authenticated, single-frame Trickplay Previews from Jellyfin-owned Source Sprites.",
+  "category": "General",
+  "owner": "xiakeng",
+  "artifacts": [
+    "Jellyfin.Plugin.TrickplayCropper.dll"
+  ],
+  "changelog": "Initial v1 package foundation."
+}

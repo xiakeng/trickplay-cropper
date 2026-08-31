@@ -51,9 +51,6 @@ jobs:
           --collect:"XPlat Code Coverage"
           --results-directory artifacts/coverage/component
 
-      - name: Test package validator
-        run: python3 -m unittest scripts.tests.test_validate_package
-
       - name: Upload coverage for inspection
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
         with:
@@ -72,7 +69,15 @@ jobs:
           verbosity: info
 
       - name: Validate package
-        run: python3 scripts/validate_package.py "${{ steps.package.outputs.artifact }}"
+        run: >-
+          dotnet run
+          --project tools/TrickplayCropper.PackageValidator/TrickplayCropper.PackageValidator.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --
+          "${{ steps.package.outputs.artifact }}"
+          src/Jellyfin.Plugin.TrickplayCropper/build.yaml
 
       - name: Create SHA-256 checksum
         run: sha256sum "${{ steps.package.outputs.artifact }}" > "${{ steps.package.outputs.artifact }}.sha256"
