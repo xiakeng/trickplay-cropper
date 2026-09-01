@@ -34,7 +34,10 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class TrickplayPreviewHttpSpecs
 {
-    private const string ExpectedDefaultEntityTag = "\"d5b827fd3d17075e86151d7299ff22cd-f0000000000\"";
+    private const string ExpectedDefaultFrameToken = "f0000000000";
+    private const string ExpectedDefaultSourceStamp = "d5b827fd3d17075e86151d7299ff22cd";
+    private const string ExpectedDefaultEntityTag =
+        "\"" + ExpectedDefaultSourceStamp + "-" + ExpectedDefaultFrameToken + "\"";
 
     private static readonly Guid alternateSourceId = Guid.Parse("9fe0dc1f-c780-483e-86c8-fc16267127f6");
     private static readonly Guid itemId = Guid.Parse("3f728b7b-4aa5-4f65-b488-a6029edb6725");
@@ -496,8 +499,8 @@ public sealed class TrickplayPreviewHttpSpecs
             fixture.CacheRoot,
             itemId.ToString("N"),
             "w0320",
-            "s000000-d5b827fd3d17075e86151d7299ff22cd",
-            "f0000000000.jpg");
+            "s000000-" + ExpectedDefaultSourceStamp,
+            ExpectedDefaultFrameToken + ".jpg");
     }
 
     private static PreviewScenario CreateForbiddenScenario(ForbiddenCondition condition)
