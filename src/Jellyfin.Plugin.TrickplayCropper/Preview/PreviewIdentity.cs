@@ -13,7 +13,14 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 /// <param name="RelativePath">The structured path beneath the Cache Tree root.</param>
 internal sealed record PreviewIdentity(string SourceStamp, string EntityTag, string RelativePath)
 {
+    /// <summary>
+    /// Gets the versioned namespace beneath the Preview Cache Tree root.
+    /// </summary>
     internal const string CacheNamespace = "preview-v1";
+
+    /// <summary>
+    /// Gets the JPEG quality used for Preview Cache Entries.
+    /// </summary>
     internal const int JpegQuality = 90;
 
     /// <summary>
