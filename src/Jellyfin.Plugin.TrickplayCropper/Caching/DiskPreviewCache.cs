@@ -9,7 +9,6 @@ namespace Jellyfin.Plugin.TrickplayCropper.Caching;
 /// </summary>
 internal sealed class DiskPreviewCache : IPreviewCache
 {
-    private const string CacheNamespace = "preview-v1";
     private const string PluginDirectoryName = "Jellyfin.Plugin.TrickplayCropper";
 
     private readonly string cacheRoot;
@@ -21,7 +20,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
     public DiskPreviewCache(IApplicationPaths applicationPaths, TimeProvider timeProvider)
     {
         cacheRoot = Path.GetFullPath(
-            Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, CacheNamespace));
+            Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
         this.timeProvider = timeProvider;
     }
 

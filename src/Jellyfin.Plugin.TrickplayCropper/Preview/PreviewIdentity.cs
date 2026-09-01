@@ -13,7 +13,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 /// <param name="RelativePath">The structured path beneath the Cache Tree root.</param>
 internal sealed record PreviewIdentity(string SourceStamp, string EntityTag, string RelativePath)
 {
-    private const int JpegQuality = 90;
+    internal const string CacheNamespace = "preview-v1";
+    internal const int JpegQuality = 90;
 
     /// <summary>
     /// Creates the canonical v1 identity for a resolved Source Sprite frame.
@@ -37,7 +38,7 @@ internal sealed record PreviewIdentity(string SourceStamp, string EntityTag, str
         TrickplayMetadata metadata = source.Metadata;
         return string.Join(
             '\n',
-            "preview-v1",
+            CacheNamespace,
             $"mediaSourceId={source.MediaSourceId:N}",
             $"width={metadata.FrameWidth.ToString(CultureInfo.InvariantCulture)}",
             $"height={metadata.FrameHeight.ToString(CultureInfo.InvariantCulture)}",

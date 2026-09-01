@@ -10,8 +10,6 @@ namespace Jellyfin.Plugin.TrickplayCropper.Imaging;
 /// </summary>
 internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder
 {
-    private const int JpegQuality = 90;
-
     /// <inheritdoc />
     public Task<PreviewEncodingTelemetry> EncodeAsync(
         ResolvedPreviewSource source,
@@ -42,7 +40,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder
 
         cancellationToken.ThrowIfCancellationRequested();
         long encodeStarted = Stopwatch.GetTimestamp();
-        bool encoded = bitmap.Encode(destination, SKEncodedImageFormat.Jpeg, JpegQuality);
+        bool encoded = bitmap.Encode(destination, SKEncodedImageFormat.Jpeg, PreviewIdentity.JpegQuality);
         if (!encoded)
         {
             throw new InvalidDataException("Skia could not encode the selected Trickplay Preview as JPEG.");
