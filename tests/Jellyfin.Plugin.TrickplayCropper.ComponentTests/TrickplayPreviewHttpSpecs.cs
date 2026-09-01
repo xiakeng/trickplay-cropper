@@ -398,12 +398,12 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Fact]
-    public async Task LogsActualDimensionsSubsetPathAndSkiaResult()
+    public async Task LogsActualDimensionsWhenGeometryDoesNotMatchMetadata()
     {
         var scenario = new PreviewScenario
         {
             RequestPositionTicks = 10_000L * TimeSpan.TicksPerMillisecond,
-            SourceSprite = SourceSpriteAvailability.InvalidSubset,
+            SourceSprite = SourceSpriteAvailability.DimensionMismatch,
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
@@ -414,9 +414,8 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(320, log.Properties["ActualWidth"]);
         Assert.Equal(360, log.Properties["ActualHeight"]);
         Assert.Equal("SUBSET", log.Properties["DecodePath"]);
-        Assert.NotNull(log.Properties["SkiaResult"]);
-        Assert.NotEqual(SKCodecResult.Success.ToString(), log.Properties["SkiaResult"]);
-        Assert.Equal("SubsetScanlineDecodeStarted", log.Properties["FailedValidation"]);
+        Assert.Null(log.Properties["SkiaResult"]);
+        Assert.Equal("SourceSpriteDimensionsMatchMetadata", log.Properties["FailedValidation"]);
         Assert.Empty(fixture.EnumerateCacheFiles());
     }
 
@@ -1198,7 +1197,7 @@ public sealed class TrickplayPreviewHttpSpecs
             string path = context.Scenario.SourceSprite switch
             {
                 SourceSpriteAvailability.Available => context.SourceSpritePath,
-                SourceSpriteAvailability.InvalidSubset => context.SourceSpritePath,
+                SourceSpriteAvailability.DimensionMismatch => context.SourceSpritePath,
                 SourceSpriteAvailability.ManagerFailure => throw new IOException(
                     $"manager-secret SourceSpritePath={context.SourceSpritePath}"),
                 SourceSpriteAvailability.ManagerPathMissing => string.Empty,
@@ -1220,7 +1219,7 @@ public sealed class TrickplayPreviewHttpSpecs
         private static string CreateSourceSprite(string temporaryDirectory, PreviewScenario scenario)
         {
             string sourceSpritePath = Path.Combine(temporaryDirectory, "source-sprite.jpg");
-            int sourceWidth = scenario.SourceSprite == SourceSpriteAvailability.InvalidSubset ? 320 : 640;
+            int sourceWidth = scenario.SourceSprite == SourceSpriteAvailability.DimensionMismatch ? 320 : 640;
             using var bitmap = new SKBitmap(sourceWidth, 360, SKColorType.Rgba8888, SKAlphaType.Opaque);
             using var canvas = new SKCanvas(bitmap);
             DrawCell(canvas, SKColors.Red, 0, 0);
@@ -1626,7 +1625,7 @@ public sealed class TrickplayPreviewHttpSpecs
     private enum SourceSpriteAvailability
     {
         Available,
-        InvalidSubset,
+        DimensionMismatch,
         ManagerFailure,
         ManagerPathMissing,
         FileMissing,
