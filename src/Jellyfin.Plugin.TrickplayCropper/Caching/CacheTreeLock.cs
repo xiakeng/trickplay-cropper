@@ -72,7 +72,6 @@ internal sealed class CacheTreeLock
 
     private void Cancel(Waiter waiter)
     {
-        List<Waiter> grantedWaiters;
         lock (syncRoot)
         {
             if (waiter.Node?.List is null)
@@ -82,16 +81,14 @@ internal sealed class CacheTreeLock
 
             waiters.Remove(waiter.Node);
             waiter.Node = null;
-            grantedWaiters = GrantWaiters();
+            GrantWaiters();
         }
 
         waiter.SetCanceled();
-        CompleteGrantedWaiters(grantedWaiters);
     }
 
     private void Release(LeaseKind kind)
     {
-        List<Waiter> grantedWaiters;
         lock (syncRoot)
         {
             if (kind == LeaseKind.Shared)
@@ -103,54 +100,41 @@ internal sealed class CacheTreeLock
                 isWriterActive = false;
             }
 
-            grantedWaiters = GrantWaiters();
+            GrantWaiters();
         }
-
-        CompleteGrantedWaiters(grantedWaiters);
     }
 
-    private List<Waiter> GrantWaiters()
+    private void GrantWaiters()
     {
-        List<Waiter> grantedWaiters = [];
         if (isWriterActive || waiters.First is null)
         {
-            return grantedWaiters;
+            return;
         }
 
         if (activeReaders > 0 && waiters.First.Value.Kind == LeaseKind.Exclusive)
         {
-            return grantedWaiters;
+            return;
         }
 
         if (activeReaders == 0 && waiters.First.Value.Kind == LeaseKind.Exclusive)
         {
-            GrantFirstWaiter(grantedWaiters);
-            return grantedWaiters;
+            GrantFirstWaiter();
+            return;
         }
 
         while (waiters.First is not null && waiters.First.Value.Kind == LeaseKind.Shared)
         {
-            GrantFirstWaiter(grantedWaiters);
+            GrantFirstWaiter();
         }
-
-        return grantedWaiters;
     }
 
-    private void GrantFirstWaiter(List<Waiter> grantedWaiters)
+    private void GrantFirstWaiter()
     {
         Waiter waiter = waiters.First!.Value;
         waiters.RemoveFirst();
         waiter.Node = null;
         Activate(waiter.Kind);
-        grantedWaiters.Add(waiter);
-    }
-
-    private static void CompleteGrantedWaiters(List<Waiter> grantedWaiters)
-    {
-        foreach (Waiter waiter in grantedWaiters)
-        {
-            waiter.SetGranted(new Lease(waiter.Owner, waiter.Kind));
-        }
+        waiter.SetGranted(new Lease(waiter.Owner, waiter.Kind));
     }
 
     private enum LeaseKind

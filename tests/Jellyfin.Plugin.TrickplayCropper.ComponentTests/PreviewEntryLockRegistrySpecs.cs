@@ -5,6 +5,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class PreviewEntryLockRegistrySpecs
 {
+    private static readonly TimeSpan coordinationTimeout = TimeSpan.FromSeconds(10);
+
     [Fact]
     public async Task RemovesEntryAfterLastParticipantLeaves()
     {
@@ -18,7 +20,7 @@ public sealed class PreviewEntryLockRegistrySpecs
         Assert.False(waiterTask.IsCompleted);
 
         owner.Dispose();
-        IDisposable waiter = await waiterTask;
+        IDisposable waiter = await waiterTask.WaitAsync(coordinationTimeout);
         Assert.Equal(1, registry.EntryCount);
 
         waiter.Dispose();
@@ -37,7 +39,8 @@ public sealed class PreviewEntryLockRegistrySpecs
 
         cancellation.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiterTask);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => waiterTask.WaitAsync(coordinationTimeout));
         Assert.Equal(1, registry.EntryCount);
 
         owner.Dispose();
@@ -56,7 +59,7 @@ public sealed class PreviewEntryLockRegistrySpecs
         Assert.False(waiterTask.IsCompleted);
 
         owner.Dispose();
-        using IDisposable waiter = await waiterTask;
+        using IDisposable waiter = await waiterTask.WaitAsync(coordinationTimeout);
     }
 
     [Fact]

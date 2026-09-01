@@ -9,6 +9,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class DiskPreviewCacheSpecs
 {
+    private static readonly TimeSpan coordinationTimeout = TimeSpan.FromSeconds(10);
+
     [Fact]
     public async Task BuffersExistingPreviewCacheEntryBeforeReturning()
     {
@@ -20,7 +22,7 @@ public sealed class DiskPreviewCacheSpecs
         PreviewCacheResult result = await fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
             (_, _) => throw new InvalidOperationException("An existing entry must not be regenerated."),
-            CancellationToken.None);
+            CancellationToken.None).WaitAsync(coordinationTimeout);
         await File.WriteAllBytesAsync(fixture.FinalPath, [9, 9, 9], CancellationToken.None);
 
         Assert.Equal(PreviewCacheDisposition.Hit, result.Disposition);
@@ -39,7 +41,7 @@ public sealed class DiskPreviewCacheSpecs
         PreviewCacheResult hit = await fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
             (_, _) => throw new InvalidOperationException("An existing entry must not be regenerated."),
-            CancellationToken.None);
+            CancellationToken.None).WaitAsync(coordinationTimeout);
         File.Delete(fixture.FinalPath);
 
         PreviewCacheResult miss = await fixture.Cache.GetOrCreateAsync(
@@ -49,7 +51,7 @@ public sealed class DiskPreviewCacheSpecs
                 await destination.WriteAsync(regeneratedContent, cancellationToken);
                 return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
             },
-            CancellationToken.None);
+            CancellationToken.None).WaitAsync(coordinationTimeout);
 
         Assert.Equal(PreviewCacheDisposition.Hit, hit.Disposition);
         Assert.Equal(PreviewCacheDisposition.Miss, miss.Disposition);
@@ -75,8 +77,8 @@ public sealed class DiskPreviewCacheSpecs
                 await destination.WriteAsync(generatedContent, cancellationToken);
                 return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
             },
-            CancellationToken.None);
-        await ownerStarted.Task;
+            CancellationToken.None).WaitAsync(coordinationTimeout);
+        await ownerStarted.Task.WaitAsync(coordinationTimeout);
         using var waiterCancellation = new CancellationTokenSource();
         Task<PreviewCacheResult> waiter = fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
@@ -86,14 +88,15 @@ public sealed class DiskPreviewCacheSpecs
         waiterCancellation.Cancel();
         try
         {
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => waiter.WaitAsync(coordinationTimeout));
         }
         finally
         {
             releaseOwner.TrySetResult();
         }
 
-        PreviewCacheResult result = await owner;
+        PreviewCacheResult result = await owner.WaitAsync(coordinationTimeout);
 
         Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
         Assert.Equal(generatedContent, result.Content.ToArray());
@@ -118,7 +121,7 @@ public sealed class DiskPreviewCacheSpecs
                 return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
             },
             CancellationToken.None);
-        await ownerStarted.Task;
+        await ownerStarted.Task.WaitAsync(coordinationTimeout);
         Task<PreviewCacheResult> waiter = fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
             (_, _) => throw new InvalidOperationException("A same-entry waiter must not encode concurrently."),
@@ -126,7 +129,7 @@ public sealed class DiskPreviewCacheSpecs
 
         Assert.False(waiter.IsCompleted);
         releaseOwner.SetResult();
-        PreviewCacheResult[] results = await Task.WhenAll(owner, waiter);
+        PreviewCacheResult[] results = await Task.WhenAll(owner, waiter).WaitAsync(coordinationTimeout);
 
         Assert.Equal(1, encodingCount);
         Assert.Equal(PreviewCacheDisposition.Miss, results[0].Disposition);
@@ -165,7 +168,7 @@ public sealed class DiskPreviewCacheSpecs
             },
             CancellationToken.None);
 
-        PreviewCacheResult[] results = await Task.WhenAll(first, second);
+        PreviewCacheResult[] results = await Task.WhenAll(first, second).WaitAsync(coordinationTimeout);
 
         Assert.Equal(firstContent, results[0].Content.ToArray());
         Assert.Equal(secondContent, results[1].Content.ToArray());
@@ -188,7 +191,7 @@ public sealed class DiskPreviewCacheSpecs
                 throw new InvalidOperationException("Unreachable after cancellation.");
             },
             ownerCancellation.Token);
-        await ownerStarted.Task;
+        await ownerStarted.Task.WaitAsync(coordinationTimeout);
         Task<PreviewCacheResult> waiter = fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
             async (destination, cancellationToken) =>
@@ -200,8 +203,9 @@ public sealed class DiskPreviewCacheSpecs
 
         ownerCancellation.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => owner);
-        PreviewCacheResult result = await waiter;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => owner.WaitAsync(coordinationTimeout));
+        PreviewCacheResult result = await waiter.WaitAsync(coordinationTimeout);
         Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
         Assert.Equal(generatedContent, result.Content.ToArray());
         Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
@@ -224,7 +228,7 @@ public sealed class DiskPreviewCacheSpecs
                 throw new IOException("Simulated generation failure.");
             },
             CancellationToken.None);
-        await ownerStarted.Task;
+        await ownerStarted.Task.WaitAsync(coordinationTimeout);
         Task<PreviewCacheResult> waiter = fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
             async (destination, cancellationToken) =>
@@ -236,8 +240,8 @@ public sealed class DiskPreviewCacheSpecs
 
         failOwner.SetResult();
 
-        await Assert.ThrowsAsync<IOException>(() => owner);
-        PreviewCacheResult result = await waiter;
+        await Assert.ThrowsAsync<IOException>(() => owner.WaitAsync(coordinationTimeout));
+        PreviewCacheResult result = await waiter.WaitAsync(coordinationTimeout);
         Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
         Assert.Equal(generatedContent, result.Content.ToArray());
         Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
@@ -266,9 +270,18 @@ public sealed class DiskPreviewCacheSpecs
     [Fact]
     public async Task ServesCompleteOutsideWinnerWithoutOverwritingIt()
     {
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
         byte[] generated = [1, 2, 3, 4];
         byte[] outsideWinner = [0xFF, 0xD8, 0xFF, 0xD9];
+        TemporaryCacheFixture? observedFixture = null;
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        {
+            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.BeforePublication)
+            {
+                TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                File.WriteAllBytes(activeFixture.FinalPath, outsideWinner);
+            }
+        });
+        observedFixture = fixture;
         string? temporaryPath = null;
         var encodingTelemetry = new PreviewEncodingTelemetry(
             TimeSpan.FromMilliseconds(1),
@@ -281,10 +294,9 @@ public sealed class DiskPreviewCacheSpecs
                 string directoryPath = Path.GetDirectoryName(fixture.FinalPath)!;
                 temporaryPath = Assert.Single(Directory.EnumerateFiles(directoryPath, "*.tmp"));
                 await destination.WriteAsync(generated, cancellationToken);
-                await File.WriteAllBytesAsync(fixture.FinalPath, outsideWinner, cancellationToken);
                 return encodingTelemetry;
             },
-            CancellationToken.None);
+            CancellationToken.None).WaitAsync(coordinationTimeout);
 
         Assert.Equal(PreviewCacheDisposition.Hit, result.Disposition);
         Assert.Equal(outsideWinner, result.Content.ToArray());
@@ -308,11 +320,12 @@ public sealed class DiskPreviewCacheSpecs
     {
         using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Cache.GetOrCreateAsync(
-            fixture.Identity,
-            (_, _) => Task.FromResult(
-                new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2))),
-            CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => fixture.Cache.GetOrCreateAsync(
+                fixture.Identity,
+                (_, _) => Task.FromResult(
+                    new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2))),
+                CancellationToken.None).WaitAsync(coordinationTimeout));
 
         Assert.False(File.Exists(fixture.FinalPath));
         Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
@@ -323,14 +336,15 @@ public sealed class DiskPreviewCacheSpecs
     {
         using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
 
-        await Assert.ThrowsAsync<IOException>(() => fixture.Cache.GetOrCreateAsync(
-            fixture.Identity,
-            async (destination, cancellationToken) =>
-            {
-                await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
-                throw new IOException("Simulated destination failure.");
-            },
-            CancellationToken.None));
+        await Assert.ThrowsAsync<IOException>(
+            () => fixture.Cache.GetOrCreateAsync(
+                fixture.Identity,
+                async (destination, cancellationToken) =>
+                {
+                    await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
+                    throw new IOException("Simulated destination failure.");
+                },
+                CancellationToken.None).WaitAsync(coordinationTimeout));
 
         Assert.False(File.Exists(fixture.FinalPath));
         Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
@@ -342,42 +356,105 @@ public sealed class DiskPreviewCacheSpecs
         using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
         using var cancellation = new CancellationTokenSource();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Cache.GetOrCreateAsync(
-            fixture.Identity,
-            async (destination, cancellationToken) =>
-            {
-                await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
-                cancellation.Cancel();
-                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
-            },
-            cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fixture.Cache.GetOrCreateAsync(
+                fixture.Identity,
+                async (destination, cancellationToken) =>
+                {
+                    await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
+                    cancellation.Cancel();
+                    return new PreviewEncodingTelemetry(
+                        TimeSpan.FromMilliseconds(1),
+                        TimeSpan.FromMilliseconds(2));
+                },
+                cancellation.Token).WaitAsync(coordinationTimeout));
 
         Assert.False(File.Exists(fixture.FinalPath));
         Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
     }
 
     [Fact]
-    public async Task KeepsAtomicOutsideWinnerWhenCancellationAbandonsResponse()
+    public async Task KeepsPublishedEntryWhenCancellationAbandonsResponse()
     {
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
         using var cancellation = new CancellationTokenSource();
-        byte[] outsideWinner = [0xFF, 0xD8, 8, 9, 0xFF, 0xD9];
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        {
+            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.AfterPublication)
+            {
+                cancellation.Cancel();
+            }
+        });
+        byte[] generatedContent = [0xFF, 0xD8, 8, 9, 0xFF, 0xD9];
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Cache.GetOrCreateAsync(
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fixture.Cache.GetOrCreateAsync(
+                fixture.Identity,
+                async (destination, cancellationToken) =>
+                {
+                    await destination.WriteAsync(generatedContent, cancellationToken);
+                    return new PreviewEncodingTelemetry(
+                        TimeSpan.FromMilliseconds(1),
+                        TimeSpan.FromMilliseconds(2));
+                },
+                cancellation.Token).WaitAsync(coordinationTimeout));
+
+        Assert.Equal(generatedContent, await File.ReadAllBytesAsync(fixture.FinalPath, CancellationToken.None));
+        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task HoldsTreeAndEntryLeasesUntilResponseBufferingCompletes()
+    {
+        var checkpoints = new List<DiskPreviewCache.PreviewCacheCheckpoint>();
+        TemporaryCacheFixture? observedFixture = null;
+        Task<PreviewCacheResult>? entryWaiter = null;
+        Task? cleanup = null;
+        bool startedWaiters = false;
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        {
+            checkpoints.Add(checkpoint);
+            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.ResponseBuffered && !startedWaiters)
+            {
+                startedWaiters = true;
+                TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                entryWaiter = activeFixture.Cache.GetOrCreateAsync(
+                    activeFixture.Identity,
+                    (_, _) => throw new InvalidOperationException("A buffered entry must remain owned."),
+                    CancellationToken.None);
+                Assert.False(entryWaiter.IsCompleted);
+                cleanup = activeFixture.Cache.ClearAsync(new Progress<double>(), CancellationToken.None);
+                Assert.False(cleanup.IsCompleted);
+            }
+        });
+        observedFixture = fixture;
+
+        PreviewCacheResult result = await fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
             async (destination, cancellationToken) =>
             {
                 await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
-                string outsideTemporaryPath = string.Concat(fixture.FinalPath, ".outside.tmp");
-                await File.WriteAllBytesAsync(outsideTemporaryPath, outsideWinner, cancellationToken);
-                File.Move(outsideTemporaryPath, fixture.FinalPath, overwrite: false);
-                cancellation.Cancel();
                 return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
             },
-            cancellation.Token));
+            CancellationToken.None).WaitAsync(coordinationTimeout);
 
-        Assert.Equal(outsideWinner, await File.ReadAllBytesAsync(fixture.FinalPath, CancellationToken.None));
-        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
+        Task<PreviewCacheResult> completedEntryWaiter = Assert.IsAssignableFrom<Task<PreviewCacheResult>>(entryWaiter);
+        Task completedCleanup = Assert.IsAssignableFrom<Task>(cleanup);
+        PreviewCacheResult hit = await completedEntryWaiter.WaitAsync(coordinationTimeout);
+        await completedCleanup.WaitAsync(coordinationTimeout);
+        Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
+        Assert.Equal(PreviewCacheDisposition.Hit, hit.Disposition);
+        Assert.Equal(
+            [
+                DiskPreviewCache.PreviewCacheCheckpoint.TreeLeaseAcquired,
+                DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired,
+                DiskPreviewCache.PreviewCacheCheckpoint.BeforePublication,
+                DiskPreviewCache.PreviewCacheCheckpoint.AfterPublication,
+                DiskPreviewCache.PreviewCacheCheckpoint.ResponseBuffered,
+                DiskPreviewCache.PreviewCacheCheckpoint.TreeLeaseAcquired,
+                DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired,
+                DiskPreviewCache.PreviewCacheCheckpoint.ResponseBuffered,
+            ],
+            checkpoints);
     }
 
     private static IApplicationPaths CreateApplicationPaths(string temporaryDirectory)
@@ -448,6 +525,12 @@ public sealed class DiskPreviewCacheSpecs
 
         public static TemporaryCacheFixture Create()
         {
+            return Create(static _ => { });
+        }
+
+        public static TemporaryCacheFixture Create(
+            Action<DiskPreviewCache.PreviewCacheCheckpoint> checkpointObserver)
+        {
             string temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
                 $"trickplay-cache-{Guid.NewGuid():N}");
@@ -460,7 +543,8 @@ public sealed class DiskPreviewCacheSpecs
                 identity.RelativePath);
             var cache = new DiskPreviewCache(
                 CreateApplicationPaths(temporaryDirectory),
-                TimeProvider.System);
+                TimeProvider.System,
+                checkpointObserver);
             return new TemporaryCacheFixture(temporaryDirectory, identity, finalPath, cache);
         }
 

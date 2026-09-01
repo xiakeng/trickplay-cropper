@@ -5,6 +5,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class CacheTreeLockSpecs
 {
+    private static readonly TimeSpan coordinationTimeout = TimeSpan.FromSeconds(10);
+
     [Fact]
     public async Task QueuedExclusiveLeaseBlocksNewSharedLeases()
     {
@@ -21,11 +23,11 @@ public sealed class CacheTreeLockSpecs
         Assert.False(secondSharedLeaseTask.IsCompleted);
 
         firstSharedLease.Dispose();
-        IDisposable exclusiveLease = await exclusiveLeaseTask;
+        IDisposable exclusiveLease = await exclusiveLeaseTask.WaitAsync(coordinationTimeout);
         Assert.False(secondSharedLeaseTask.IsCompleted);
 
         exclusiveLease.Dispose();
-        using IDisposable secondSharedLease = await secondSharedLeaseTask;
+        using IDisposable secondSharedLease = await secondSharedLeaseTask.WaitAsync(coordinationTimeout);
     }
 
     [Fact]
@@ -42,7 +44,7 @@ public sealed class CacheTreeLockSpecs
         Assert.False(exclusiveLeaseTask.IsCompleted);
 
         secondSharedLease.Dispose();
-        using IDisposable exclusiveLease = await exclusiveLeaseTask;
+        using IDisposable exclusiveLease = await exclusiveLeaseTask.WaitAsync(coordinationTimeout);
     }
 
     [Fact]
@@ -60,7 +62,8 @@ public sealed class CacheTreeLockSpecs
 
         cancellation.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => exclusiveLeaseTask);
-        using IDisposable secondSharedLease = await secondSharedLeaseTask;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => exclusiveLeaseTask.WaitAsync(coordinationTimeout));
+        using IDisposable secondSharedLease = await secondSharedLeaseTask.WaitAsync(coordinationTimeout);
     }
 }
