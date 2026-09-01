@@ -1,0 +1,39 @@
+namespace Jellyfin.Plugin.TrickplayCropper.Preview;
+
+/// <summary>
+/// Reports one deterministic validation failure in trusted Jellyfin trickplay metadata.
+/// </summary>
+internal sealed class InvalidTrickplayMetadataException : InvalidOperationException
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InvalidTrickplayMetadataException"/> class.
+    /// </summary>
+    /// <param name="metadata">The metadata snapshot that failed validation.</param>
+    /// <param name="failedValidation">The stable name of the failed validation.</param>
+    /// <param name="failedValue">The value that failed validation.</param>
+    public InvalidTrickplayMetadataException(
+        TrickplayMetadata metadata,
+        string failedValidation,
+        long failedValue)
+        : base("Jellyfin trickplay metadata failed a required validation.")
+    {
+        Metadata = metadata;
+        FailedValidation = failedValidation;
+        FailedValue = failedValue;
+    }
+
+    /// <summary>
+    /// Gets the stable name of the failed validation.
+    /// </summary>
+    public string FailedValidation { get; }
+
+    /// <summary>
+    /// Gets the value that failed validation.
+    /// </summary>
+    public long FailedValue { get; }
+
+    /// <summary>
+    /// Gets the metadata snapshot that failed validation.
+    /// </summary>
+    public TrickplayMetadata Metadata { get; }
+}

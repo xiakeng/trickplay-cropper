@@ -137,6 +137,14 @@ internal sealed class JellyfinPreviewSourceResolver : IPreviewSourceResolver
 
         TrickplayMetadata metadata = CreateMetadata(info);
         FrameSelection selection = FrameSelection.Create(metadata, query.PositionTicks);
+        if (metadata.FrameWidth != PreviewWidth)
+        {
+            throw new InvalidTrickplayMetadataException(
+                metadata,
+                "FrameWidthMatchesResolutionKey",
+                metadata.FrameWidth);
+        }
+
         LibraryOptions libraryOptions = libraryManager.GetLibraryOptions(sourceVideo);
         string sourceSpritePath = await trickplayManager.GetTrickplayTilePathAsync(
             sourceVideo,

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Reflection;
 using System.Security.Claims;
@@ -35,6 +36,8 @@ public sealed class TrickplayPreviewHttpSpecs
 {
     private static readonly Guid alternateSourceId = Guid.Parse("9fe0dc1f-c780-483e-86c8-fc16267127f6");
     private static readonly Guid itemId = Guid.Parse("3f728b7b-4aa5-4f65-b488-a6029edb6725");
+    private static readonly Guid otherItemId = Guid.Parse("86bfb88a-2931-4454-8d5d-15a8c427f235");
+    private static readonly Guid otherUserId = Guid.Parse("136fd48e-1dd2-4bee-a56f-44bf4ab0a377");
     private static readonly Guid unavailableSourceId = Guid.Parse("59036707-aa98-4b65-8875-d63c9d110906");
     private static readonly Guid userId = Guid.Parse("e07c89e3-a67e-49f5-9cbf-76b980ebe59a");
 
@@ -180,6 +183,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(NotFoundCondition.SelectedItemWrongType)]
     [InlineData(NotFoundCondition.ExactMetadataMissing)]
     [InlineData(NotFoundCondition.ThumbnailsMissing)]
+    [InlineData(NotFoundCondition.ThumbnailsNegative)]
     [InlineData(NotFoundCondition.ManagerPathMissing)]
     [InlineData(NotFoundCondition.SourceSpriteMissing)]
     public async Task ConcealsUnavailableResource(NotFoundCondition condition)
@@ -211,6 +215,124 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(1, fixture.Cache.CallCount);
         Assert.Single(Directory.EnumerateFiles(fixture.CacheRoot, "*.jpg", SearchOption.AllDirectories));
         Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
+    [Theory]
+    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview")]
+    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=not-a-number")]
+    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=9223372036854775808")]
+    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=-1")]
+    [InlineData(
+        "/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview"
+        + "?MediaSourceId=not-a-guid&PositionTicks=0")]
+    [InlineData("/TrickplayCropper/Videos/not-a-guid/Preview?PositionTicks=0")]
+    public async Task RejectsMissingMalformedAndNegativeRequestValues(string requestPath)
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+
+        using HttpResponseMessage response = await fixture.Client.GetAsync(requestPath, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(0, fixture.Cache.CallCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
+    [Theory]
+    [InlineData(InternalFailureCondition.ContradictoryFrameWidth)]
+    [InlineData(InternalFailureCondition.FrameWidthZero)]
+    [InlineData(InternalFailureCondition.FrameHeightZero)]
+    [InlineData(InternalFailureCondition.IntervalZero)]
+    [InlineData(InternalFailureCondition.TileWidthZero)]
+    [InlineData(InternalFailureCondition.TileHeightZero)]
+    [InlineData(InternalFailureCondition.CropXOverflow)]
+    [InlineData(InternalFailureCondition.CropYOverflow)]
+    public async Task ReportsInvalidMetadataAndCheckedArithmeticAsInternalErrors(
+        InternalFailureCondition condition)
+    {
+        PreviewScenario scenario = CreateInternalFailureScenario(condition);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(0, fixture.Cache.CallCount);
+        Assert.Equal(1, fixture.ErrorLogCount);
+        Assert.Empty(fixture.EnumerateCacheFiles());
+    }
+
+    [Fact]
+    public async Task LogsOneCompleteRedactedDiagnosticForAnInternalFailure()
+    {
+        long positionTicks = 3L * 10_000 * TimeSpan.TicksPerMillisecond;
+        var scenario = new PreviewScenario
+        {
+            FailsCacheAccess = true,
+            RequestPositionTicks = positionTicks,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        await AssertProblemDetailsResponseAsync(response);
+        RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(new EventId(1000, "TrickplayPreviewRequestFailed"), log.EventId);
+        Assert.Null(log.Exception);
+        Assert.Equal(itemId, log.Properties["ItemId"]);
+        Assert.Equal(itemId, log.Properties["MediaSourceId"]);
+        Assert.Equal(positionTicks, log.Properties["PositionTicks"]);
+        Assert.Equal(320, log.Properties["FrameWidth"]);
+        Assert.Equal(180, log.Properties["FrameHeight"]);
+        Assert.Equal(10_000, log.Properties["IntervalMilliseconds"]);
+        Assert.Equal(2, log.Properties["TileWidth"]);
+        Assert.Equal(2, log.Properties["TileHeight"]);
+        Assert.Equal(4, log.Properties["ThumbnailCount"]);
+        Assert.Equal(3, log.Properties["FrameIndex"]);
+        Assert.Equal(0, log.Properties["SpriteIndex"]);
+        Assert.Equal(1, log.Properties["Row"]);
+        Assert.Equal(1, log.Properties["Column"]);
+        Assert.Equal(320, log.Properties["CropX"]);
+        Assert.Equal(180, log.Properties["CropY"]);
+        Assert.Equal(320, log.Properties["CropWidth"]);
+        Assert.Equal(180, log.Properties["CropHeight"]);
+        Assert.Equal(new FileInfo(fixture.SourceSpritePath).Length, log.Properties["SourceLength"]);
+        Assert.Equal(
+            File.GetLastWriteTimeUtc(fixture.SourceSpritePath).Ticks,
+            log.Properties["SourceLastWriteUtcTicks"]);
+        Assert.Equal(nameof(InvalidOperationException), log.Properties["ExceptionType"]);
+        Assert.DoesNotContain("component-secret", log.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.SourceSpritePath, log.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.CacheRoot, log.Message, StringComparison.Ordinal);
+        Assert.Empty(fixture.EnumerateCacheFiles());
+    }
+
+    [Fact]
+    public async Task ExcludesUserLogicalItemTitlesRawFormattingAndLocationsFromIdentity()
+    {
+        var baselineScenario = new PreviewScenario { UsesAlternateSource = true };
+        var changedScenario = new PreviewScenario
+        {
+            LogicalItemId = otherItemId,
+            LogicalTitle = "A different logical title",
+            MediaSourceIdFormat = "N",
+            SelectedMediaPath = "/different/private/media/location.mkv",
+            SelectedTitle = "A different selected title",
+            UserId = otherUserId,
+            UsesAlternateSource = true,
+        };
+        await using PreviewHostFixture baseline = await PreviewHostFixture.CreateAsync(baselineScenario);
+        await using PreviewHostFixture changed = await PreviewHostFixture.CreateAsync(changedScenario);
+
+        using HttpResponseMessage baselineResponse = await baseline.GetAsync();
+        using HttpResponseMessage changedResponse = await changed.GetAsync();
+
+        Assert.Equal(HttpStatusCode.OK, baselineResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, changedResponse.StatusCode);
+        Assert.NotEqual(baseline.SourceSpritePath, changed.SourceSpritePath);
+        Assert.NotEqual(baseline.CacheRoot, changed.CacheRoot);
+        Assert.Equal(Assert.Single(baseline.Cache.Identities), Assert.Single(changed.Cache.Identities));
     }
 
     private static PreviewScenario CreateForbiddenScenario(ForbiddenCondition condition)
@@ -258,6 +380,10 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 Metadata = MetadataAvailability.NoThumbnails,
             },
+            NotFoundCondition.ThumbnailsNegative => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.NegativeThumbnails,
+            },
             NotFoundCondition.ManagerPathMissing => new PreviewScenario
             {
                 SourceSprite = SourceSpriteAvailability.ManagerPathMissing,
@@ -267,6 +393,48 @@ public sealed class TrickplayPreviewHttpSpecs
                 SourceSprite = SourceSpriteAvailability.FileMissing,
             },
             _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown not-found condition."),
+        };
+    }
+
+    private static PreviewScenario CreateInternalFailureScenario(InternalFailureCondition condition)
+    {
+        return condition switch
+        {
+            InternalFailureCondition.ContradictoryFrameWidth => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.ContradictoryFrameWidth,
+            },
+            InternalFailureCondition.FrameWidthZero => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.FrameWidthZero,
+            },
+            InternalFailureCondition.FrameHeightZero => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.FrameHeightZero,
+            },
+            InternalFailureCondition.IntervalZero => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.IntervalZero,
+            },
+            InternalFailureCondition.TileWidthZero => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.TileWidthZero,
+            },
+            InternalFailureCondition.TileHeightZero => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.TileHeightZero,
+            },
+            InternalFailureCondition.CropXOverflow => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.CropXOverflow,
+                RequestPositionTicks = 2 * TimeSpan.TicksPerMillisecond,
+            },
+            InternalFailureCondition.CropYOverflow => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.CropYOverflow,
+                RequestPositionTicks = 2 * TimeSpan.TicksPerMillisecond,
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown failure condition."),
         };
     }
 
@@ -307,10 +475,11 @@ public sealed class TrickplayPreviewHttpSpecs
         private readonly IHost host;
         private readonly string temporaryDirectory;
 
-        private PreviewHostFixture(IHost host, string temporaryDirectory)
+        private PreviewHostFixture(IHost host, string temporaryDirectory, string sourceSpritePath)
         {
             this.host = host;
             this.temporaryDirectory = temporaryDirectory;
+            SourceSpritePath = sourceSpritePath;
             Client = host.GetTestClient();
         }
 
@@ -323,9 +492,13 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public HttpClient Client { get; }
 
-        public int ErrorLogCount => Services.GetRequiredService<RecordingLogger<TrickplayPreview>>().ErrorCount;
+        public int ErrorLogCount => ErrorLogs.Length;
+
+        public RecordedLog[] ErrorLogs => Services.GetRequiredService<RecordingLogger<TrickplayPreview>>().Errors;
 
         public IServiceProvider Services => host.Services;
+
+        public string SourceSpritePath { get; }
 
         public static Task<PreviewHostFixture> CreateAsync()
         {
@@ -344,7 +517,7 @@ public sealed class TrickplayPreviewHttpSpecs
             var hostBuilder = new HostBuilder();
             hostBuilder.ConfigureWebHost(webHost => ConfigureWebHost(webHost, context));
             IHost host = await hostBuilder.StartAsync(CancellationToken.None);
-            return new PreviewHostFixture(host, temporaryDirectory);
+            return new PreviewHostFixture(host, temporaryDirectory, sourceSpritePath);
         }
 
         public async ValueTask DisposeAsync()
@@ -359,10 +532,20 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             PreviewScenario scenario = Services.GetRequiredService<PreviewScenario>();
             string mediaSourceQuery = scenario.UsesAlternateSource
-                ? $"MediaSourceId={alternateSourceId:D}&"
+                ? $"MediaSourceId={alternateSourceId.ToString(scenario.MediaSourceIdFormat)}&"
                 : string.Empty;
-            string requestPath = $"/TrickplayCropper/Videos/{itemId:D}/Preview?{mediaSourceQuery}PositionTicks=0";
+            string requestPath = string.Create(
+                CultureInfo.InvariantCulture,
+                $"/TrickplayCropper/Videos/{scenario.LogicalItemId:D}/Preview?{mediaSourceQuery}"
+                + $"PositionTicks={scenario.RequestPositionTicks}");
             return Client.GetAsync(requestPath, CancellationToken.None);
+        }
+
+        public string[] EnumerateCacheFiles()
+        {
+            return Directory.Exists(CacheRoot)
+                ? Directory.EnumerateFiles(CacheRoot, "*", SearchOption.AllDirectories).ToArray()
+                : [];
         }
 
         public void SetPlaybackAccess(bool hasPlaybackAccess)
@@ -392,7 +575,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
             IApplicationPaths applicationPaths = CreateApplicationPaths(context.TemporaryDirectory);
             RegisterJellyfinFakes(services, context, applicationPaths);
-            RegisterPluginServices(services, applicationPaths);
+            RegisterPluginServices(services, applicationPaths, context);
         }
 
         private static void ConfigureAuthenticationServices(IServiceCollection services)
@@ -427,7 +610,8 @@ public sealed class TrickplayPreviewHttpSpecs
 
         private static void RegisterPluginServices(
             IServiceCollection services,
-            IApplicationPaths applicationPaths)
+            IApplicationPaths applicationPaths,
+            PreviewHostContext context)
         {
             var registrator = new PluginServiceRegistrator();
             registrator.RegisterServices(services, InterfaceMock.Create<IServerApplicationHost>().Service);
@@ -435,7 +619,16 @@ public sealed class TrickplayPreviewHttpSpecs
             var recordingLogger = new RecordingLogger<TrickplayPreview>();
             services.AddSingleton(recordingLogger);
             services.AddSingleton<ILogger<TrickplayPreview>>(recordingLogger);
-            var cache = new RecordingPreviewCache(new DiskPreviewCache(applicationPaths, TimeProvider.System));
+            string cacheRoot = Path.Combine(
+                context.TemporaryDirectory,
+                "Jellyfin.Plugin.TrickplayCropper",
+                "preview-v1");
+            string? failureMessage = context.Scenario.FailsCacheAccess
+                ? $"component-secret SourceSpritePath={context.SourceSpritePath} CachePath={cacheRoot}"
+                : null;
+            var cache = new RecordingPreviewCache(
+                new DiskPreviewCache(applicationPaths, TimeProvider.System),
+                failureMessage);
             services.AddSingleton(cache);
             services.AddSingleton<IPreviewCache>(cache);
         }
@@ -444,7 +637,7 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             var user = new User("component-user", "test-provider", "test-reset-provider")
             {
-                Id = userId,
+                Id = scenario.UserId,
             };
             SetPlaybackPermission(user, !scenario.DeniesLogicalVideoPlayback);
             return user;
@@ -462,13 +655,14 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             var logicalVideo = new Video
             {
-                Id = itemId,
-                Name = "Component logical video",
+                Id = scenario.LogicalItemId,
+                Name = scenario.LogicalTitle,
             };
             var selectedVideo = new Video
             {
                 Id = scenario.SelectedSourceId,
-                Name = "Component selected source video",
+                Name = scenario.SelectedTitle,
+                Path = scenario.SelectedMediaPath,
             };
             var context = new VideoLookupContext
             {
@@ -522,7 +716,7 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 if (arguments?.Length != 5
                     || arguments[0] is not Video video
-                    || video.Id != itemId
+                    || video.Id != scenario.LogicalItemId
                     || !ReferenceEquals(arguments[1], user))
                 {
                     throw new InvalidOperationException("Playback sources were not enumerated for the current user.");
@@ -562,12 +756,49 @@ public sealed class TrickplayPreviewHttpSpecs
             return new TrickplayInfo
             {
                 ItemId = scenario.SelectedSourceId,
-                Width = scenario.Metadata == MetadataAvailability.ExactWidthMissing ? 640 : 320,
-                Height = 180,
-                TileWidth = 2,
-                TileHeight = 2,
-                ThumbnailCount = scenario.Metadata == MetadataAvailability.NoThumbnails ? 0 : 4,
-                Interval = 10_000,
+                Width = scenario.Metadata switch
+                {
+                    MetadataAvailability.ContradictoryFrameWidth => 640,
+                    MetadataAvailability.CropXOverflow => int.MaxValue,
+                    MetadataAvailability.ExactWidthMissing => 640,
+                    MetadataAvailability.FrameWidthZero => 0,
+                    _ => 320,
+                },
+                Height = scenario.Metadata switch
+                {
+                    MetadataAvailability.CropYOverflow => int.MaxValue,
+                    MetadataAvailability.FrameHeightZero => 0,
+                    _ => 180,
+                },
+                TileWidth = scenario.Metadata switch
+                {
+                    MetadataAvailability.CropXOverflow => 3,
+                    MetadataAvailability.CropYOverflow => 1,
+                    MetadataAvailability.TileWidthZero => 0,
+                    _ => 2,
+                },
+                TileHeight = scenario.Metadata switch
+                {
+                    MetadataAvailability.CropXOverflow => 1,
+                    MetadataAvailability.CropYOverflow => 3,
+                    MetadataAvailability.TileHeightZero => 0,
+                    _ => 2,
+                },
+                ThumbnailCount = scenario.Metadata switch
+                {
+                    MetadataAvailability.CropXOverflow => 3,
+                    MetadataAvailability.CropYOverflow => 3,
+                    MetadataAvailability.NegativeThumbnails => -1,
+                    MetadataAvailability.NoThumbnails => 0,
+                    _ => 4,
+                },
+                Interval = scenario.Metadata switch
+                {
+                    MetadataAvailability.CropXOverflow => 1,
+                    MetadataAvailability.CropYOverflow => 1,
+                    MetadataAvailability.IntervalZero => 0,
+                    _ => 10_000,
+                },
             };
         }
 
@@ -645,7 +876,7 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             AuthenticateResult result = scenario.Authentication switch
             {
-                AuthenticationState.UserSession => CreateUserSessionResult(userId),
+                AuthenticationState.UserSession => CreateUserSessionResult(scenario.UserId),
                 AuthenticationState.ApiKeyWithoutCurrentUser => CreateApiKeyResult(),
                 AuthenticationState.Missing => AuthenticateResult.NoResult(),
                 AuthenticationState.Invalid => AuthenticateResult.Fail("The component-test session is invalid."),
@@ -716,13 +947,15 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private sealed class RecordingPreviewCache : IPreviewCache
     {
+        private readonly string? failureMessage;
         private readonly List<PreviewIdentity> identities = [];
         private readonly IPreviewCache inner;
         private int callCount;
 
-        public RecordingPreviewCache(IPreviewCache inner)
+        public RecordingPreviewCache(IPreviewCache inner, string? failureMessage)
         {
             this.inner = inner;
+            this.failureMessage = failureMessage;
         }
 
         public int CallCount => Volatile.Read(ref callCount);
@@ -749,6 +982,11 @@ public sealed class TrickplayPreviewHttpSpecs
                 identities.Add(identity);
             }
 
+            if (failureMessage is not null)
+            {
+                throw new InvalidOperationException(failureMessage);
+            }
+
             return await inner.GetOrCreateAsync(identity, writer, cancellationToken).ConfigureAwait(false);
         }
 
@@ -760,9 +998,18 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private sealed class RecordingLogger<TCategory> : ILogger<TCategory>
     {
-        private int errorCount;
+        private readonly List<RecordedLog> errors = [];
 
-        public int ErrorCount => Volatile.Read(ref errorCount);
+        public RecordedLog[] Errors
+        {
+            get
+            {
+                lock (errors)
+                {
+                    return errors.ToArray();
+                }
+            }
+        }
 
         IDisposable? ILogger.BeginScope<TState>(TState state)
         {
@@ -783,10 +1030,24 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             if (logLevel >= LogLevel.Error)
             {
-                Interlocked.Increment(ref errorCount);
+                IReadOnlyDictionary<string, object?> properties = state
+                    is IEnumerable<KeyValuePair<string, object?>> structuredState
+                    ? structuredState.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+                    : new Dictionary<string, object?>(StringComparer.Ordinal);
+                var log = new RecordedLog(eventId, formatter(state, exception), properties, exception);
+                lock (errors)
+                {
+                    errors.Add(log);
+                }
             }
         }
     }
+
+    private sealed record RecordedLog(
+        EventId EventId,
+        string Message,
+        IReadOnlyDictionary<string, object?> Properties,
+        Exception? Exception);
 
     public class InterfaceMockSpecs<TInterface> : DispatchProxy
         where TInterface : class
@@ -856,19 +1117,35 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public bool DeniesSelectedVideoPlayback { get; init; }
 
+        public bool FailsCacheAccess { get; init; }
+
         public List<Guid> LibraryLookupIds { get; } = [];
 
+        public Guid LogicalItemId { get; init; } = itemId;
+
+        public string LogicalTitle { get; init; } = "Component logical video";
+
         public ItemAvailability LogicalVideo { get; init; } = ItemAvailability.Available;
+
+        public string MediaSourceIdFormat { get; init; } = "D";
 
         public SourceMembership Membership { get; init; } = SourceMembership.Member;
 
         public MetadataAvailability Metadata { get; init; } = MetadataAvailability.Available;
 
+        public long RequestPositionTicks { get; init; }
+
         public ItemAvailability SelectedVideo { get; init; } = ItemAvailability.Available;
 
-        public Guid SelectedSourceId => UsesAlternateSource ? alternateSourceId : itemId;
+        public string SelectedMediaPath { get; init; } = "/media/component-selected-source.mkv";
+
+        public Guid SelectedSourceId => UsesAlternateSource ? alternateSourceId : LogicalItemId;
+
+        public string SelectedTitle { get; init; } = "Component selected source video";
 
         public SourceSpriteAvailability SourceSprite { get; init; } = SourceSpriteAvailability.Available;
+
+        public Guid UserId { get; init; } = userId;
 
         public bool UsesAlternateSource { get; init; }
     }
@@ -899,8 +1176,29 @@ public sealed class TrickplayPreviewHttpSpecs
     private enum MetadataAvailability
     {
         Available,
+        ContradictoryFrameWidth,
+        CropXOverflow,
+        CropYOverflow,
         ExactWidthMissing,
+        FrameHeightZero,
+        FrameWidthZero,
+        IntervalZero,
+        NegativeThumbnails,
         NoThumbnails,
+        TileHeightZero,
+        TileWidthZero,
+    }
+
+    public enum InternalFailureCondition
+    {
+        ContradictoryFrameWidth,
+        FrameWidthZero,
+        FrameHeightZero,
+        IntervalZero,
+        TileWidthZero,
+        TileHeightZero,
+        CropXOverflow,
+        CropYOverflow,
     }
 
     public enum NotFoundCondition
@@ -915,6 +1213,7 @@ public sealed class TrickplayPreviewHttpSpecs
         SelectedItemWrongType,
         ExactMetadataMissing,
         ThumbnailsMissing,
+        ThumbnailsNegative,
         ManagerPathMissing,
         SourceSpriteMissing,
     }
