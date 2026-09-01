@@ -79,14 +79,22 @@ internal sealed class DiskPreviewCache : IPreviewCache
     }
 
     /// <inheritdoc />
-    public async Task ClearAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    public Task ClearAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using IDisposable treeLease = await cacheTreeLock
-            .AcquireExclusiveAsync(cancellationToken)
-            .ConfigureAwait(false);
         _ = timeProvider.GetUtcNow();
         progress.Report(100);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Acquires exclusive Cache Tree ownership for one directory-pruning critical section.
+    /// </summary>
+    /// <param name="cancellationToken">The cleanup cancellation token.</param>
+    /// <returns>A lease that releases exclusive ownership when disposed.</returns>
+    internal ValueTask<IDisposable> AcquirePruningLeaseAsync(CancellationToken cancellationToken)
+    {
+        return cacheTreeLock.AcquireExclusiveAsync(cancellationToken);
     }
 
     private async Task<PreviewCacheResult> GetOrCreateOwnedAsync(
@@ -119,37 +127,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 cancellationToken).ConfigureAwait(false);
             ValidateCompletedOutput(temporaryPath);
             cancellationToken.ThrowIfCancellationRequested();
-            byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
-            if (existingContent is not null)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, telemetry);
-            }
-
-            checkpointObserver(PreviewCacheCheckpoint.BeforePublication);
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                File.Move(temporaryPath, finalPath, overwrite: false);
-            }
-            catch (IOException)
-            {
-                byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken)
-                    .ConfigureAwait(false);
-                if (winningContent is null)
-                {
-                    throw;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                return new PreviewCacheResult(winningContent, PreviewCacheDisposition.Hit, telemetry);
-            }
-
-            checkpointObserver(PreviewCacheCheckpoint.AfterPublication);
-            cancellationToken.ThrowIfCancellationRequested();
-            byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            return new PreviewCacheResult(content, PreviewCacheDisposition.Miss, telemetry);
+            return await PublishAsync(finalPath, temporaryPath, telemetry, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -158,6 +136,45 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 File.Delete(temporaryPath);
             }
         }
+    }
+
+    private async Task<PreviewCacheResult> PublishAsync(
+        string finalPath,
+        string temporaryPath,
+        PreviewEncodingTelemetry telemetry,
+        CancellationToken cancellationToken)
+    {
+        byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        if (existingContent is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, telemetry);
+        }
+
+        checkpointObserver(PreviewCacheCheckpoint.BeforePublication);
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            File.Move(temporaryPath, finalPath, overwrite: false);
+        }
+        catch (IOException)
+        {
+            byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken)
+                .ConfigureAwait(false);
+            if (winningContent is null)
+            {
+                throw;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return new PreviewCacheResult(winningContent, PreviewCacheDisposition.Hit, telemetry);
+        }
+
+        checkpointObserver(PreviewCacheCheckpoint.AfterPublication);
+        cancellationToken.ThrowIfCancellationRequested();
+        byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new PreviewCacheResult(content, PreviewCacheDisposition.Miss, telemetry);
     }
 
     private static async Task<byte[]?> TryReadExistingAsync(

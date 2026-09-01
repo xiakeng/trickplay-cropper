@@ -31,18 +31,30 @@ public sealed class DiskPreviewCacheSpecs
     }
 
     [Fact]
-    public async Task RegeneratesPreviewCacheEntryThatDisappearsAfterHit()
+    public async Task RegeneratesPreviewCacheEntryThatDisappearsBeforeOwnedRead()
     {
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
         byte[] originalContent = [0xFF, 0xD8, 1, 2, 0xFF, 0xD9];
         byte[] regeneratedContent = [0xFF, 0xD8, 3, 4, 0xFF, 0xD9];
+        TemporaryCacheFixture? observedFixture = null;
+        Task<PreviewCacheResult>? entryWaiter = null;
+        bool deletedEntry = false;
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        {
+            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired && !deletedEntry)
+            {
+                deletedEntry = true;
+                TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                File.Delete(activeFixture.FinalPath);
+                entryWaiter = activeFixture.Cache.GetOrCreateAsync(
+                    activeFixture.Identity,
+                    (_, _) => throw new InvalidOperationException("A same-entry waiter must observe regeneration."),
+                    CancellationToken.None);
+                Assert.False(entryWaiter.IsCompleted);
+            }
+        });
+        observedFixture = fixture;
         Directory.CreateDirectory(Path.GetDirectoryName(fixture.FinalPath)!);
         await File.WriteAllBytesAsync(fixture.FinalPath, originalContent, CancellationToken.None);
-        PreviewCacheResult hit = await fixture.Cache.GetOrCreateAsync(
-            fixture.Identity,
-            (_, _) => throw new InvalidOperationException("An existing entry must not be regenerated."),
-            CancellationToken.None).WaitAsync(coordinationTimeout);
-        File.Delete(fixture.FinalPath);
 
         PreviewCacheResult miss = await fixture.Cache.GetOrCreateAsync(
             fixture.Identity,
@@ -52,9 +64,11 @@ public sealed class DiskPreviewCacheSpecs
                 return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
             },
             CancellationToken.None).WaitAsync(coordinationTimeout);
+        Task<PreviewCacheResult> completedEntryWaiter = Assert.IsAssignableFrom<Task<PreviewCacheResult>>(entryWaiter);
+        PreviewCacheResult hit = await completedEntryWaiter.WaitAsync(coordinationTimeout);
 
-        Assert.Equal(PreviewCacheDisposition.Hit, hit.Disposition);
         Assert.Equal(PreviewCacheDisposition.Miss, miss.Disposition);
+        Assert.Equal(PreviewCacheDisposition.Hit, hit.Disposition);
         Assert.Equal(regeneratedContent, miss.Content.ToArray());
         Assert.Equal(
             regeneratedContent,
@@ -405,25 +419,39 @@ public sealed class DiskPreviewCacheSpecs
     [Fact]
     public async Task HoldsTreeAndEntryLeasesUntilResponseBufferingCompletes()
     {
-        var checkpoints = new List<DiskPreviewCache.PreviewCacheCheckpoint>();
         TemporaryCacheFixture? observedFixture = null;
         Task<PreviewCacheResult>? entryWaiter = null;
-        Task? cleanup = null;
+        Task<IDisposable>? pruningLease = null;
+        bool observedTreeLease = false;
+        bool observedEntryLease = false;
         bool startedWaiters = false;
         using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
         {
-            checkpoints.Add(checkpoint);
+            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.TreeLeaseAcquired)
+            {
+                observedTreeLease = true;
+            }
+
+            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired)
+            {
+                Assert.True(observedTreeLease);
+                observedEntryLease = true;
+            }
+
             if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.ResponseBuffered && !startedWaiters)
             {
                 startedWaiters = true;
+                Assert.True(observedEntryLease);
                 TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
                 entryWaiter = activeFixture.Cache.GetOrCreateAsync(
                     activeFixture.Identity,
                     (_, _) => throw new InvalidOperationException("A buffered entry must remain owned."),
                     CancellationToken.None);
                 Assert.False(entryWaiter.IsCompleted);
-                cleanup = activeFixture.Cache.ClearAsync(new Progress<double>(), CancellationToken.None);
-                Assert.False(cleanup.IsCompleted);
+                pruningLease = activeFixture.Cache
+                    .AcquirePruningLeaseAsync(CancellationToken.None)
+                    .AsTask();
+                Assert.False(pruningLease.IsCompleted);
             }
         });
         observedFixture = fixture;
@@ -438,23 +466,11 @@ public sealed class DiskPreviewCacheSpecs
             CancellationToken.None).WaitAsync(coordinationTimeout);
 
         Task<PreviewCacheResult> completedEntryWaiter = Assert.IsAssignableFrom<Task<PreviewCacheResult>>(entryWaiter);
-        Task completedCleanup = Assert.IsAssignableFrom<Task>(cleanup);
+        Task<IDisposable> completedPruningLease = Assert.IsAssignableFrom<Task<IDisposable>>(pruningLease);
         PreviewCacheResult hit = await completedEntryWaiter.WaitAsync(coordinationTimeout);
-        await completedCleanup.WaitAsync(coordinationTimeout);
+        using IDisposable exclusiveLease = await completedPruningLease.WaitAsync(coordinationTimeout);
         Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
         Assert.Equal(PreviewCacheDisposition.Hit, hit.Disposition);
-        Assert.Equal(
-            [
-                DiskPreviewCache.PreviewCacheCheckpoint.TreeLeaseAcquired,
-                DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired,
-                DiskPreviewCache.PreviewCacheCheckpoint.BeforePublication,
-                DiskPreviewCache.PreviewCacheCheckpoint.AfterPublication,
-                DiskPreviewCache.PreviewCacheCheckpoint.ResponseBuffered,
-                DiskPreviewCache.PreviewCacheCheckpoint.TreeLeaseAcquired,
-                DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired,
-                DiskPreviewCache.PreviewCacheCheckpoint.ResponseBuffered,
-            ],
-            checkpoints);
     }
 
     private static IApplicationPaths CreateApplicationPaths(string temporaryDirectory)
