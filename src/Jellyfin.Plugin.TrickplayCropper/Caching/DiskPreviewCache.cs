@@ -172,52 +172,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
             foreach (string path in Directory.EnumerateFileSystemEntries(directoryPath))
             {
-                context.CancellationToken.ThrowIfCancellationRequested();
-                coordination.ObserveCleanupEntryDiscovered();
-                FileAttributes attributes;
-                try
-                {
-                    attributes = File.GetAttributes(path);
-                }
-                catch (FileNotFoundException)
-                {
-                    continue;
-                }
-                catch (DirectoryNotFoundException)
-                {
-                    continue;
-                }
-                catch (IOException exception)
-                {
-                    RecordFileFailure(path, exception, context.Counters);
-                    continue;
-                }
-                catch (UnauthorizedAccessException exception)
-                {
-                    RecordFileFailure(path, exception, context.Counters);
-                    continue;
-                }
-                catch (SecurityException exception)
-                {
-                    RecordFileFailure(path, exception, context.Counters);
-                    continue;
-                }
-
-                if ((attributes & FileAttributes.ReparsePoint) != 0)
-                {
-                    WarnAboutReparsePoint(path, context);
-                }
-                else if ((attributes & FileAttributes.Directory) != 0)
-                {
-                    await DeleteDirectoryCandidatesAsync(
-                        path,
-                        context).ConfigureAwait(false);
-                }
-                else
-                {
-                    await TryDeleteCandidateAsync(path, context)
-                        .ConfigureAwait(false);
-                }
+                await ProcessCleanupEntryAsync(path, context).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
@@ -239,6 +194,62 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         {
             RecordDirectoryFailure(directoryPath, exception, context.Counters);
         }
+    }
+
+    private async Task ProcessCleanupEntryAsync(string path, CleanupRunContext context)
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
+        coordination.ObserveCleanupEntryDiscovered();
+        if (!TryGetCleanupEntryAttributes(path, context, out FileAttributes attributes))
+        {
+            return;
+        }
+
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            WarnAboutReparsePoint(path, context);
+        }
+        else if ((attributes & FileAttributes.Directory) != 0)
+        {
+            await DeleteDirectoryCandidatesAsync(path, context).ConfigureAwait(false);
+        }
+        else
+        {
+            await TryDeleteCandidateAsync(path, context).ConfigureAwait(false);
+        }
+    }
+
+    private bool TryGetCleanupEntryAttributes(
+        string path,
+        CleanupRunContext context,
+        out FileAttributes attributes)
+    {
+        try
+        {
+            attributes = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+        catch (IOException exception)
+        {
+            RecordFileFailure(path, exception, context.Counters);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordFileFailure(path, exception, context.Counters);
+        }
+        catch (SecurityException exception)
+        {
+            RecordFileFailure(path, exception, context.Counters);
+        }
+
+        attributes = default;
+        return false;
     }
 
     private async Task TryDeleteCandidateAsync(string filePath, CleanupRunContext context)
@@ -407,25 +418,18 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         CleanupRunContext context)
     {
         context.CancellationToken.ThrowIfCancellationRequested();
-        if (!TryGetChildDirectories(directoryPath, context, out string[] childDirectories))
+        if (!await PruneChildDirectoriesAsync(directoryPath, context).ConfigureAwait(false))
         {
             return;
-        }
-
-        foreach (string childDirectory in childDirectories)
-        {
-            await PruneDirectoryAsync(childDirectory, context).ConfigureAwait(false);
         }
 
         await TryDeleteEmptyDirectoryAsync(directoryPath, context).ConfigureAwait(false);
     }
 
-    private bool TryGetChildDirectories(
+    private async Task<bool> PruneChildDirectoriesAsync(
         string directoryPath,
-        CleanupRunContext context,
-        out string[] childDirectories)
+        CleanupRunContext context)
     {
-        childDirectories = [];
         try
         {
             if (IsReparsePoint(directoryPath))
@@ -434,7 +438,11 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
                 return false;
             }
 
-            childDirectories = Directory.GetDirectories(directoryPath);
+            foreach (string childDirectory in Directory.EnumerateDirectories(directoryPath))
+            {
+                await PruneDirectoryAsync(childDirectory, context).ConfigureAwait(false);
+            }
+
             return true;
         }
         catch (DirectoryNotFoundException)
@@ -569,12 +577,10 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         Func<Stream, CancellationToken, Task<PreviewEncodingTelemetry>> writer,
         CancellationToken cancellationToken)
     {
-        EnsureRequestPathIsSafe(finalPath);
-        byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        byte[]? existingContent = await TryReadSafeExistingAsync(finalPath, cancellationToken)
+            .ConfigureAwait(false);
         if (existingContent is not null)
         {
-            EnsureRequestPathIsSafe(finalPath);
-            cancellationToken.ThrowIfCancellationRequested();
             return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, null);
         }
 
@@ -606,10 +612,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         }
         finally
         {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
+            DeleteTemporaryEntryIfSafe(temporaryPath);
         }
     }
 
@@ -618,35 +621,49 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         string temporaryPath,
         CancellationToken cancellationToken)
     {
-        EnsureRequestPathIsSafe(finalPath);
-        byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        byte[]? existingContent = await TryReadSafeExistingAsync(finalPath, cancellationToken)
+            .ConfigureAwait(false);
         if (existingContent is not null)
         {
-            EnsureRequestPathIsSafe(finalPath);
-            cancellationToken.ThrowIfCancellationRequested();
             return (existingContent, PreviewCacheDisposition.Hit);
         }
 
-        coordination.ObserveBeforePublication();
-        cancellationToken.ThrowIfCancellationRequested();
-        EnsureRequestPathIsSafe(finalPath);
-        EnsureRequestPathIsSafe(temporaryPath);
         try
         {
-            File.Move(temporaryPath, finalPath, overwrite: false);
+            PublishTemporaryEntry(finalPath, temporaryPath, cancellationToken);
         }
         catch (IOException exception)
         {
             return await ReadWinningPublicationAsync(finalPath, exception, cancellationToken).ConfigureAwait(false);
         }
 
+        byte[] content = await ReadPublishedEntryAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        return (content, PreviewCacheDisposition.Miss);
+    }
+
+    private void PublishTemporaryEntry(
+        string finalPath,
+        string temporaryPath,
+        CancellationToken cancellationToken)
+    {
+        coordination.ObserveBeforePublication();
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureRequestPathIsSafe(finalPath);
+        EnsureRequestPathIsSafe(temporaryPath);
+        File.Move(temporaryPath, finalPath, overwrite: false);
+    }
+
+    private async Task<byte[]> ReadPublishedEntryAsync(
+        string finalPath,
+        CancellationToken cancellationToken)
+    {
         coordination.ObserveAfterPublication();
         cancellationToken.ThrowIfCancellationRequested();
         EnsureRequestPathIsSafe(finalPath);
         byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
         EnsureRequestPathIsSafe(finalPath);
         cancellationToken.ThrowIfCancellationRequested();
-        return (content, PreviewCacheDisposition.Miss);
+        return content;
     }
 
     private async Task<(ReadOnlyMemory<byte> Content, PreviewCacheDisposition Disposition)>
@@ -655,15 +672,29 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
             IOException publicationFailure,
             CancellationToken cancellationToken)
     {
-        byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        byte[]? winningContent = await TryReadSafeExistingAsync(finalPath, cancellationToken)
+            .ConfigureAwait(false);
         if (winningContent is null)
         {
             ExceptionDispatchInfo.Throw(publicationFailure);
         }
 
-        EnsureRequestPathIsSafe(finalPath);
-        cancellationToken.ThrowIfCancellationRequested();
         return (winningContent, PreviewCacheDisposition.Hit);
+    }
+
+    private async Task<byte[]?> TryReadSafeExistingAsync(
+        string finalPath,
+        CancellationToken cancellationToken)
+    {
+        EnsureRequestPathIsSafe(finalPath);
+        byte[]? content = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        if (content is not null)
+        {
+            EnsureRequestPathIsSafe(finalPath);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        return content;
     }
 
     private static async Task<byte[]?> TryReadExistingAsync(
@@ -710,6 +741,18 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         if (!output.Exists || output.Length == 0)
         {
             throw new InvalidDataException("The generated Preview Cache Entry is empty or missing.");
+        }
+    }
+
+    private void DeleteTemporaryEntryIfSafe(string temporaryPath)
+    {
+        try
+        {
+            EnsureRequestPathIsSafe(temporaryPath);
+            File.Delete(temporaryPath);
+        }
+        catch (InvalidDataException)
+        {
         }
     }
 
@@ -776,34 +819,34 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
     private static void ThrowIfReparsePoint(string path)
     {
-        try
+        FileAttributes? attributes = GetExistingAttributes(path);
+        if (attributes.HasValue
+            && (attributes.Value & FileAttributes.ReparsePoint) != 0)
         {
-            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-            {
-                throw new InvalidDataException($"The Cache Tree path is a reparse point: {path}");
-            }
-        }
-        catch (FileNotFoundException)
-        {
-        }
-        catch (DirectoryNotFoundException)
-        {
+            throw new InvalidDataException($"The Cache Tree path is a reparse point: {path}");
         }
     }
 
     private static bool IsReparsePoint(string path)
     {
+        FileAttributes? attributes = GetExistingAttributes(path);
+        return attributes.HasValue
+            && (attributes.Value & FileAttributes.ReparsePoint) != 0;
+    }
+
+    private static FileAttributes? GetExistingAttributes(string path)
+    {
         try
         {
-            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+            return File.GetAttributes(path);
         }
         catch (FileNotFoundException)
         {
-            return false;
+            return null;
         }
         catch (DirectoryNotFoundException)
         {
-            return false;
+            return null;
         }
     }
 

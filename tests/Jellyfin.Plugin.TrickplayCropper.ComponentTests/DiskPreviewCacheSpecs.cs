@@ -534,44 +534,65 @@ public sealed class DiskPreviewCacheSpecs
     }
 
     [Fact]
-    public async Task RejectsAPluginDirectoryReparsePointForRequestsAndCleanup()
+    public async Task RequestsRejectAPluginDirectoryReparsePoint()
     {
         if (OperatingSystem.IsWindows())
         {
             return;
         }
 
-        string externalDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"trickplay-plugin-external-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(externalDirectory);
-        string externalEntryPath = Path.Combine(externalDirectory, "f0000000000.jpg");
-        await File.WriteAllBytesAsync(externalEntryPath, [9], CancellationToken.None);
-        var logger = new RecordingLogger<DiskPreviewCache>();
-        try
-        {
-            using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
-                static _ => { },
-                TimeProvider.System,
-                logger);
-            Directory.CreateSymbolicLink(fixture.PluginRoot, externalDirectory);
+        using PluginDirectoryReparseFixture fixture = await PluginDirectoryReparseFixture.CreateAsync();
 
-            await Assert.ThrowsAsync<InvalidDataException>(
-                () => fixture.Cache.GetOrCreateAsync(
-                    fixture.Identity,
-                    (_, _) => throw new InvalidOperationException("A reparse path must fail before generation."),
-                    CancellationToken.None).WaitAsync(coordinationTimeout));
-            await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
-                .WaitAsync(coordinationTimeout);
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => fixture.CacheFixture.Cache.GetOrCreateAsync(
+                fixture.CacheFixture.Identity,
+                (_, _) => throw new InvalidOperationException("A reparse path must fail before generation."),
+                CancellationToken.None).WaitAsync(coordinationTimeout));
 
-            Assert.True(File.Exists(externalEntryPath));
-            RecordedLog warning = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning);
-            Assert.Equal(fixture.PluginRoot, warning.Properties["CachePath"]);
-        }
-        finally
+        Assert.True(File.Exists(fixture.ExternalEntryPath));
+    }
+
+    [Fact]
+    public async Task CleanupRejectsAPluginDirectoryReparsePoint()
+    {
+        if (OperatingSystem.IsWindows())
         {
-            Directory.Delete(externalDirectory, recursive: true);
+            return;
         }
+
+        using PluginDirectoryReparseFixture fixture = await PluginDirectoryReparseFixture.CreateAsync();
+
+        await fixture.CacheFixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+            .WaitAsync(coordinationTimeout);
+
+        Assert.True(File.Exists(fixture.ExternalEntryPath));
+        RecordedLog warning = Assert.Single(fixture.Logger.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Equal(fixture.CacheFixture.PluginRoot, warning.Properties["CachePath"]);
+    }
+
+    [Fact]
+    public async Task RequestsRejectALexicalCacheTreeEscape()
+    {
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+        string escapedPath = Path.Combine(fixture.PluginRoot, "escaped.jpg");
+        var escapingIdentity = fixture.Identity with
+        {
+            RelativePath = Path.Combine("..", "escaped.jpg"),
+        };
+        bool generationStarted = false;
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => fixture.Cache.GetOrCreateAsync(
+                escapingIdentity,
+                (_, _) =>
+                {
+                    generationStarted = true;
+                    return Task.FromResult(new PreviewEncodingTelemetry(TimeSpan.Zero, TimeSpan.Zero));
+                },
+                CancellationToken.None).WaitAsync(coordinationTimeout));
+
+        Assert.False(generationStarted);
+        Assert.False(File.Exists(escapedPath));
     }
 
     [Fact]
@@ -1330,6 +1351,56 @@ public sealed class DiskPreviewCacheSpecs
         LogLevel Level,
         Exception? Exception,
         IReadOnlyDictionary<string, object?> Properties);
+
+    private sealed class PluginDirectoryReparseFixture : IDisposable
+    {
+        private readonly string externalDirectory;
+
+        private PluginDirectoryReparseFixture(
+            TemporaryCacheFixture cacheFixture,
+            string externalDirectory,
+            string externalEntryPath,
+            RecordingLogger<DiskPreviewCache> logger)
+        {
+            CacheFixture = cacheFixture;
+            this.externalDirectory = externalDirectory;
+            ExternalEntryPath = externalEntryPath;
+            Logger = logger;
+        }
+
+        public TemporaryCacheFixture CacheFixture { get; }
+
+        public string ExternalEntryPath { get; }
+
+        public RecordingLogger<DiskPreviewCache> Logger { get; }
+
+        public static async Task<PluginDirectoryReparseFixture> CreateAsync()
+        {
+            string externalDirectory = Path.Combine(
+                Path.GetTempPath(),
+                $"trickplay-plugin-external-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(externalDirectory);
+            string externalEntryPath = Path.Combine(externalDirectory, "f0000000000.jpg");
+            await File.WriteAllBytesAsync(externalEntryPath, [9], CancellationToken.None);
+            var logger = new RecordingLogger<DiskPreviewCache>();
+            TemporaryCacheFixture cacheFixture = TemporaryCacheFixture.Create(
+                static _ => { },
+                TimeProvider.System,
+                logger);
+            Directory.CreateSymbolicLink(cacheFixture.PluginRoot, externalDirectory);
+            return new PluginDirectoryReparseFixture(
+                cacheFixture,
+                externalDirectory,
+                externalEntryPath,
+                logger);
+        }
+
+        public void Dispose()
+        {
+            CacheFixture.Dispose();
+            Directory.Delete(externalDirectory, recursive: true);
+        }
+    }
 
     private sealed class TemporaryCacheFixture : IDisposable
     {
