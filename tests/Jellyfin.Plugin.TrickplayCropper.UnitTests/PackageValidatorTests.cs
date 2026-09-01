@@ -8,26 +8,6 @@ using Xunit;
 
 public sealed class PackageValidatorTests
 {
-    private const string ValidManifest = """
-        {
-          "name": "Trickplay Cropper",
-          "guid": "630fb758-9a29-4f2c-a54c-95793651bb8a",
-          "version": "1.0.0.0",
-          "targetAbi": "10.11.0.0",
-          "framework": "net9.0",
-          "artifacts": ["Jellyfin.Plugin.TrickplayCropper.dll"]
-        }
-        """;
-
-    private const string ValidMetadata = """
-        {
-          "name": "Trickplay Cropper",
-          "guid": "630fb758-9a29-4f2c-a54c-95793651bb8a",
-          "version": "1.0.0.0",
-          "targetAbi": "10.11.0.0"
-        }
-        """;
-
     [Theory]
     [InlineData("Jellyfin.Plugin.TrickplayCropper.pdb")]
     [InlineData("nested/Jellyfin.Plugin.TrickplayCropper.dll")]
@@ -49,7 +29,8 @@ public sealed class PackageValidatorTests
     [Fact]
     public void RejectsDuplicateArchiveMembers()
     {
-        using var fixture = PackageFixture.Create(extraMember: "Jellyfin.Plugin.TrickplayCropper.dll");
+        using var fixture = PackageFixture.Create(
+            extraMember: GetAssemblyArtifact(ReadBuildManifest()));
 
         var error = Assert.Throws<PackageValidationException>(
             () => PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath));
@@ -60,10 +41,8 @@ public sealed class PackageValidatorTests
     [Fact]
     public void AcceptsAdditionalManifestArtifact()
     {
-        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
-        manifest["artifacts"] = new JsonArray(
-            "Jellyfin.Plugin.TrickplayCropper.dll",
-            "README.txt");
+        var manifest = ReadBuildManifest();
+        manifest["artifacts"]!.AsArray().Add("README.txt");
         using var fixture = PackageFixture.Create(
             extraMember: "README.txt",
             assembly: ReadProductionAssembly(),
@@ -75,10 +54,8 @@ public sealed class PackageValidatorTests
     [Fact]
     public void RejectsMissingManifestArtifact()
     {
-        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
-        manifest["artifacts"] = new JsonArray(
-            "Jellyfin.Plugin.TrickplayCropper.dll",
-            "README.txt");
+        var manifest = ReadBuildManifest();
+        manifest["artifacts"]!.AsArray().Add("README.txt");
         using var fixture = PackageFixture.Create(manifest: manifest.ToJsonString());
 
         var error = Assert.Throws<PackageValidationException>(
@@ -95,7 +72,7 @@ public sealed class PackageValidatorTests
     [InlineData("framework", "netstandard2.0")]
     public void RejectsInvalidBuildManifestValues(string key, string invalidValue)
     {
-        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        var manifest = ReadBuildManifest();
         manifest[key] = invalidValue;
         using var fixture = PackageFixture.Create(manifest: manifest.ToJsonString());
 
@@ -111,7 +88,7 @@ public sealed class PackageValidatorTests
     [InlineData("meta.json")]
     public void RejectsNonFlatBuildManifestArtifacts(string artifact)
     {
-        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        var manifest = ReadBuildManifest();
         manifest["artifacts"] = new JsonArray(artifact);
         using var fixture = PackageFixture.Create(manifest: manifest.ToJsonString());
 
@@ -131,17 +108,11 @@ public sealed class PackageValidatorTests
         string mismatchedValue,
         string expectedError)
     {
-        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        var manifest = ReadBuildManifest();
         manifest[key] = mismatchedValue;
-        var metadata = JsonNode.Parse(ValidMetadata)!.AsObject();
-        if (metadata.ContainsKey(key))
-        {
-            metadata[key] = mismatchedValue;
-        }
 
         using var fixture = PackageFixture.Create(
             assembly: ReadProductionAssembly(),
-            metadata: metadata.ToJsonString(),
             manifest: manifest.ToJsonString());
 
         var error = Assert.Throws<PackageValidationException>(
@@ -153,13 +124,10 @@ public sealed class PackageValidatorTests
     [Fact]
     public void AcceptsManifestDrivenTargetAbi()
     {
-        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        var manifest = ReadBuildManifest();
         manifest["targetAbi"] = "99.0.0.0";
-        var metadata = JsonNode.Parse(ValidMetadata)!.AsObject();
-        metadata["targetAbi"] = "99.0.0.0";
         using var fixture = PackageFixture.Create(
             assembly: ReadProductionAssembly(),
-            metadata: metadata.ToJsonString(),
             manifest: manifest.ToJsonString());
 
         PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath);
@@ -172,7 +140,7 @@ public sealed class PackageValidatorTests
     [InlineData("targetAbi", "10.12.0.0")]
     public void RejectsIncorrectPackageMetadata(string key, string incorrectValue)
     {
-        var metadata = JsonNode.Parse(ValidMetadata)!.AsObject();
+        var metadata = CreateMetadata(ReadBuildManifest());
         metadata[key] = incorrectValue;
         using var fixture = PackageFixture.Create(metadata: metadata.ToJsonString());
 
@@ -216,6 +184,31 @@ public sealed class PackageValidatorTests
         return File.ReadAllBytes(typeof(Plugin).Assembly.Location);
     }
 
+    private static JsonObject ReadBuildManifest()
+    {
+        var manifestPath = Path.Combine(AppContext.BaseDirectory, "build.yaml");
+        return JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+    }
+
+    private static JsonObject CreateMetadata(JsonObject manifest)
+    {
+        return new JsonObject
+        {
+            ["name"] = manifest["name"]?.DeepClone(),
+            ["guid"] = manifest["guid"]?.DeepClone(),
+            ["version"] = manifest["version"]?.DeepClone(),
+            ["targetAbi"] = manifest["targetAbi"]?.DeepClone(),
+        };
+    }
+
+    private static string GetAssemblyArtifact(JsonObject manifest)
+    {
+        return manifest["artifacts"]!
+            .AsArray()
+            .Select(artifact => artifact!.GetValue<string>())
+            .Single(artifact => artifact.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
+    }
+
     private sealed class PackageFixture : IDisposable
     {
         private PackageFixture(string directoryPath, string packagePath, string manifestPath)
@@ -242,14 +235,20 @@ public sealed class PackageValidatorTests
             var packagePath = Path.Combine(directoryPath, "plugin.zip");
             var manifestPath = Path.Combine(directoryPath, "build.yaml");
 
-            File.WriteAllText(manifestPath, manifest ?? ValidManifest);
+            var manifestObject = manifest is null
+                ? ReadBuildManifest()
+                : JsonNode.Parse(manifest)!.AsObject();
+            var manifestContents = manifestObject.ToJsonString();
+            var metadataContents = metadata ?? CreateMetadata(manifestObject).ToJsonString();
+
+            File.WriteAllText(manifestPath, manifestContents);
             using (var package = ZipFile.Open(packagePath, ZipArchiveMode.Create))
             {
                 WriteEntry(
                     package,
-                    "Jellyfin.Plugin.TrickplayCropper.dll",
+                    GetAssemblyArtifact(ReadBuildManifest()),
                     assembly ?? "assembly"u8.ToArray());
-                WriteEntry(package, "meta.json", Encoding.UTF8.GetBytes(metadata ?? ValidMetadata));
+                WriteEntry(package, "meta.json", Encoding.UTF8.GetBytes(metadataContents));
                 if (extraMember is not null)
                 {
                     WriteEntry(package, extraMember, "forbidden"u8.ToArray());
