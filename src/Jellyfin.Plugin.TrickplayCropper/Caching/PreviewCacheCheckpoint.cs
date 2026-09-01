@@ -41,6 +41,11 @@ internal enum PreviewCacheCheckpoint
     CleanupStarted,
 
     /// <summary>
+    /// Occurs after cleanup discovers a filesystem entry and before it inspects its attributes.
+    /// </summary>
+    CleanupEntryDiscovered,
+
+    /// <summary>
     /// Occurs after cleanup captures a candidate fingerprint and before it requests entry ownership.
     /// </summary>
     CleanupCandidateCaptured,

@@ -534,6 +534,47 @@ public sealed class DiskPreviewCacheSpecs
     }
 
     [Fact]
+    public async Task RejectsAPluginDirectoryReparsePointForRequestsAndCleanup()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string externalDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"trickplay-plugin-external-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(externalDirectory);
+        string externalEntryPath = Path.Combine(externalDirectory, "f0000000000.jpg");
+        await File.WriteAllBytesAsync(externalEntryPath, [9], CancellationToken.None);
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        try
+        {
+            using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+                static _ => { },
+                TimeProvider.System,
+                logger);
+            Directory.CreateSymbolicLink(fixture.PluginRoot, externalDirectory);
+
+            await Assert.ThrowsAsync<InvalidDataException>(
+                () => fixture.Cache.GetOrCreateAsync(
+                    fixture.Identity,
+                    (_, _) => throw new InvalidOperationException("A reparse path must fail before generation."),
+                    CancellationToken.None).WaitAsync(coordinationTimeout));
+            await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+                .WaitAsync(coordinationTimeout);
+
+            Assert.True(File.Exists(externalEntryPath));
+            RecordedLog warning = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning);
+            Assert.Equal(fixture.PluginRoot, warning.Properties["CachePath"]);
+        }
+        finally
+        {
+            Directory.Delete(externalDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RejectsAFinalEntryThatBecomesAReparsePointBeforePublication()
     {
         if (OperatingSystem.IsWindows())
@@ -795,6 +836,38 @@ public sealed class DiskPreviewCacheSpecs
         Assert.Equal(0, summary.Properties["DeletedFiles"]);
         Assert.Equal(0, summary.Properties["FailedFiles"]);
         Assert.Equal(0, summary.Properties["SkippedChangedFiles"]);
+    }
+
+    [Fact]
+    public async Task ContinuesAfterAnEnumeratedEntryDisappearsBeforeInspection()
+    {
+        TemporaryCacheFixture? observedFixture = null;
+        bool removedEntry = false;
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupEntryDiscovered && !removedEntry)
+                {
+                    removedEntry = true;
+                    TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                    File.Delete(activeFixture.FinalPath);
+                }
+            },
+            TimeProvider.System,
+            logger);
+        observedFixture = fixture;
+        string directoryPath = Path.GetDirectoryName(fixture.FinalPath)!;
+        Directory.CreateDirectory(directoryPath);
+        string siblingPath = Path.Combine(directoryPath, "f0000000001.jpg");
+        await File.WriteAllBytesAsync(fixture.FinalPath, [1], CancellationToken.None);
+        await File.WriteAllBytesAsync(siblingPath, [2], CancellationToken.None);
+
+        await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+            .WaitAsync(coordinationTimeout);
+
+        Assert.False(File.Exists(siblingPath));
+        Assert.DoesNotContain(logger.Entries, entry => entry.Level == LogLevel.Warning);
     }
 
     [Fact]
@@ -1290,6 +1363,10 @@ public sealed class DiskPreviewCacheSpecs
             temporaryDirectory,
             "Jellyfin.Plugin.TrickplayCropper",
             PreviewIdentity.CacheNamespace);
+
+        public string PluginRoot => Path.Combine(
+            temporaryDirectory,
+            "Jellyfin.Plugin.TrickplayCropper");
 
         public string FinalPath { get; }
 

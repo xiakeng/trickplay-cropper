@@ -24,6 +24,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
     private readonly PreviewCacheCoordination coordination;
     private readonly ILogger<DiskPreviewCache> logger;
     private readonly StringComparison pathComparison;
+    private readonly string pluginRoot;
     private readonly TimeProvider timeProvider;
 
     /// <summary>
@@ -53,8 +54,9 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         PreviewCacheCoordination coordination,
         ILogger<DiskPreviewCache> logger)
     {
-        cacheRoot = Path.GetFullPath(
-            Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
+        pluginRoot = Path.GetFullPath(
+            Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName));
+        cacheRoot = Path.Combine(pluginRoot, PreviewIdentity.CacheNamespace);
         this.coordination = coordination;
         this.logger = logger;
         pathComparison = coordination.PathComparison;
@@ -112,72 +114,113 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         DateTime cleanupStartedUtc = timeProvider.GetUtcNow().UtcDateTime;
         coordination.ObserveCleanupStarted();
         progress.Report(0);
-        await DeleteCandidatesAsync(cleanupStartedUtc, counters, cancellationToken).ConfigureAwait(false);
-        if (!IsReparsePoint(cacheRoot))
+        var context = new CleanupRunContext(cleanupStartedUtc, counters, cancellationToken);
+        if (!IsCleanupRootSafe(context))
         {
-            await PruneDirectoryAsync(cacheRoot, counters, cancellationToken).ConfigureAwait(false);
-        }
-
-        progress.Report(100);
-    }
-
-    private async Task DeleteCandidatesAsync(
-        DateTime cleanupStartedUtc,
-        CleanupCounters counters,
-        CancellationToken cancellationToken)
-    {
-        var root = new DirectoryInfo(cacheRoot);
-        root.Refresh();
-        if (!root.Exists)
-        {
+            progress.Report(100);
             return;
         }
 
-        if ((root.Attributes & FileAttributes.ReparsePoint) != 0)
+        await DeleteCandidatesAsync(context).ConfigureAwait(false);
+        await PruneDirectoryAsync(cacheRoot, context).ConfigureAwait(false);
+        progress.Report(100);
+    }
+
+    private async Task DeleteCandidatesAsync(CleanupRunContext context)
+    {
+        try
         {
-            LogReparsePointSkipped(logger, cacheRoot);
+            var root = new DirectoryInfo(cacheRoot);
+            root.Refresh();
+            if (!root.Exists)
+            {
+                return;
+            }
+        }
+        catch (IOException exception)
+        {
+            RecordDirectoryFailure(cacheRoot, exception, context.Counters);
+            return;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordDirectoryFailure(cacheRoot, exception, context.Counters);
+            return;
+        }
+        catch (SecurityException exception)
+        {
+            RecordDirectoryFailure(cacheRoot, exception, context.Counters);
             return;
         }
 
         await DeleteDirectoryCandidatesAsync(
             cacheRoot,
-            cleanupStartedUtc,
-            counters,
-            cancellationToken).ConfigureAwait(false);
+            context).ConfigureAwait(false);
     }
 
     private async Task DeleteDirectoryCandidatesAsync(
         string directoryPath,
-        DateTime cleanupStartedUtc,
-        CleanupCounters counters,
-        CancellationToken cancellationToken)
+        CleanupRunContext context)
     {
         try
         {
+            if (IsReparsePoint(directoryPath))
+            {
+                WarnAboutReparsePoint(directoryPath, context);
+                return;
+            }
+
             foreach (string path in Directory.EnumerateFileSystemEntries(directoryPath))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                FileAttributes attributes = File.GetAttributes(path);
+                context.CancellationToken.ThrowIfCancellationRequested();
+                coordination.ObserveCleanupEntryDiscovered();
+                FileAttributes attributes;
+                try
+                {
+                    attributes = File.GetAttributes(path);
+                }
+                catch (FileNotFoundException)
+                {
+                    continue;
+                }
+                catch (DirectoryNotFoundException)
+                {
+                    continue;
+                }
+                catch (IOException exception)
+                {
+                    RecordFileFailure(path, exception, context.Counters);
+                    continue;
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    RecordFileFailure(path, exception, context.Counters);
+                    continue;
+                }
+                catch (SecurityException exception)
+                {
+                    RecordFileFailure(path, exception, context.Counters);
+                    continue;
+                }
+
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
-                    LogReparsePointSkipped(logger, path);
+                    WarnAboutReparsePoint(path, context);
                 }
                 else if ((attributes & FileAttributes.Directory) != 0)
                 {
                     await DeleteDirectoryCandidatesAsync(
                         path,
-                        cleanupStartedUtc,
-                        counters,
-                        cancellationToken).ConfigureAwait(false);
+                        context).ConfigureAwait(false);
                 }
                 else
                 {
-                    await TryDeleteCandidateAsync(path, cleanupStartedUtc, counters, cancellationToken)
+                    await TryDeleteCandidateAsync(path, context)
                         .ConfigureAwait(false);
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -186,63 +229,64 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         }
         catch (IOException exception)
         {
-            RecordDirectoryFailure(directoryPath, exception, counters);
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
         }
         catch (UnauthorizedAccessException exception)
         {
-            RecordDirectoryFailure(directoryPath, exception, counters);
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
         }
         catch (SecurityException exception)
         {
-            RecordDirectoryFailure(directoryPath, exception, counters);
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
         }
     }
 
-    private async Task TryDeleteCandidateAsync(
-        string filePath,
-        DateTime cleanupStartedUtc,
-        CleanupCounters counters,
-        CancellationToken cancellationToken)
+    private async Task TryDeleteCandidateAsync(string filePath, CleanupRunContext context)
     {
         try
         {
-            CleanupCandidate? candidate = CaptureCandidate(filePath, cleanupStartedUtc);
+            CleanupCandidate? candidate = CaptureCandidate(filePath, context.CleanupStartedUtc);
             if (candidate is null)
             {
                 return;
             }
 
             coordination.ObserveCleanupCandidateCaptured();
-            if (candidate.Kind == CleanupFileKind.UnparseableTemporary)
+            if (candidate is ExclusiveCleanupCandidate exclusiveCandidate)
             {
                 using IDisposable treeLease = await coordination
-                    .AcquireExclusiveAsync(cancellationToken)
+                    .AcquireExclusiveAsync(context.CancellationToken)
                     .ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                DeleteOwnedCandidate(candidate, counters);
+                context.CancellationToken.ThrowIfCancellationRequested();
+                DeleteOwnedCandidate(exclusiveCandidate, context);
                 return;
             }
 
+            if (candidate is not EntryCleanupCandidate entryCandidate)
+            {
+                throw new UnreachableException("Unknown cleanup candidate type.");
+            }
+
             await coordination.ExecuteCleanupEntryAsync(
-                candidate.LockPath!,
-                () => DeleteOwnedCandidate(candidate, counters),
-                cancellationToken).ConfigureAwait(false);
+                entryCandidate.LockPath,
+                () => DeleteOwnedCandidate(entryCandidate, context),
+                context.CancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
         {
             throw;
         }
         catch (IOException exception)
         {
-            RecordFileFailure(filePath, exception, counters);
+            RecordFileFailure(filePath, exception, context.Counters);
         }
         catch (UnauthorizedAccessException exception)
         {
-            RecordFileFailure(filePath, exception, counters);
+            RecordFileFailure(filePath, exception, context.Counters);
         }
         catch (SecurityException exception)
         {
-            RecordFileFailure(filePath, exception, counters);
+            RecordFileFailure(filePath, exception, context.Counters);
         }
     }
 
@@ -250,8 +294,21 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
     {
         string canonicalPath = Path.GetFullPath(filePath);
         string fileName = Path.GetFileName(canonicalPath);
-        (CleanupFileKind Kind, string? LockPath)? cleanupIdentity = GetCleanupIdentity(canonicalPath, fileName);
-        if (cleanupIdentity is null)
+        string? lockPath = null;
+        bool requiresExclusiveLease = false;
+        if (IsFinalEntryName(fileName))
+        {
+            lockPath = canonicalPath;
+        }
+        else if (TryGetTemporaryFinalName(fileName, out string? finalName))
+        {
+            lockPath = Path.Combine(Path.GetDirectoryName(canonicalPath)!, finalName!);
+        }
+        else if (fileName.EndsWith(TemporaryExtension, StringComparison.Ordinal))
+        {
+            requiresExclusiveLease = true;
+        }
+        else
         {
             return null;
         }
@@ -263,19 +320,20 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
             return null;
         }
 
-        return new CleanupCandidate(
-            canonicalPath,
-            cleanupIdentity.Value.LockPath,
-            cleanupIdentity.Value.Kind,
-            file.Length,
-            file.LastWriteTimeUtc.Ticks);
+        return requiresExclusiveLease
+            ? new ExclusiveCleanupCandidate(canonicalPath, file.Length, file.LastWriteTimeUtc.Ticks)
+            : new EntryCleanupCandidate(
+                canonicalPath,
+                lockPath ?? throw new UnreachableException("An entry cleanup candidate requires a lock path."),
+                file.Length,
+                file.LastWriteTimeUtc.Ticks);
     }
 
-    private void DeleteOwnedCandidate(CleanupCandidate candidate, CleanupCounters counters)
+    private void DeleteOwnedCandidate(CleanupCandidate candidate, CleanupRunContext context)
     {
         if (IsReparsePoint(candidate.Path))
         {
-            LogReparsePointSkipped(logger, candidate.Path);
+            WarnAboutReparsePoint(candidate.Path, context);
             return;
         }
 
@@ -288,32 +346,12 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
         if (current.Length != candidate.Length || current.LastWriteTimeUtc.Ticks != candidate.LastWriteTimeUtcTicks)
         {
-            counters.SkippedChangedFiles++;
+            context.Counters.SkippedChangedFiles++;
             return;
         }
 
         File.Delete(candidate.Path);
-        counters.DeletedFiles++;
-    }
-
-    private static (CleanupFileKind Kind, string? LockPath)? GetCleanupIdentity(
-        string canonicalPath,
-        string fileName)
-    {
-        if (IsFinalEntryName(fileName))
-        {
-            return (CleanupFileKind.FinalJpeg, canonicalPath);
-        }
-
-        if (!TryGetTemporaryFinalName(fileName, out string? finalName))
-        {
-            return fileName.EndsWith(TemporaryExtension, StringComparison.Ordinal)
-                ? (CleanupFileKind.UnparseableTemporary, null)
-                : null;
-        }
-
-        string lockPath = Path.Combine(Path.GetDirectoryName(canonicalPath)!, finalName!);
-        return (CleanupFileKind.Temporary, lockPath);
+        context.Counters.DeletedFiles++;
     }
 
     private static bool IsFinalEntryName(string fileName)
@@ -366,59 +404,79 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
     private async Task PruneDirectoryAsync(
         string directoryPath,
-        CleanupCounters counters,
-        CancellationToken cancellationToken)
+        CleanupRunContext context)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        IEnumerable<string> childDirectories;
-        try
+        context.CancellationToken.ThrowIfCancellationRequested();
+        if (!TryGetChildDirectories(directoryPath, context, out string[] childDirectories))
         {
-            childDirectories = Directory.EnumerateDirectories(
-                directoryPath,
-                "*",
-                new EnumerationOptions
-                {
-                    AttributesToSkip = FileAttributes.ReparsePoint,
-                    IgnoreInaccessible = false,
-                    RecurseSubdirectories = false,
-                    ReturnSpecialDirectories = false,
-                });
-            foreach (string childDirectory in childDirectories)
-            {
-                await PruneDirectoryAsync(childDirectory, counters, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return;
-        }
-        catch (IOException exception)
-        {
-            RecordDirectoryFailure(directoryPath, exception, counters);
-            return;
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            RecordDirectoryFailure(directoryPath, exception, counters);
-            return;
-        }
-        catch (SecurityException exception)
-        {
-            RecordDirectoryFailure(directoryPath, exception, counters);
             return;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        foreach (string childDirectory in childDirectories)
+        {
+            await PruneDirectoryAsync(childDirectory, context).ConfigureAwait(false);
+        }
+
+        await TryDeleteEmptyDirectoryAsync(directoryPath, context).ConfigureAwait(false);
+    }
+
+    private bool TryGetChildDirectories(
+        string directoryPath,
+        CleanupRunContext context,
+        out string[] childDirectories)
+    {
+        childDirectories = [];
+        try
+        {
+            if (IsReparsePoint(directoryPath))
+            {
+                WarnAboutReparsePoint(directoryPath, context);
+                return false;
+            }
+
+            childDirectories = Directory.GetDirectories(directoryPath);
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (IOException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
+            return false;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
+            return false;
+        }
+        catch (SecurityException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
+            return false;
+        }
+    }
+
+    private async Task TryDeleteEmptyDirectoryAsync(string directoryPath, CleanupRunContext context)
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
         try
         {
             using IDisposable treeLease = await coordination
-                .AcquireExclusiveAsync(cancellationToken)
+                .AcquireExclusiveAsync(context.CancellationToken)
                 .ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
+            if (IsReparsePoint(directoryPath))
+            {
+                WarnAboutReparsePoint(directoryPath, context);
+                return;
+            }
+
             if (!Directory.EnumerateFileSystemEntries(directoryPath).Any())
             {
                 Directory.Delete(directoryPath);
-                counters.DeletedDirectories++;
+                context.Counters.DeletedDirectories++;
             }
         }
         catch (DirectoryNotFoundException)
@@ -426,15 +484,15 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         }
         catch (IOException exception)
         {
-            RecordDirectoryFailure(directoryPath, exception, counters);
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
         }
         catch (UnauthorizedAccessException exception)
         {
-            RecordDirectoryFailure(directoryPath, exception, counters);
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
         }
         catch (SecurityException exception)
         {
-            RecordDirectoryFailure(directoryPath, exception, counters);
+            RecordDirectoryFailure(directoryPath, exception, context.Counters);
         }
     }
 
@@ -442,6 +500,14 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
     {
         counters.FailedDirectories++;
         LogDirectoryFailure(logger, directoryPath, exception);
+    }
+
+    private void WarnAboutReparsePoint(string path, CleanupRunContext context)
+    {
+        if (context.TryRecordReparsePoint(path))
+        {
+            LogReparsePointSkipped(logger, path);
+        }
     }
 
     private void WriteCleanupSummary(CleanupCounters counters, TimeSpan elapsed)
@@ -507,6 +573,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
         if (existingContent is not null)
         {
+            EnsureRequestPathIsSafe(finalPath);
             cancellationToken.ThrowIfCancellationRequested();
             return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, null);
         }
@@ -528,6 +595,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
                 temporaryPath,
                 writer,
                 cancellationToken).ConfigureAwait(false);
+            EnsureRequestPathIsSafe(temporaryPath);
             ValidateCompletedOutput(temporaryPath);
             cancellationToken.ThrowIfCancellationRequested();
             (ReadOnlyMemory<byte> content, PreviewCacheDisposition disposition) = await PublishAsync(
@@ -554,6 +622,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
         if (existingContent is not null)
         {
+            EnsureRequestPathIsSafe(finalPath);
             cancellationToken.ThrowIfCancellationRequested();
             return (existingContent, PreviewCacheDisposition.Hit);
         }
@@ -561,6 +630,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         coordination.ObserveBeforePublication();
         cancellationToken.ThrowIfCancellationRequested();
         EnsureRequestPathIsSafe(finalPath);
+        EnsureRequestPathIsSafe(temporaryPath);
         try
         {
             File.Move(temporaryPath, finalPath, overwrite: false);
@@ -572,12 +642,14 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
         coordination.ObserveAfterPublication();
         cancellationToken.ThrowIfCancellationRequested();
+        EnsureRequestPathIsSafe(finalPath);
         byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        EnsureRequestPathIsSafe(finalPath);
         cancellationToken.ThrowIfCancellationRequested();
         return (content, PreviewCacheDisposition.Miss);
     }
 
-    private static async Task<(ReadOnlyMemory<byte> Content, PreviewCacheDisposition Disposition)>
+    private async Task<(ReadOnlyMemory<byte> Content, PreviewCacheDisposition Disposition)>
         ReadWinningPublicationAsync(
             string finalPath,
             IOException publicationFailure,
@@ -589,6 +661,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
             ExceptionDispatchInfo.Throw(publicationFailure);
         }
 
+        EnsureRequestPathIsSafe(finalPath);
         cancellationToken.ThrowIfCancellationRequested();
         return (winningContent, PreviewCacheDisposition.Hit);
     }
@@ -654,15 +727,50 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
     private void EnsureRequestPathIsSafe(string finalPath)
     {
-        ThrowIfReparsePoint(cacheRoot);
-        string relativePath = Path.GetRelativePath(cacheRoot, finalPath);
-        string currentPath = cacheRoot;
+        ThrowIfReparsePoint(pluginRoot);
+        string relativePath = Path.GetRelativePath(pluginRoot, finalPath);
+        string currentPath = pluginRoot;
         foreach (string segment in relativePath.Split(
                      [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                      StringSplitOptions.RemoveEmptyEntries))
         {
             currentPath = Path.Combine(currentPath, segment);
             ThrowIfReparsePoint(currentPath);
+        }
+    }
+
+    private bool IsCleanupRootSafe(CleanupRunContext context)
+    {
+        return IsCleanupPathSafe(pluginRoot, context)
+            && IsCleanupPathSafe(cacheRoot, context);
+    }
+
+    private bool IsCleanupPathSafe(string path, CleanupRunContext context)
+    {
+        try
+        {
+            if (IsReparsePoint(path))
+            {
+                WarnAboutReparsePoint(path, context);
+                return false;
+            }
+
+            return true;
+        }
+        catch (IOException exception)
+        {
+            RecordDirectoryFailure(path, exception, context.Counters);
+            return false;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordDirectoryFailure(path, exception, context.Counters);
+            return false;
+        }
+        catch (SecurityException exception)
+        {
+            RecordDirectoryFailure(path, exception, context.Counters);
+            return false;
         }
     }
 
@@ -714,18 +822,49 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         cleanupMutex.Dispose();
     }
 
-    private sealed record CleanupCandidate(
+    private abstract record CleanupCandidate(
         string Path,
-        string? LockPath,
-        CleanupFileKind Kind,
         long Length,
         long LastWriteTimeUtcTicks);
 
-    private enum CleanupFileKind
+    private sealed record EntryCleanupCandidate(
+        string Path,
+        string LockPath,
+        long Length,
+        long LastWriteTimeUtcTicks)
+        : CleanupCandidate(Path, Length, LastWriteTimeUtcTicks);
+
+    private sealed record ExclusiveCleanupCandidate(
+        string Path,
+        long Length,
+        long LastWriteTimeUtcTicks)
+        : CleanupCandidate(Path, Length, LastWriteTimeUtcTicks);
+
+    private sealed class CleanupRunContext
     {
-        FinalJpeg,
-        Temporary,
-        UnparseableTemporary,
+        private readonly HashSet<string> warnedReparsePoints = new(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+        public CleanupRunContext(
+            DateTime cleanupStartedUtc,
+            CleanupCounters counters,
+            CancellationToken cancellationToken)
+        {
+            CleanupStartedUtc = cleanupStartedUtc;
+            Counters = counters;
+            CancellationToken = cancellationToken;
+        }
+
+        public CancellationToken CancellationToken { get; }
+
+        public DateTime CleanupStartedUtc { get; }
+
+        public CleanupCounters Counters { get; }
+
+        public bool TryRecordReparsePoint(string path)
+        {
+            return warnedReparsePoints.Add(path);
+        }
     }
 
     private sealed class CleanupCounters
