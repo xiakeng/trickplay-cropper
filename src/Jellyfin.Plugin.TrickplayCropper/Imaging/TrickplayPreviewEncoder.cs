@@ -14,25 +14,31 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
     private const string DecodePath = "SUBSET";
     private const int ScanlineBatchSize = 64;
     private readonly SemaphoreSlim decodePermits = new(DecodePermitCount, DecodePermitCount);
-    private readonly Func<PreviewEncodingCheckpoint, int, int> checkpointObserver;
+    private readonly Action<PreviewEncodingCheckpoint> checkpointObserver;
+    private readonly Func<SKCodec, IntPtr, int, int, int> scanlineReader;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayPreviewEncoder"/> class.
     /// </summary>
     public TrickplayPreviewEncoder()
-        : this(static (_, value) => value)
+        : this(
+            static _ => { },
+            static (codec, destination, count, rowBytes) => codec.GetScanlines(destination, count, rowBytes))
     {
     }
 
     /// <summary>
     /// Initializes an encoder whose native boundaries can be observed by component tests.
     /// </summary>
-    /// <param name="checkpointObserver">
-    /// Observes a boundary and returns the scanline count that the encoder must validate.
-    /// </param>
-    internal TrickplayPreviewEncoder(Func<PreviewEncodingCheckpoint, int, int> checkpointObserver)
+    /// <param name="checkpointObserver">Observes deterministic cancellation boundaries.</param>
+    /// <param name="scanlineReader">Reads scanlines through the native codec boundary.</param>
+    internal TrickplayPreviewEncoder(
+        Action<PreviewEncodingCheckpoint> checkpointObserver,
+        Func<SKCodec, IntPtr, int, int, int>? scanlineReader = null)
     {
         this.checkpointObserver = checkpointObserver;
+        this.scanlineReader = scanlineReader
+            ?? (static (codec, destination, count, rowBytes) => codec.GetScanlines(destination, count, rowBytes));
     }
 
     /// <inheritdoc />
@@ -77,7 +83,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
             ReadCrop(codec, bitmap, source, cancellationToken);
             TimeSpan decodeDuration = Stopwatch.GetElapsedTime(decodeStarted);
 
-            _ = checkpointObserver(PreviewEncodingCheckpoint.BeforeEncode, 0);
+            checkpointObserver(PreviewEncodingCheckpoint.BeforeEncode);
             cancellationToken.ThrowIfCancellationRequested();
             long encodeStarted = Stopwatch.GetTimestamp();
             EncodeJpeg(bitmap, destination, source, codec);
@@ -275,8 +281,8 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
             int batchSize = Math.Min(bitmap.Height - writtenRows, ScanlineBatchSize);
             int byteOffset = checked(writtenRows * bitmap.RowBytes);
             IntPtr destination = IntPtr.Add(bitmap.GetPixels(), byteOffset);
-            int decodedRows = codec.GetScanlines(destination, batchSize, bitmap.RowBytes);
-            decodedRows = checkpointObserver(PreviewEncodingCheckpoint.AfterReadBatch, decodedRows);
+            int decodedRows = scanlineReader(codec, destination, batchSize, bitmap.RowBytes);
+            checkpointObserver(PreviewEncodingCheckpoint.AfterReadBatch);
             cancellationToken.ThrowIfCancellationRequested();
             if (decodedRows != batchSize)
             {

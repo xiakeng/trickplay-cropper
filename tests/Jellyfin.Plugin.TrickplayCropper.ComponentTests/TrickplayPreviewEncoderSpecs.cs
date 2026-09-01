@@ -135,9 +135,8 @@ public sealed class TrickplayPreviewEncoderSpecs
     {
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 1, 2);
         using var encoder = new TrickplayPreviewEncoder(
-            (checkpoint, decodedRows) => checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.AfterReadBatch
-                ? decodedRows - 1
-                : decodedRows);
+            static _ => { },
+            static (_, _, count, _) => count - 1);
         using var destination = new MemoryStream();
 
         PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
@@ -200,15 +199,13 @@ public sealed class TrickplayPreviewEncoderSpecs
         using var cancellation = new CancellationTokenSource();
         int completedReadBatches = 0;
         using var encoder = new TrickplayPreviewEncoder(
-            (checkpoint, decodedRows) =>
+            checkpoint =>
             {
                 if (checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.AfterReadBatch
                     && ++completedReadBatches == 1)
                 {
                     cancellation.Cancel();
                 }
-
-                return decodedRows;
             });
         using var destination = new MemoryStream();
 
@@ -217,9 +214,7 @@ public sealed class TrickplayPreviewEncoderSpecs
 
         Assert.Equal(1, completedReadBatches);
         Assert.Equal(0, destination.Length);
-        using var retryDestination = new MemoryStream();
-        await encoder.EncodeAsync(fixture.Source, retryDestination, CancellationToken.None);
-        Assert.True(retryDestination.Length > 0);
+        await AssertFullDecodeCapacityAvailableAsync(encoder, fixture.Source);
     }
 
     [Fact]
@@ -229,15 +224,13 @@ public sealed class TrickplayPreviewEncoderSpecs
         using var cancellation = new CancellationTokenSource();
         bool reachedBeforeEncode = false;
         using var encoder = new TrickplayPreviewEncoder(
-            (checkpoint, decodedRows) =>
+            checkpoint =>
             {
                 if (checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.BeforeEncode)
                 {
                     reachedBeforeEncode = true;
                     cancellation.Cancel();
                 }
-
-                return decodedRows;
             });
         using var destination = new MemoryStream();
 
@@ -246,9 +239,7 @@ public sealed class TrickplayPreviewEncoderSpecs
 
         Assert.True(reachedBeforeEncode);
         Assert.Equal(0, destination.Length);
-        using var retryDestination = new MemoryStream();
-        await encoder.EncodeAsync(fixture.Source, retryDestination, CancellationToken.None);
-        Assert.True(retryDestination.Length > 0);
+        await AssertFullDecodeCapacityAvailableAsync(encoder, fixture.Source);
     }
 
     [Fact]
@@ -324,6 +315,35 @@ public sealed class TrickplayPreviewEncoderSpecs
         using var destination = new MemoryStream();
         Assert.True(bitmap.Encode(destination, SKEncodedImageFormat.Jpeg, quality: 95));
         return destination.ToArray();
+    }
+
+    private static async Task AssertFullDecodeCapacityAvailableAsync(
+        TrickplayPreviewEncoder encoder,
+        ResolvedPreviewSource source)
+    {
+        using var blocked = new CountdownEvent(4);
+        using var release = new ManualResetEventSlim();
+        BlockingWriteStream[] destinations = Enumerable.Range(0, 4)
+            .Select(_ => new BlockingWriteStream(blocked, release))
+            .ToArray();
+        Task<PreviewEncodingTelemetry>[] owners = destinations
+            .Select(destination => Task.Run(
+                () => encoder.EncodeAsync(source, destination, CancellationToken.None)))
+            .ToArray();
+
+        try
+        {
+            Assert.True(blocked.Wait(TimeSpan.FromSeconds(10)));
+        }
+        finally
+        {
+            release.Set();
+            await Task.WhenAll(owners).WaitAsync(TimeSpan.FromSeconds(10));
+            foreach (BlockingWriteStream destination in destinations)
+            {
+                destination.Dispose();
+            }
+        }
     }
 
     private static void AssertPixelsAgree(SKBitmap source, SKBitmap preview, int row, int column)
