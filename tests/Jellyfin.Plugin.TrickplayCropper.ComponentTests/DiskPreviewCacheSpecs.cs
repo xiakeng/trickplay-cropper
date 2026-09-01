@@ -448,7 +448,7 @@ public sealed class DiskPreviewCacheSpecs
                     (_, _) => throw new InvalidOperationException("A buffered entry must remain owned."),
                     CancellationToken.None);
                 Assert.False(entryWaiter.IsCompleted);
-                pruningLease = activeFixture.TreeLock
+                pruningLease = activeFixture.Coordination
                     .AcquireExclusiveAsync(CancellationToken.None)
                     .AsTask();
                 Assert.False(pruningLease.IsCompleted);
@@ -524,7 +524,7 @@ public sealed class DiskPreviewCacheSpecs
         private TemporaryCacheFixture(
             string temporaryDirectory,
             PreviewIdentity identity,
-            CacheTreeLock treeLock)
+            PreviewCacheCoordination coordination)
         {
             this.temporaryDirectory = temporaryDirectory;
             Identity = identity;
@@ -533,11 +533,11 @@ public sealed class DiskPreviewCacheSpecs
                 "Jellyfin.Plugin.TrickplayCropper",
                 "preview-v1",
                 identity.RelativePath);
-            TreeLock = treeLock;
+            Coordination = coordination;
             Cache = new DiskPreviewCache(
                 CreateApplicationPaths(temporaryDirectory),
                 TimeProvider.System,
-                treeLock);
+                coordination);
         }
 
         public DiskPreviewCache Cache { get; }
@@ -546,7 +546,7 @@ public sealed class DiskPreviewCacheSpecs
 
         public PreviewIdentity Identity { get; }
 
-        public CacheTreeLock TreeLock { get; }
+        public PreviewCacheCoordination Coordination { get; }
 
         public static TemporaryCacheFixture Create()
         {
@@ -561,8 +561,8 @@ public sealed class DiskPreviewCacheSpecs
                 $"trickplay-cache-{Guid.NewGuid():N}");
             Directory.CreateDirectory(temporaryDirectory);
             PreviewIdentity identity = CreateIdentity();
-            var treeLock = new CacheTreeLock(checkpointObserver);
-            return new TemporaryCacheFixture(temporaryDirectory, identity, treeLock);
+            var coordination = new PreviewCacheCoordination(checkpointObserver);
+            return new TemporaryCacheFixture(temporaryDirectory, identity, coordination);
         }
 
         public void Dispose()

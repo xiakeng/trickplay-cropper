@@ -13,7 +13,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
     private const string PluginDirectoryName = "Jellyfin.Plugin.TrickplayCropper";
 
     private readonly string cacheRoot;
-    private readonly CacheTreeLock cacheTreeLock;
+    private readonly PreviewCacheCoordination coordination;
     private readonly PreviewEntryLockRegistry entryLocks;
     private readonly StringComparison pathComparison;
     private readonly TimeProvider timeProvider;
@@ -22,20 +22,20 @@ internal sealed class DiskPreviewCache : IPreviewCache
     /// Initializes a new instance of the <see cref="DiskPreviewCache"/> class.
     /// </summary>
     public DiskPreviewCache(IApplicationPaths applicationPaths, TimeProvider timeProvider)
-        : this(applicationPaths, timeProvider, new CacheTreeLock())
+        : this(applicationPaths, timeProvider, new PreviewCacheCoordination())
     {
     }
 
     /// <summary>
-    /// Initializes a cache with an explicit Cache Tree coordination collaborator.
+    /// Initializes a cache with an explicit process-local coordination collaborator.
     /// </summary>
     /// <param name="applicationPaths">The Jellyfin application paths.</param>
     /// <param name="timeProvider">The source of cleanup time.</param>
-    /// <param name="cacheTreeLock">Coordinates Cache Tree ownership and deterministic boundaries.</param>
+    /// <param name="coordination">Coordinates Cache Tree ownership and deterministic boundaries.</param>
     internal DiskPreviewCache(
         IApplicationPaths applicationPaths,
         TimeProvider timeProvider,
-        CacheTreeLock cacheTreeLock)
+        PreviewCacheCoordination coordination)
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
@@ -51,7 +51,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
             pathComparison = StringComparison.Ordinal;
         }
 
-        this.cacheTreeLock = cacheTreeLock;
+        this.coordination = coordination;
         entryLocks = new PreviewEntryLockRegistry(pathComparer);
         this.timeProvider = timeProvider;
     }
@@ -64,17 +64,17 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cancellationToken.ThrowIfCancellationRequested();
         string finalPath = GetFinalPath(identity);
-        using IDisposable treeLease = await cacheTreeLock
+        using IDisposable treeLease = await coordination
             .AcquireSharedAsync(cancellationToken)
             .ConfigureAwait(false);
-        cacheTreeLock.Observe(PreviewCacheCheckpoint.TreeLeaseAcquired);
+        coordination.Observe(PreviewCacheCheckpoint.TreeLeaseAcquired);
         using IDisposable entryLease = await entryLocks
             .AcquireAsync(finalPath, cancellationToken)
             .ConfigureAwait(false);
-        cacheTreeLock.Observe(PreviewCacheCheckpoint.EntryLeaseAcquired);
+        coordination.Observe(PreviewCacheCheckpoint.EntryLeaseAcquired);
         PreviewCacheResult result = await GetOrCreateOwnedAsync(finalPath, writer, cancellationToken)
             .ConfigureAwait(false);
-        cacheTreeLock.Observe(PreviewCacheCheckpoint.ResponseBuffered);
+        coordination.Observe(PreviewCacheCheckpoint.ResponseBuffered);
         return result;
     }
 
@@ -144,7 +144,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
             return (existingContent, PreviewCacheDisposition.Hit);
         }
 
-        cacheTreeLock.Observe(PreviewCacheCheckpoint.BeforePublication);
+        coordination.Observe(PreviewCacheCheckpoint.BeforePublication);
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
@@ -155,7 +155,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
             return await ReadWinningPublicationAsync(finalPath, exception, cancellationToken).ConfigureAwait(false);
         }
 
-        cacheTreeLock.Observe(PreviewCacheCheckpoint.AfterPublication);
+        coordination.Observe(PreviewCacheCheckpoint.AfterPublication);
         cancellationToken.ThrowIfCancellationRequested();
         byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
