@@ -29,7 +29,7 @@ public sealed class ReleaseContractSpecs
     }
 
     [Fact]
-    public void ProductionProjectUsesTheApprovedAssemblyAndRuntimeBoundary()
+    public void ProductionProjectUsesTheApprovedRuntimeContract()
     {
         XDocument project = XDocument.Load(GetPath(
             "src/Jellyfin.Plugin.TrickplayCropper/Jellyfin.Plugin.TrickplayCropper.csproj"));

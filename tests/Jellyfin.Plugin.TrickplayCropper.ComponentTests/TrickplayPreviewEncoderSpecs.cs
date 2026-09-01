@@ -133,6 +133,8 @@ public sealed class TrickplayPreviewEncoderSpecs
     [Theory]
     [InlineData(InvalidCropInput.NegativeX)]
     [InlineData(InvalidCropInput.NegativeY)]
+    [InlineData(InvalidCropInput.NegativeWidth)]
+    [InlineData(InvalidCropInput.NegativeHeight)]
     [InlineData(InvalidCropInput.ZeroWidth)]
     [InlineData(InvalidCropInput.ZeroHeight)]
     public async Task RejectsEveryNonPositiveCropInput(InvalidCropInput input)
@@ -142,6 +144,8 @@ public sealed class TrickplayPreviewEncoderSpecs
         {
             InvalidCropInput.NegativeX => fixture.Source.Selection with { CropX = -1 },
             InvalidCropInput.NegativeY => fixture.Source.Selection with { CropY = -1 },
+            InvalidCropInput.NegativeWidth => fixture.Source.Selection with { CropWidth = -1 },
+            InvalidCropInput.NegativeHeight => fixture.Source.Selection with { CropHeight = -1 },
             InvalidCropInput.ZeroWidth => fixture.Source.Selection with { CropWidth = 0 },
             InvalidCropInput.ZeroHeight => fixture.Source.Selection with { CropHeight = 0 },
             _ => throw new ArgumentOutOfRangeException(nameof(input), input, "Unknown invalid crop input."),
@@ -220,7 +224,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     }
 
     [Fact]
-    public async Task CancelsBetweenScanlineBatchesAndReleasesThePermit()
+    public async Task CancelsBetweenScanlineBatchesWhileReleasingThePermit()
     {
         var metadata = new TrickplayMetadata(CellWidth, 128, 1_000, 1, 1, 1);
         using SourceFixture fixture = SourceFixture.Create(CreateTallJpeg(128), metadata, 0, 0);
@@ -246,7 +250,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     }
 
     [Fact]
-    public async Task CancelsBetweenSkipBatchesAndReleasesThePermit()
+    public async Task CancelsBetweenSkipBatchesWhileReleasingThePermit()
     {
         var metadata = new TrickplayMetadata(CellWidth, 64, 1_000, 1, 3, 3);
         using SourceFixture fixture = SourceFixture.Create(CreateTallJpeg(192), metadata, 2, 0);
@@ -272,7 +276,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     }
 
     [Fact]
-    public async Task CancelsImmediatelyBeforeEncodeAndReleasesThePermit()
+    public async Task CancelsImmediatelyBeforeEncodeWhileReleasingThePermit()
     {
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 0, 1);
         using var cancellation = new CancellationTokenSource();
@@ -525,6 +529,8 @@ public sealed class TrickplayPreviewEncoderSpecs
     {
         NegativeX,
         NegativeY,
+        NegativeWidth,
+        NegativeHeight,
         ZeroWidth,
         ZeroHeight,
     }
