@@ -1359,12 +1359,11 @@ public sealed class DiskPreviewCacheSpecs
         private PluginDirectoryReparseFixture(
             TemporaryCacheFixture cacheFixture,
             string externalDirectory,
-            string externalEntryPath,
             RecordingLogger<DiskPreviewCache> logger)
         {
             CacheFixture = cacheFixture;
             this.externalDirectory = externalDirectory;
-            ExternalEntryPath = externalEntryPath;
+            ExternalEntryPath = Path.Combine(externalDirectory, "f0000000000.jpg");
             Logger = logger;
         }
 
@@ -1380,19 +1379,18 @@ public sealed class DiskPreviewCacheSpecs
                 Path.GetTempPath(),
                 $"trickplay-plugin-external-{Guid.NewGuid():N}");
             Directory.CreateDirectory(externalDirectory);
-            string externalEntryPath = Path.Combine(externalDirectory, "f0000000000.jpg");
-            await File.WriteAllBytesAsync(externalEntryPath, [9], CancellationToken.None);
             var logger = new RecordingLogger<DiskPreviewCache>();
             TemporaryCacheFixture cacheFixture = TemporaryCacheFixture.Create(
                 static _ => { },
                 TimeProvider.System,
                 logger);
-            Directory.CreateSymbolicLink(cacheFixture.PluginRoot, externalDirectory);
-            return new PluginDirectoryReparseFixture(
+            var fixture = new PluginDirectoryReparseFixture(
                 cacheFixture,
                 externalDirectory,
-                externalEntryPath,
                 logger);
+            await File.WriteAllBytesAsync(fixture.ExternalEntryPath, [9], CancellationToken.None);
+            Directory.CreateSymbolicLink(cacheFixture.PluginRoot, externalDirectory);
+            return fixture;
         }
 
         public void Dispose()
