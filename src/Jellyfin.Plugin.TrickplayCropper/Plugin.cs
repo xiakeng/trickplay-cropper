@@ -1,6 +1,6 @@
-namespace Jellyfin.Plugin.TrickplayCropper;
-
 using MediaBrowser.Common.Plugins;
+
+namespace Jellyfin.Plugin.TrickplayCropper;
 
 public sealed class Plugin : BasePlugin
 {

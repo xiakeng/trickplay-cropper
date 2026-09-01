@@ -23,12 +23,11 @@ This repository uses a single-context domain docs layout. See `docs/agents/domai
 
 ### C# coding standard
 
-For C# code changes, apply `docs/agents/csharp-guidelines/SKILL.md`, then follow
-`docs/agents/csharp-coding-standard.md` and
+For C# code changes, apply `docs/agents/csharp-guidelines/SKILL.md` and
 `docs/agents/csharp-guidelines-overrides.md`.
 
 ### C# code review
 
-For C# code reviews, apply `docs/agents/csharp-guidelines/SKILL.md`, then follow
-`docs/agents/csharp-code-review.md` and
+For C# code reviews, apply `docs/agents/csharp-guidelines/SKILL.md`,
+`docs/agents/csharp-code-review.md`, and
 `docs/agents/csharp-guidelines-overrides.md`.

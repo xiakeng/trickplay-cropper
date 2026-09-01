@@ -1,11 +1,11 @@
-namespace TrickplayCropper.PackageValidator;
-
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
+namespace TrickplayCropper.PackageValidator;
 
 public static class PackageValidator
 {
@@ -29,64 +29,16 @@ public static class PackageValidator
     {
         var name = RequireValue("build manifest name", manifest.Name);
         var guidText = RequireValue("build manifest guid", manifest.Guid);
-        if (!Guid.TryParse(guidText, out var pluginGuid))
-        {
-            throw new PackageValidationException(
-                $"Build manifest guid must be a valid GUID, got {guidText}.");
-        }
-
+        var pluginGuid = ParsePluginGuid(guidText);
         var versionText = RequireValue("build manifest version", manifest.Version);
-        if (!Version.TryParse(versionText, out var pluginVersion)
-            || pluginVersion.Revision < 0)
-        {
-            throw new PackageValidationException(
-                $"Build manifest version must contain four numeric components, got {versionText}.");
-        }
-
+        var pluginVersion = ParsePluginVersion(versionText);
         var targetAbi = RequireValue("build manifest targetAbi", manifest.TargetAbi);
         var framework = RequireValue("build manifest framework", manifest.Framework);
         var targetFrameworkName = GetTargetFrameworkName(framework);
-
-        if (manifest.Artifacts is null || manifest.Artifacts.Length == 0)
-        {
-            throw new PackageValidationException("Build manifest artifacts must not be empty.");
-        }
-
-        var artifacts = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var artifact in manifest.Artifacts)
-        {
-            if (string.IsNullOrWhiteSpace(artifact)
-                || artifact.Contains('/')
-                || artifact.Contains('\\')
-                || !string.Equals(artifact, Path.GetFileName(artifact), StringComparison.Ordinal)
-                || string.Equals(artifact, MetadataFileName, StringComparison.Ordinal))
-            {
-                throw new PackageValidationException(
-                    $"Build manifest artifact must be a flat package member, got {artifact ?? "<null>"}.");
-            }
-
-            if (!artifacts.Add(artifact))
-            {
-                throw new PackageValidationException(
-                    $"Build manifest contains duplicate artifact {artifact}.");
-            }
-        }
-
-        var assemblyArtifacts = artifacts
-            .Where(artifact => artifact.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (assemblyArtifacts.Length != 1)
-        {
-            throw new PackageValidationException(
-                "Build manifest must contain exactly one assembly artifact.");
-        }
-
-        var assemblyFileName = assemblyArtifacts[0];
+        var artifacts = CreateArtifactSet(manifest.Artifacts);
+        var assemblyFileName = GetAssemblyArtifact(artifacts);
         var assemblyName = Path.GetFileNameWithoutExtension(assemblyFileName);
-        var expectedMembers = new HashSet<string>(artifacts, StringComparer.Ordinal)
-        {
-            MetadataFileName,
-        };
+        var expectedMembers = CreateExpectedMembers(artifacts);
 
         return new PackageContract(
             name,
@@ -99,6 +51,85 @@ public static class PackageValidator
             assemblyFileName,
             assemblyName,
             expectedMembers);
+    }
+
+    private static Guid ParsePluginGuid(string guidText)
+    {
+        if (!Guid.TryParse(guidText, out var pluginGuid))
+        {
+            throw new PackageValidationException(
+                $"Build manifest guid must be a valid GUID, got {guidText}.");
+        }
+
+        return pluginGuid;
+    }
+
+    private static Version ParsePluginVersion(string versionText)
+    {
+        if (!Version.TryParse(versionText, out var pluginVersion)
+            || pluginVersion.Revision < 0)
+        {
+            throw new PackageValidationException(
+                $"Build manifest version must contain four numeric components, got {versionText}.");
+        }
+
+        return pluginVersion;
+    }
+
+    private static HashSet<string> CreateArtifactSet(string[]? manifestArtifacts)
+    {
+        if (manifestArtifacts is null || manifestArtifacts.Length == 0)
+        {
+            throw new PackageValidationException("Build manifest artifacts must not be empty.");
+        }
+
+        var artifacts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var artifact in manifestArtifacts)
+        {
+            ValidateArtifact(artifact);
+            if (!artifacts.Add(artifact))
+            {
+                throw new PackageValidationException(
+                    $"Build manifest contains duplicate artifact {artifact}.");
+            }
+        }
+
+        return artifacts;
+    }
+
+    private static void ValidateArtifact(string artifact)
+    {
+        if (string.IsNullOrWhiteSpace(artifact)
+            || artifact.Contains('/')
+            || artifact.Contains('\\')
+            || !string.Equals(artifact, Path.GetFileName(artifact), StringComparison.Ordinal)
+            || string.Equals(artifact, MetadataFileName, StringComparison.Ordinal))
+        {
+            throw new PackageValidationException(
+                $"Build manifest artifact must be a flat package member, got {artifact ?? "<null>"}.");
+        }
+    }
+
+    private static string GetAssemblyArtifact(IEnumerable<string> artifacts)
+    {
+        var assemblyArtifacts = artifacts
+            .Where(artifact => artifact.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (assemblyArtifacts.Length != 1)
+        {
+            throw new PackageValidationException(
+                "Build manifest must contain exactly one assembly artifact.");
+        }
+
+        return assemblyArtifacts[0];
+    }
+
+    private static HashSet<string> CreateExpectedMembers(IEnumerable<string> artifacts)
+    {
+        return new HashSet<string>(artifacts, StringComparer.Ordinal)
+        {
+            MetadataFileName,
+        };
     }
 
     private static void ValidateArchiveMembers(
@@ -150,30 +181,8 @@ public static class PackageValidator
 
         try
         {
-            using (var source = assemblyEntry.Open())
-            using (var destination = File.Create(temporaryAssemblyPath))
-            {
-                source.CopyTo(destination);
-            }
-
-            var assemblyIdentity = AssemblyName.GetAssemblyName(temporaryAssemblyPath);
-            RequireEqual("assembly name", assemblyIdentity.Name, contract.AssemblyName);
-            if (assemblyIdentity.Version != contract.Version)
-            {
-                throw new PackageValidationException(
-                    $"Assembly version must be {contract.Version}, got {assemblyIdentity.Version}.");
-            }
-
-            var fileVersion = FileVersionInfo.GetVersionInfo(temporaryAssemblyPath).FileVersion;
-            RequireEqual("file version", fileVersion, contract.VersionText);
-
-            var assembly = Assembly.Load(File.ReadAllBytes(temporaryAssemblyPath));
-            var frameworkName = assembly
-                .GetCustomAttribute<TargetFrameworkAttribute>()
-                ?.FrameworkName;
-            RequireEqual("assembly target framework", frameworkName, contract.TargetFrameworkName);
-
-            ValidatePluginIdentity(assembly, contract);
+            CopyArchiveEntry(assemblyEntry, temporaryAssemblyPath);
+            ValidateAssembly(temporaryAssemblyPath, contract);
         }
         catch (PackageValidationException)
         {
@@ -193,6 +202,41 @@ public static class PackageValidator
         finally
         {
             File.Delete(temporaryAssemblyPath);
+        }
+    }
+
+    private static void CopyArchiveEntry(ZipArchiveEntry assemblyEntry, string temporaryAssemblyPath)
+    {
+        using var source = assemblyEntry.Open();
+        using var destination = File.Create(temporaryAssemblyPath);
+        source.CopyTo(destination);
+    }
+
+    private static void ValidateAssembly(string temporaryAssemblyPath, PackageContract contract)
+    {
+        var assemblyIdentity = AssemblyName.GetAssemblyName(temporaryAssemblyPath);
+        RequireEqual("assembly name", assemblyIdentity.Name, contract.AssemblyName);
+        ValidateAssemblyVersion(assemblyIdentity, contract);
+
+        var fileVersion = FileVersionInfo.GetVersionInfo(temporaryAssemblyPath).FileVersion;
+        RequireEqual("file version", fileVersion, contract.VersionText);
+
+        var assembly = Assembly.Load(File.ReadAllBytes(temporaryAssemblyPath));
+        var frameworkName = assembly
+            .GetCustomAttribute<TargetFrameworkAttribute>()
+            ?.FrameworkName;
+        RequireEqual("assembly target framework", frameworkName, contract.TargetFrameworkName);
+        ValidatePluginIdentity(assembly, contract);
+    }
+
+    private static void ValidateAssemblyVersion(
+        AssemblyName assemblyIdentity,
+        PackageContract contract)
+    {
+        if (assemblyIdentity.Version != contract.Version)
+        {
+            throw new PackageValidationException(
+                $"Assembly version must be {contract.Version}, got {assemblyIdentity.Version}.");
         }
     }
 

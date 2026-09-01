@@ -11,9 +11,9 @@ indent_style = space
 indent_size = 4
 tab_width = 4
 
-# Namespace and using placement follows the established repository style.
+# Namespace and using placement follows CSharpGuidelines.
 csharp_style_namespace_declarations = file_scoped:warning
-csharp_using_directive_placement = inside_namespace:warning
+csharp_using_directive_placement = outside_namespace:warning
 dotnet_sort_system_directives_first = true
 dotnet_separate_import_directive_groups = false
 
@@ -87,13 +87,9 @@ dotnet_naming_rule.constants_are_pascal_case.severity = warning
 dotnet_naming_rule.constants_are_pascal_case.symbols = constants
 dotnet_naming_rule.constants_are_pascal_case.style = pascal_case
 
-dotnet_naming_rule.private_static_fields_use_s_prefix.severity = warning
-dotnet_naming_rule.private_static_fields_use_s_prefix.symbols = private_static_fields
-dotnet_naming_rule.private_static_fields_use_s_prefix.style = static_field_style
-
-dotnet_naming_rule.private_fields_use_underscore.severity = warning
-dotnet_naming_rule.private_fields_use_underscore.symbols = private_fields
-dotnet_naming_rule.private_fields_use_underscore.style = instance_field_style
+dotnet_naming_rule.private_fields_are_camel_case.severity = warning
+dotnet_naming_rule.private_fields_are_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_are_camel_case.style = camel_case
 
 dotnet_naming_rule.parameters_are_camel_case.severity = warning
 dotnet_naming_rule.parameters_are_camel_case.symbols = parameters
@@ -114,9 +110,6 @@ dotnet_naming_symbols.non_private_fields.applicable_kinds = field
 dotnet_naming_symbols.non_private_fields.applicable_accessibilities = public, internal, protected, protected_internal, private_protected
 dotnet_naming_symbols.constants.applicable_kinds = field, local
 dotnet_naming_symbols.constants.required_modifiers = const
-dotnet_naming_symbols.private_static_fields.applicable_kinds = field
-dotnet_naming_symbols.private_static_fields.applicable_accessibilities = private
-dotnet_naming_symbols.private_static_fields.required_modifiers = static
 dotnet_naming_symbols.private_fields.applicable_kinds = field
 dotnet_naming_symbols.private_fields.applicable_accessibilities = private
 dotnet_naming_symbols.parameters.applicable_kinds = parameter
@@ -127,10 +120,17 @@ dotnet_naming_style.interface_style.required_prefix = I
 dotnet_naming_style.interface_style.capitalization = pascal_case
 dotnet_naming_style.pascal_case.capitalization = pascal_case
 dotnet_naming_style.camel_case.capitalization = camel_case
-dotnet_naming_style.static_field_style.required_prefix = s_
-dotnet_naming_style.static_field_style.capitalization = camel_case
-dotnet_naming_style.instance_field_style.required_prefix = _
-dotnet_naming_style.instance_field_style.capitalization = camel_case
+
+[tests/**/*.cs]
+dotnet_naming_rule.public_test_classes_end_in_specs.severity = warning
+dotnet_naming_rule.public_test_classes_end_in_specs.symbols = public_test_classes
+dotnet_naming_rule.public_test_classes_end_in_specs.style = specs_suffix
+
+dotnet_naming_symbols.public_test_classes.applicable_kinds = class
+dotnet_naming_symbols.public_test_classes.applicable_accessibilities = public
+
+dotnet_naming_style.specs_suffix.required_suffix = Specs
+dotnet_naming_style.specs_suffix.capitalization = pascal_case
 
 [*.{csproj,props,targets,slnx,yml,yaml,json}]
 indent_style = space

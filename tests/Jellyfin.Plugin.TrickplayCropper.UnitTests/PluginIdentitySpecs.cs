@@ -1,8 +1,8 @@
-namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
-
 using Xunit;
 
-public sealed class PluginIdentityTests
+namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
+
+public sealed class PluginIdentitySpecs
 {
     [Fact]
     public void IdentityUsesTheInstallContract()
