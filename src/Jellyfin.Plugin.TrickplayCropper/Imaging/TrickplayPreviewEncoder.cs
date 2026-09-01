@@ -14,6 +14,26 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
     private const string DecodePath = "SUBSET";
     private const int ScanlineBatchSize = 64;
     private readonly SemaphoreSlim decodePermits = new(DecodePermitCount, DecodePermitCount);
+    private readonly Func<PreviewEncodingCheckpoint, int, int> checkpointObserver;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TrickplayPreviewEncoder"/> class.
+    /// </summary>
+    public TrickplayPreviewEncoder()
+        : this(static (_, value) => value)
+    {
+    }
+
+    /// <summary>
+    /// Initializes an encoder whose native boundaries can be observed by component tests.
+    /// </summary>
+    /// <param name="checkpointObserver">
+    /// Observes a boundary and returns the scanline count that the encoder must validate.
+    /// </param>
+    internal TrickplayPreviewEncoder(Func<PreviewEncodingCheckpoint, int, int> checkpointObserver)
+    {
+        this.checkpointObserver = checkpointObserver;
+    }
 
     /// <inheritdoc />
     public async Task<PreviewEncodingTelemetry> EncodeAsync(
@@ -40,7 +60,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
         decodePermits.Dispose();
     }
 
-    private static PreviewEncodingTelemetry Encode(
+    private PreviewEncodingTelemetry Encode(
         ResolvedPreviewSource source,
         Stream destination,
         CancellationToken cancellationToken)
@@ -57,6 +77,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
             ReadCrop(codec, bitmap, source, cancellationToken);
             TimeSpan decodeDuration = Stopwatch.GetElapsedTime(decodeStarted);
 
+            _ = checkpointObserver(PreviewEncodingCheckpoint.BeforeEncode, 0);
             cancellationToken.ThrowIfCancellationRequested();
             long encodeStarted = Stopwatch.GetTimestamp();
             EncodeJpeg(bitmap, destination, source, codec);
@@ -241,7 +262,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
         }
     }
 
-    private static void ReadCrop(
+    private void ReadCrop(
         SKCodec codec,
         SKBitmap bitmap,
         ResolvedPreviewSource source,
@@ -255,6 +276,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
             int byteOffset = checked(writtenRows * bitmap.RowBytes);
             IntPtr destination = IntPtr.Add(bitmap.GetPixels(), byteOffset);
             int decodedRows = codec.GetScanlines(destination, batchSize, bitmap.RowBytes);
+            decodedRows = checkpointObserver(PreviewEncodingCheckpoint.AfterReadBatch, decodedRows);
             cancellationToken.ThrowIfCancellationRequested();
             if (decodedRows != batchSize)
             {
@@ -406,6 +428,22 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
                 Failure = exception;
             }
         }
+    }
+
+    /// <summary>
+    /// Identifies a deterministic boundary around native image processing.
+    /// </summary>
+    internal enum PreviewEncodingCheckpoint
+    {
+        /// <summary>
+        /// Occurs after one native scanline read and before its cancellation and completeness checks.
+        /// </summary>
+        AfterReadBatch,
+
+        /// <summary>
+        /// Occurs after decoding and immediately before the final pre-encode cancellation check.
+        /// </summary>
+        BeforeEncode,
     }
 
     private static PreviewFailureDetails CreateFailureDetails(

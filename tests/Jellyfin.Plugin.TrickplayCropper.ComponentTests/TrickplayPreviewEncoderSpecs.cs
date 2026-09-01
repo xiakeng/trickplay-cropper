@@ -131,6 +131,23 @@ public sealed class TrickplayPreviewEncoderSpecs
     }
 
     [Fact]
+    public async Task RejectsReportedShortReadWithoutPublishingBytes()
+    {
+        using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 1, 2);
+        using var encoder = new TrickplayPreviewEncoder(
+            (checkpoint, decodedRows) => checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.AfterReadBatch
+                ? decodedRows - 1
+                : decodedRows);
+        using var destination = new MemoryStream();
+
+        PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
+            () => encoder.EncodeAsync(fixture.Source, destination, CancellationToken.None));
+
+        Assert.Equal("SourceSpriteRowsRead", exception.Details.FailedValidation);
+        Assert.Equal(0, destination.Length);
+    }
+
+    [Fact]
     public async Task RejectsCorruptJpegWithoutPublishingBytes()
     {
         byte[] sourceBytes = DecodeFixture(BaselineJpeg);
@@ -139,9 +156,10 @@ public sealed class TrickplayPreviewEncoderSpecs
         using var encoder = new TrickplayPreviewEncoder();
         using var destination = new MemoryStream();
 
-        await Assert.ThrowsAsync<PreviewStageException>(
+        PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
             () => encoder.EncodeAsync(fixture.Source, destination, CancellationToken.None));
 
+        Assert.Equal("SourceSpriteCodecCreated", exception.Details.FailedValidation);
         Assert.Equal(0, destination.Length);
     }
 
@@ -172,6 +190,65 @@ public sealed class TrickplayPreviewEncoderSpecs
             () => encoder.EncodeAsync(fixture.Source, destination, cancellation.Token));
 
         Assert.Equal(0, destination.Length);
+    }
+
+    [Fact]
+    public async Task CancelsBetweenScanlineBatchesAndReleasesThePermit()
+    {
+        var metadata = new TrickplayMetadata(CellWidth, 128, 1_000, 1, 1, 1);
+        using SourceFixture fixture = SourceFixture.Create(CreateTallJpeg(), metadata, 0, 0);
+        using var cancellation = new CancellationTokenSource();
+        int completedReadBatches = 0;
+        using var encoder = new TrickplayPreviewEncoder(
+            (checkpoint, decodedRows) =>
+            {
+                if (checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.AfterReadBatch
+                    && ++completedReadBatches == 1)
+                {
+                    cancellation.Cancel();
+                }
+
+                return decodedRows;
+            });
+        using var destination = new MemoryStream();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => encoder.EncodeAsync(fixture.Source, destination, cancellation.Token));
+
+        Assert.Equal(1, completedReadBatches);
+        Assert.Equal(0, destination.Length);
+        using var retryDestination = new MemoryStream();
+        await encoder.EncodeAsync(fixture.Source, retryDestination, CancellationToken.None);
+        Assert.True(retryDestination.Length > 0);
+    }
+
+    [Fact]
+    public async Task CancelsImmediatelyBeforeEncodeAndReleasesThePermit()
+    {
+        using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 0, 1);
+        using var cancellation = new CancellationTokenSource();
+        bool reachedBeforeEncode = false;
+        using var encoder = new TrickplayPreviewEncoder(
+            (checkpoint, decodedRows) =>
+            {
+                if (checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.BeforeEncode)
+                {
+                    reachedBeforeEncode = true;
+                    cancellation.Cancel();
+                }
+
+                return decodedRows;
+            });
+        using var destination = new MemoryStream();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => encoder.EncodeAsync(fixture.Source, destination, cancellation.Token));
+
+        Assert.True(reachedBeforeEncode);
+        Assert.Equal(0, destination.Length);
+        using var retryDestination = new MemoryStream();
+        await encoder.EncodeAsync(fixture.Source, retryDestination, CancellationToken.None);
+        Assert.True(retryDestination.Length > 0);
     }
 
     [Fact]
@@ -240,6 +317,15 @@ public sealed class TrickplayPreviewEncoderSpecs
         };
     }
 
+    private static byte[] CreateTallJpeg()
+    {
+        using var bitmap = new SKBitmap(CellWidth, 128, SKColorType.Rgba8888, SKAlphaType.Opaque);
+        bitmap.Erase(SKColors.CornflowerBlue);
+        using var destination = new MemoryStream();
+        Assert.True(bitmap.Encode(destination, SKEncodedImageFormat.Jpeg, quality: 95));
+        return destination.ToArray();
+    }
+
     private static void AssertPixelsAgree(SKBitmap source, SKBitmap preview, int row, int column)
     {
         int[] sampleCoordinatesX = [4, 16, 27];
@@ -271,11 +357,20 @@ public sealed class TrickplayPreviewEncoderSpecs
 
         public static SourceFixture Create(byte[] sourceBytes, int row, int column)
         {
+            var metadata = new TrickplayMetadata(CellWidth, CellHeight, 1_000, 3, 2, 6);
+            return Create(sourceBytes, metadata, row, column);
+        }
+
+        public static SourceFixture Create(
+            byte[] sourceBytes,
+            TrickplayMetadata metadata,
+            int row,
+            int column)
+        {
             string directoryPath = Path.Combine(Path.GetTempPath(), $"trickplay-encoder-{Guid.NewGuid():N}");
             Directory.CreateDirectory(directoryPath);
             string sourcePath = Path.Combine(directoryPath, "source-sprite");
             File.WriteAllBytes(sourcePath, sourceBytes);
-            var metadata = new TrickplayMetadata(CellWidth, CellHeight, 1_000, 3, 2, 6);
             int frameIndex = (row * metadata.TileWidth) + column;
             FrameSelection selection = FrameSelection.Create(
                 metadata,
