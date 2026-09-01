@@ -22,6 +22,17 @@ contract or is identified as unintended scope.
 - Apply every relevant CSharpGuidelines rule, leaving deterministic diagnostics
   to configured tooling unless the configuration was bypassed or is incorrect.
 - Confirm tests independently prove the changed behavior at stable seams.
+- Prefer the simplest design that fully satisfies the requirement.
+- Keep one authoritative source for each fact; derive copies, fixtures, and
+  expectations from it.
+- Avoid duplication, speculative abstractions, hidden side effects, and
+  unnecessary dependencies.
+- Make invalid states, boundaries, and failure paths explicit.
+- Use names that reveal intent. Comments explain why, not what.
+- Preserve existing behavior unless the specification explicitly changes it.
+- Review the final diff for design, correctness, simplicity, tests, naming,
+  comments, style, and documentation.
+- After non-mechanical review fixes, review the final HEAD again.
 
 Review is complete when every changed execution path and applicable guideline
 category has been considered.
@@ -56,9 +67,3 @@ are no actionable findings, say so explicitly.
 Run the configured formatter, production-equivalent build, and relevant tests
 when possible. Report only checks that ran, followed by residual risks and
 unperformed checks.
-
-## Attribution
-
-This contract is informed by the CC BY 4.0 licensed
-[Microsoft Engineering Fundamentals reviewer guidance](https://microsoft.github.io/code-with-engineering-playbook/code-reviews/process-guidance/reviewer-guidance/)
-and [C# review checklist](https://microsoft.github.io/code-with-engineering-playbook/code-reviews/recipes/csharp/).

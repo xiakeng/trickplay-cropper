@@ -28,6 +28,4 @@ For C# code changes, apply `docs/agents/csharp-guidelines/SKILL.md` and
 
 ### C# code review
 
-For C# code reviews, apply `docs/agents/csharp-guidelines/SKILL.md`,
-`docs/agents/csharp-code-review.md`, and
-`docs/agents/csharp-guidelines-overrides.md`.
+For C# code reviews, follow `docs/agents/csharp-code-review.md`.
