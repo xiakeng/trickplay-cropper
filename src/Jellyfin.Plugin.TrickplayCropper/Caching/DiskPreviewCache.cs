@@ -13,30 +13,29 @@ internal sealed class DiskPreviewCache : IPreviewCache
     private const string PluginDirectoryName = "Jellyfin.Plugin.TrickplayCropper";
 
     private readonly string cacheRoot;
-    private readonly CacheTreeLock cacheTreeLock = new();
+    private readonly CacheTreeLock cacheTreeLock;
     private readonly PreviewEntryLockRegistry entryLocks;
     private readonly StringComparison pathComparison;
-    private readonly Action<PreviewCacheCheckpoint, CacheTreeLock> checkpointObserver;
     private readonly TimeProvider timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiskPreviewCache"/> class.
     /// </summary>
     public DiskPreviewCache(IApplicationPaths applicationPaths, TimeProvider timeProvider)
-        : this(applicationPaths, timeProvider, static (_, _) => { })
+        : this(applicationPaths, timeProvider, new CacheTreeLock())
     {
     }
 
     /// <summary>
-    /// Initializes a cache whose coordination and publication boundaries can be observed by component tests.
+    /// Initializes a cache with an explicit Cache Tree coordination collaborator.
     /// </summary>
     /// <param name="applicationPaths">The Jellyfin application paths.</param>
     /// <param name="timeProvider">The source of cleanup time.</param>
-    /// <param name="checkpointObserver">Observes deterministic cache coordination boundaries.</param>
+    /// <param name="cacheTreeLock">Coordinates Cache Tree ownership and deterministic boundaries.</param>
     internal DiskPreviewCache(
         IApplicationPaths applicationPaths,
         TimeProvider timeProvider,
-        Action<PreviewCacheCheckpoint, CacheTreeLock> checkpointObserver)
+        CacheTreeLock cacheTreeLock)
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
@@ -52,8 +51,8 @@ internal sealed class DiskPreviewCache : IPreviewCache
             pathComparison = StringComparison.Ordinal;
         }
 
+        this.cacheTreeLock = cacheTreeLock;
         entryLocks = new PreviewEntryLockRegistry(pathComparer);
-        this.checkpointObserver = checkpointObserver;
         this.timeProvider = timeProvider;
     }
 
@@ -68,14 +67,14 @@ internal sealed class DiskPreviewCache : IPreviewCache
         using IDisposable treeLease = await cacheTreeLock
             .AcquireSharedAsync(cancellationToken)
             .ConfigureAwait(false);
-        checkpointObserver(PreviewCacheCheckpoint.TreeLeaseAcquired, cacheTreeLock);
+        cacheTreeLock.Observe(PreviewCacheCheckpoint.TreeLeaseAcquired);
         using IDisposable entryLease = await entryLocks
             .AcquireAsync(finalPath, cancellationToken)
             .ConfigureAwait(false);
-        checkpointObserver(PreviewCacheCheckpoint.EntryLeaseAcquired, cacheTreeLock);
+        cacheTreeLock.Observe(PreviewCacheCheckpoint.EntryLeaseAcquired);
         PreviewCacheResult result = await GetOrCreateOwnedAsync(finalPath, writer, cancellationToken)
             .ConfigureAwait(false);
-        checkpointObserver(PreviewCacheCheckpoint.ResponseBuffered, cacheTreeLock);
+        cacheTreeLock.Observe(PreviewCacheCheckpoint.ResponseBuffered);
         return result;
     }
 
@@ -145,7 +144,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
             return (existingContent, PreviewCacheDisposition.Hit);
         }
 
-        checkpointObserver(PreviewCacheCheckpoint.BeforePublication, cacheTreeLock);
+        cacheTreeLock.Observe(PreviewCacheCheckpoint.BeforePublication);
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
@@ -156,7 +155,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
             return await ReadWinningPublicationAsync(finalPath, exception, cancellationToken).ConfigureAwait(false);
         }
 
-        checkpointObserver(PreviewCacheCheckpoint.AfterPublication, cacheTreeLock);
+        cacheTreeLock.Observe(PreviewCacheCheckpoint.AfterPublication);
         cancellationToken.ThrowIfCancellationRequested();
         byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
@@ -245,34 +244,4 @@ internal sealed class DiskPreviewCache : IPreviewCache
         return Path.Combine(directoryPath, $"{entryName}.{Guid.NewGuid():N}.tmp");
     }
 
-    /// <summary>
-    /// Identifies deterministic boundaries in Preview Cache Entry coordination and publication.
-    /// </summary>
-    internal enum PreviewCacheCheckpoint
-    {
-        /// <summary>
-        /// Occurs after shared Cache Tree ownership is acquired and before entry ownership is requested.
-        /// </summary>
-        TreeLeaseAcquired,
-
-        /// <summary>
-        /// Occurs after keyed Preview Cache Entry ownership is acquired.
-        /// </summary>
-        EntryLeaseAcquired,
-
-        /// <summary>
-        /// Occurs after the final-path recheck and immediately before no-overwrite publication.
-        /// </summary>
-        BeforePublication,
-
-        /// <summary>
-        /// Occurs immediately after this process publishes the final Preview Cache Entry.
-        /// </summary>
-        AfterPublication,
-
-        /// <summary>
-        /// Occurs after immutable response buffering and before entry and Cache Tree ownership are released.
-        /// </summary>
-        ResponseBuffered,
-    }
 }

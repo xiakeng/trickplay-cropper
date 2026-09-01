@@ -7,8 +7,26 @@ internal sealed class CacheTreeLock
 {
     private readonly LinkedList<Waiter> waiters = [];
     private readonly object syncRoot = new();
+    private readonly Action<PreviewCacheCheckpoint> checkpointObserver;
     private int activeReaders;
     private bool isWriterActive;
+
+    /// <summary>
+    /// Initializes a Cache Tree lock without boundary observation.
+    /// </summary>
+    public CacheTreeLock()
+        : this(static _ => { })
+    {
+    }
+
+    /// <summary>
+    /// Initializes a Cache Tree lock whose coordination boundaries can be observed by component tests.
+    /// </summary>
+    /// <param name="checkpointObserver">Observes deterministic cache coordination boundaries.</param>
+    internal CacheTreeLock(Action<PreviewCacheCheckpoint> checkpointObserver)
+    {
+        this.checkpointObserver = checkpointObserver;
+    }
 
     /// <summary>
     /// Acquires a shared Cache Tree lease for a request.
@@ -28,6 +46,15 @@ internal sealed class CacheTreeLock
     public ValueTask<IDisposable> AcquireExclusiveAsync(CancellationToken cancellationToken)
     {
         return AcquireAsync(LeaseKind.Exclusive, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reports a deterministic boundary while preserving Cache Tree ownership inside this collaborator.
+    /// </summary>
+    /// <param name="checkpoint">The boundary reached by the cache.</param>
+    public void Observe(PreviewCacheCheckpoint checkpoint)
+    {
+        checkpointObserver(checkpoint);
     }
 
     private ValueTask<IDisposable> AcquireAsync(LeaseKind kind, CancellationToken cancellationToken)

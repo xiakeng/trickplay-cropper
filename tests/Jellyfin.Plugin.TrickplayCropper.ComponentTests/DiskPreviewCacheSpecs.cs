@@ -38,9 +38,9 @@ public sealed class DiskPreviewCacheSpecs
         TemporaryCacheFixture? observedFixture = null;
         Task<PreviewCacheResult>? entryWaiter = null;
         bool deletedEntry = false;
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, _) =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
         {
-            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired && !deletedEntry)
+            if (checkpoint == PreviewCacheCheckpoint.EntryLeaseAcquired && !deletedEntry)
             {
                 deletedEntry = true;
                 TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
@@ -287,9 +287,9 @@ public sealed class DiskPreviewCacheSpecs
         byte[] generated = [1, 2, 3, 4];
         byte[] outsideWinner = [0xFF, 0xD8, 0xFF, 0xD9];
         TemporaryCacheFixture? observedFixture = null;
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, _) =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
         {
-            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.BeforePublication)
+            if (checkpoint == PreviewCacheCheckpoint.BeforePublication)
             {
                 TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
                 File.WriteAllBytes(activeFixture.FinalPath, outsideWinner);
@@ -391,9 +391,9 @@ public sealed class DiskPreviewCacheSpecs
     public async Task KeepsPublishedEntryWhenCancellationAbandonsResponse()
     {
         using var cancellation = new CancellationTokenSource();
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, _) =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
         {
-            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.AfterPublication)
+            if (checkpoint == PreviewCacheCheckpoint.AfterPublication)
             {
                 cancellation.Cancel();
             }
@@ -425,20 +425,20 @@ public sealed class DiskPreviewCacheSpecs
         bool observedTreeLease = false;
         bool observedEntryLease = false;
         bool startedWaiters = false;
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, treeLock) =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
         {
-            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.TreeLeaseAcquired)
+            if (checkpoint == PreviewCacheCheckpoint.TreeLeaseAcquired)
             {
                 observedTreeLease = true;
             }
 
-            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired)
+            if (checkpoint == PreviewCacheCheckpoint.EntryLeaseAcquired)
             {
                 Assert.True(observedTreeLease);
                 observedEntryLease = true;
             }
 
-            if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.ResponseBuffered && !startedWaiters)
+            if (checkpoint == PreviewCacheCheckpoint.ResponseBuffered && !startedWaiters)
             {
                 startedWaiters = true;
                 Assert.True(observedEntryLease);
@@ -448,7 +448,7 @@ public sealed class DiskPreviewCacheSpecs
                     (_, _) => throw new InvalidOperationException("A buffered entry must remain owned."),
                     CancellationToken.None);
                 Assert.False(entryWaiter.IsCompleted);
-                pruningLease = treeLock
+                pruningLease = activeFixture.TreeLock
                     .AcquireExclusiveAsync(CancellationToken.None)
                     .AsTask();
                 Assert.False(pruningLease.IsCompleted);
@@ -524,13 +524,20 @@ public sealed class DiskPreviewCacheSpecs
         private TemporaryCacheFixture(
             string temporaryDirectory,
             PreviewIdentity identity,
-            string finalPath,
-            DiskPreviewCache cache)
+            CacheTreeLock treeLock)
         {
             this.temporaryDirectory = temporaryDirectory;
             Identity = identity;
-            FinalPath = finalPath;
-            Cache = cache;
+            FinalPath = Path.Combine(
+                temporaryDirectory,
+                "Jellyfin.Plugin.TrickplayCropper",
+                "preview-v1",
+                identity.RelativePath);
+            TreeLock = treeLock;
+            Cache = new DiskPreviewCache(
+                CreateApplicationPaths(temporaryDirectory),
+                TimeProvider.System,
+                treeLock);
         }
 
         public DiskPreviewCache Cache { get; }
@@ -539,29 +546,23 @@ public sealed class DiskPreviewCacheSpecs
 
         public PreviewIdentity Identity { get; }
 
+        public CacheTreeLock TreeLock { get; }
+
         public static TemporaryCacheFixture Create()
         {
-            return Create(static (_, _) => { });
+            return Create(static _ => { });
         }
 
         public static TemporaryCacheFixture Create(
-            Action<DiskPreviewCache.PreviewCacheCheckpoint, CacheTreeLock> checkpointObserver)
+            Action<PreviewCacheCheckpoint> checkpointObserver)
         {
             string temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
                 $"trickplay-cache-{Guid.NewGuid():N}");
             Directory.CreateDirectory(temporaryDirectory);
             PreviewIdentity identity = CreateIdentity();
-            string finalPath = Path.Combine(
-                temporaryDirectory,
-                "Jellyfin.Plugin.TrickplayCropper",
-                "preview-v1",
-                identity.RelativePath);
-            var cache = new DiskPreviewCache(
-                CreateApplicationPaths(temporaryDirectory),
-                TimeProvider.System,
-                checkpointObserver);
-            return new TemporaryCacheFixture(temporaryDirectory, identity, finalPath, cache);
+            var treeLock = new CacheTreeLock(checkpointObserver);
+            return new TemporaryCacheFixture(temporaryDirectory, identity, treeLock);
         }
 
         public void Dispose()
