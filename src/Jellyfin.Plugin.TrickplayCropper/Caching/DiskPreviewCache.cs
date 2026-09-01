@@ -113,6 +113,11 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         coordination.ObserveCleanupStarted();
         progress.Report(0);
         await DeleteCandidatesAsync(cleanupStartedUtc, counters, cancellationToken).ConfigureAwait(false);
+        if (!IsReparsePoint(cacheRoot))
+        {
+            await PruneDirectoryAsync(cacheRoot, counters, cancellationToken).ConfigureAwait(false);
+        }
+
         progress.Report(100);
     }
 
@@ -130,21 +135,66 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
         if ((root.Attributes & FileAttributes.ReparsePoint) != 0)
         {
-            throw new InvalidDataException("The Cache Tree root is a reparse point.");
+            LogReparsePointSkipped(logger, cacheRoot);
+            return;
         }
 
-        var enumeration = new EnumerationOptions
+        await DeleteDirectoryCandidatesAsync(
+            cacheRoot,
+            cleanupStartedUtc,
+            counters,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task DeleteDirectoryCandidatesAsync(
+        string directoryPath,
+        DateTime cleanupStartedUtc,
+        CleanupCounters counters,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            AttributesToSkip = FileAttributes.ReparsePoint,
-            IgnoreInaccessible = false,
-            RecurseSubdirectories = true,
-            ReturnSpecialDirectories = false,
-        };
-        foreach (string filePath in Directory.EnumerateFiles(cacheRoot, "*", enumeration))
+            foreach (string path in Directory.EnumerateFileSystemEntries(directoryPath))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                FileAttributes attributes = File.GetAttributes(path);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    LogReparsePointSkipped(logger, path);
+                }
+                else if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    await DeleteDirectoryCandidatesAsync(
+                        path,
+                        cleanupStartedUtc,
+                        counters,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await TryDeleteCandidateAsync(path, cleanupStartedUtc, counters, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await TryDeleteCandidateAsync(filePath, cleanupStartedUtc, counters, cancellationToken)
-                .ConfigureAwait(false);
+            throw;
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+        catch (IOException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+        }
+        catch (SecurityException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
         }
     }
 
@@ -163,8 +213,18 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
             }
 
             coordination.ObserveCleanupCandidateCaptured();
+            if (candidate.Kind == CleanupFileKind.UnparseableTemporary)
+            {
+                using IDisposable treeLease = await coordination
+                    .AcquireExclusiveAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                DeleteOwnedCandidate(candidate, counters);
+                return;
+            }
+
             await coordination.ExecuteCleanupEntryAsync(
-                candidate.LockPath,
+                candidate.LockPath!,
                 () => DeleteOwnedCandidate(candidate, counters),
                 cancellationToken).ConfigureAwait(false);
         }
@@ -190,7 +250,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
     {
         string canonicalPath = Path.GetFullPath(filePath);
         string fileName = Path.GetFileName(canonicalPath);
-        (CleanupFileKind Kind, string LockPath)? cleanupIdentity = GetCleanupIdentity(canonicalPath, fileName);
+        (CleanupFileKind Kind, string? LockPath)? cleanupIdentity = GetCleanupIdentity(canonicalPath, fileName);
         if (cleanupIdentity is null)
         {
             return null;
@@ -211,8 +271,14 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
             file.LastWriteTimeUtc.Ticks);
     }
 
-    private static void DeleteOwnedCandidate(CleanupCandidate candidate, CleanupCounters counters)
+    private void DeleteOwnedCandidate(CleanupCandidate candidate, CleanupCounters counters)
     {
+        if (IsReparsePoint(candidate.Path))
+        {
+            LogReparsePointSkipped(logger, candidate.Path);
+            return;
+        }
+
         var current = new FileInfo(candidate.Path);
         current.Refresh();
         if (!current.Exists)
@@ -230,7 +296,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         counters.DeletedFiles++;
     }
 
-    private static (CleanupFileKind Kind, string LockPath)? GetCleanupIdentity(
+    private static (CleanupFileKind Kind, string? LockPath)? GetCleanupIdentity(
         string canonicalPath,
         string fileName)
     {
@@ -241,7 +307,9 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
         if (!TryGetTemporaryFinalName(fileName, out string? finalName))
         {
-            return null;
+            return fileName.EndsWith(TemporaryExtension, StringComparison.Ordinal)
+                ? (CleanupFileKind.UnparseableTemporary, null)
+                : null;
         }
 
         string lockPath = Path.Combine(Path.GetDirectoryName(canonicalPath)!, finalName!);
@@ -296,14 +364,94 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         LogFileFailure(logger, filePath, exception);
     }
 
+    private async Task PruneDirectoryAsync(
+        string directoryPath,
+        CleanupCounters counters,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IEnumerable<string> childDirectories;
+        try
+        {
+            childDirectories = Directory.EnumerateDirectories(
+                directoryPath,
+                "*",
+                new EnumerationOptions
+                {
+                    AttributesToSkip = FileAttributes.ReparsePoint,
+                    IgnoreInaccessible = false,
+                    RecurseSubdirectories = false,
+                    ReturnSpecialDirectories = false,
+                });
+            foreach (string childDirectory in childDirectories)
+            {
+                await PruneDirectoryAsync(childDirectory, counters, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return;
+        }
+        catch (IOException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+            return;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+            return;
+        }
+        catch (SecurityException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            using IDisposable treeLease = await coordination
+                .AcquireExclusiveAsync(cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Directory.EnumerateFileSystemEntries(directoryPath).Any())
+            {
+                Directory.Delete(directoryPath);
+                counters.DeletedDirectories++;
+            }
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+        catch (IOException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+        }
+        catch (SecurityException exception)
+        {
+            RecordDirectoryFailure(directoryPath, exception, counters);
+        }
+    }
+
+    private void RecordDirectoryFailure(string directoryPath, Exception exception, CleanupCounters counters)
+    {
+        counters.FailedDirectories++;
+        LogDirectoryFailure(logger, directoryPath, exception);
+    }
+
     private void WriteCleanupSummary(CleanupCounters counters, TimeSpan elapsed)
     {
         LogCleanupSummary(
             logger,
             counters.DeletedFiles,
-            0,
+            counters.DeletedDirectories,
             counters.FailedFiles,
-            0,
+            counters.FailedDirectories,
             counters.SkippedChangedFiles,
             checked((long)elapsed.TotalMilliseconds),
             counters.Cancelled);
@@ -317,6 +465,21 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         ILogger logger,
         string cachePath,
         Exception exception);
+
+    [LoggerMessage(
+        EventId = 3,
+        Level = LogLevel.Warning,
+        Message = "Failed to inspect or delete Trickplay Cropper cache directory {CachePath}.")]
+    private static partial void LogDirectoryFailure(
+        ILogger logger,
+        string cachePath,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 4,
+        Level = LogLevel.Warning,
+        Message = "Skipped Trickplay Cropper cache reparse point {CachePath}.")]
+    private static partial void LogReparsePointSkipped(ILogger logger, string cachePath);
 
     [LoggerMessage(
         EventId = 2,
@@ -340,6 +503,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         Func<Stream, CancellationToken, Task<PreviewEncodingTelemetry>> writer,
         CancellationToken cancellationToken)
     {
+        EnsureRequestPathIsSafe(finalPath);
         byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
         if (existingContent is not null)
         {
@@ -348,6 +512,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
+        EnsureRequestPathIsSafe(finalPath);
         return await GenerateAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
     }
 
@@ -385,6 +550,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         string temporaryPath,
         CancellationToken cancellationToken)
     {
+        EnsureRequestPathIsSafe(finalPath);
         byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
         if (existingContent is not null)
         {
@@ -394,6 +560,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
         coordination.ObserveBeforePublication();
         cancellationToken.ThrowIfCancellationRequested();
+        EnsureRequestPathIsSafe(finalPath);
         try
         {
             File.Move(temporaryPath, finalPath, overwrite: false);
@@ -485,6 +652,53 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         return finalPath;
     }
 
+    private void EnsureRequestPathIsSafe(string finalPath)
+    {
+        ThrowIfReparsePoint(cacheRoot);
+        string relativePath = Path.GetRelativePath(cacheRoot, finalPath);
+        string currentPath = cacheRoot;
+        foreach (string segment in relativePath.Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            currentPath = Path.Combine(currentPath, segment);
+            ThrowIfReparsePoint(currentPath);
+        }
+    }
+
+    private static void ThrowIfReparsePoint(string path)
+    {
+        try
+        {
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException($"The Cache Tree path is a reparse point: {path}");
+            }
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+    }
+
+    private static bool IsReparsePoint(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+    }
+
     private static string CreateTemporaryPath(string finalPath)
     {
         string directoryPath = Path.GetDirectoryName(finalPath)!;
@@ -502,7 +716,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 
     private sealed record CleanupCandidate(
         string Path,
-        string LockPath,
+        string? LockPath,
         CleanupFileKind Kind,
         long Length,
         long LastWriteTimeUtcTicks);
@@ -511,6 +725,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
     {
         FinalJpeg,
         Temporary,
+        UnparseableTemporary,
     }
 
     private sealed class CleanupCounters
@@ -518,6 +733,10 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         public int DeletedFiles { get; set; }
 
         public int FailedFiles { get; set; }
+
+        public int DeletedDirectories { get; set; }
+
+        public int FailedDirectories { get; set; }
 
         public int SkippedChangedFiles { get; set; }
 
