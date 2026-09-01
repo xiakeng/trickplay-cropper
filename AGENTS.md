@@ -1,15 +1,18 @@
 # Contribution Workflow
 
 1. Every change must have a GitHub issue.
-2. Bootstrap implementation worktrees serially. Immediately before creating each
-   issue branch, fetch `origin/main` and post the fetched commit to the issue as
-   its implementation base.
-3. Create `issue-<number>` at that exact commit in a dedicated worktree. Assign
-   exactly one implementation session to the issue branch and worktree.
-4. After bootstrap, run implementation sessions concurrently only when their
-   issues have no open blocking relationship. Keep each session's uncommitted
-   state in its owning worktree; do not use `git stash` during concurrent
-   implementation.
+2. A single coordinating session must bootstrap implementation worktrees before
+   dispatching `/implement`. For each issue, it serially fetches `origin/main`
+   immediately before creating the issue branch and posts the fetched commit to
+   the issue as its implementation base.
+3. The coordinating session creates `issue-<number>` at that exact commit in a
+   dedicated worktree, then assigns exactly one implementation session to it.
+   Implementation sessions work only in their assigned worktrees and do not
+   create, remove, or reassign worktrees or branches.
+4. After the coordinator completes bootstrap, it may dispatch implementation
+   sessions concurrently only when their issues have no open blocking
+   relationship. Keep each session's uncommitted state in its owning worktree;
+   do not use `git stash` during concurrent implementation.
 5. Open a pull request to this repository's `main` branch unless explicitly told otherwise.
 6. End the pull request description with:
 
