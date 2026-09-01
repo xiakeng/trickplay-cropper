@@ -34,6 +34,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class TrickplayPreviewHttpSpecs
 {
+    private const string ExpectedDefaultEntityTag = "\"d5b827fd3d17075e86151d7299ff22cd-f0000000000\"";
+
     private static readonly Guid alternateSourceId = Guid.Parse("9fe0dc1f-c780-483e-86c8-fc16267127f6");
     private static readonly Guid itemId = Guid.Parse("3f728b7b-4aa5-4f65-b488-a6029edb6725");
     private static readonly Guid otherItemId = Guid.Parse("86bfb88a-2931-4454-8d5d-15a8c427f235");
@@ -52,9 +54,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal("inline", response.Content.Headers.ContentDisposition?.DispositionType);
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoCache);
-        Assert.Equal(
-            "\"d5b827fd3d17075e86151d7299ff22cd-f0000000000\"",
-            response.Headers.ETag?.Tag);
+        Assert.Equal(ExpectedDefaultEntityTag, response.Headers.ETag?.Tag);
         Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
         Assert.False(response.Headers.Contains("X-Trickplay-Cache-File"));
         Assert.Contains("lookup;dur=", response.Headers.GetValues("Server-Timing").Single(), StringComparison.Ordinal);
@@ -71,12 +71,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.InRange(center.Red, 240, 255);
         Assert.InRange(center.Green, 0, 15);
         Assert.InRange(center.Blue, 0, 15);
-        string expectedEntryPath = Path.Combine(
-            fixture.CacheRoot,
-            itemId.ToString("N"),
-            "w0320",
-            "s000000-d5b827fd3d17075e86151d7299ff22cd",
-            "f0000000000.jpg");
+        string expectedEntryPath = GetDefaultEntryPath(fixture);
         Assert.True(File.Exists(expectedEntryPath));
         Assert.Single(Directory.EnumerateFiles(fixture.CacheRoot, "*.jpg", SearchOption.AllDirectories));
         Assert.Empty(Directory.EnumerateFiles(fixture.CacheRoot, "*.tmp", SearchOption.AllDirectories));
@@ -100,12 +95,7 @@ public sealed class TrickplayPreviewHttpSpecs
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
         byte[] expectedContent = [0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9];
-        string entryPath = Path.Combine(
-            fixture.CacheRoot,
-            itemId.ToString("N"),
-            "w0320",
-            "s000000-d5b827fd3d17075e86151d7299ff22cd",
-            "f0000000000.jpg");
+        string entryPath = GetDefaultEntryPath(fixture);
         Directory.CreateDirectory(Path.GetDirectoryName(entryPath)!);
         await File.WriteAllBytesAsync(entryPath, expectedContent, CancellationToken.None);
 
@@ -118,9 +108,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(expectedContent.Length, cachedResponse.Content.Headers.ContentLength);
         Assert.Equal("image/jpeg", cachedResponse.Content.Headers.ContentType?.MediaType);
         Assert.Equal("inline", cachedResponse.Content.Headers.ContentDisposition?.DispositionType);
-        Assert.Equal(
-            "\"d5b827fd3d17075e86151d7299ff22cd-f0000000000\"",
-            cachedResponse.Headers.ETag?.Tag);
+        Assert.Equal(ExpectedDefaultEntityTag, cachedResponse.Headers.ETag?.Tag);
         Assert.True(cachedResponse.Headers.CacheControl?.Private);
         Assert.True(cachedResponse.Headers.CacheControl?.NoCache);
         Assert.Equal("HIT", cachedResponse.Headers.GetValues("X-Trickplay-Cache").Single());
@@ -500,6 +488,16 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.NotEqual(baseline.SourceSpritePath, changed.SourceSpritePath);
         Assert.NotEqual(baseline.CacheRoot, changed.CacheRoot);
         Assert.Equal(Assert.Single(baseline.Cache.Identities), Assert.Single(changed.Cache.Identities));
+    }
+
+    private static string GetDefaultEntryPath(PreviewHostFixture fixture)
+    {
+        return Path.Combine(
+            fixture.CacheRoot,
+            itemId.ToString("N"),
+            "w0320",
+            "s000000-d5b827fd3d17075e86151d7299ff22cd",
+            "f0000000000.jpg");
     }
 
     private static PreviewScenario CreateForbiddenScenario(ForbiddenCondition condition)
