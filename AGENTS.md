@@ -6,6 +6,13 @@
 4. End the pull request description with:
 
    `Closes #<issue-number>`
+5. After opening the pull request, run `/code-review` against its exact base and
+   current head, and publish every actionable finding on the pull request.
+6. Resolve every actionable finding and push the fixes to the pull request branch.
+7. Repeat steps 5 and 6 until `/code-review` reports no actionable findings for
+   the pull request's current head.
+8. Leave the pull request open after review. Merge it only when the user explicitly
+   requests the merge.
 
 ## Agent skills
 
