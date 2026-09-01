@@ -12,6 +12,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
     private const string PluginDirectoryName = "Jellyfin.Plugin.TrickplayCropper";
 
     private readonly string cacheRoot;
+    private readonly PreviewEntryLockRegistry entryLocks;
     private readonly TimeProvider timeProvider;
 
     /// <summary>
@@ -21,6 +22,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
+        entryLocks = new PreviewEntryLockRegistry(GetPathComparer());
         this.timeProvider = timeProvider;
     }
 
@@ -32,15 +34,8 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cancellationToken.ThrowIfCancellationRequested();
         string finalPath = GetFinalPath(identity);
-        byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
-        if (existingContent is not null)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, null);
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
-        return await GenerateAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
+        using IDisposable ownership = await entryLocks.AcquireAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        return await GetOrCreateOwnedAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -50,6 +45,22 @@ internal sealed class DiskPreviewCache : IPreviewCache
         _ = timeProvider.GetUtcNow();
         progress.Report(100);
         return Task.CompletedTask;
+    }
+
+    private static async Task<PreviewCacheResult> GetOrCreateOwnedAsync(
+        string finalPath,
+        Func<Stream, CancellationToken, Task<PreviewEncodingTelemetry>> writer,
+        CancellationToken cancellationToken)
+    {
+        byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        if (existingContent is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, null);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
+        return await GenerateAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<PreviewCacheResult> GenerateAsync(
@@ -66,6 +77,13 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 cancellationToken).ConfigureAwait(false);
             ValidateCompletedOutput(temporaryPath);
             cancellationToken.ThrowIfCancellationRequested();
+            byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+            if (existingContent is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, telemetry);
+            }
+
             try
             {
                 File.Move(temporaryPath, finalPath, overwrite: false);
@@ -80,7 +98,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                return new PreviewCacheResult(winningContent, PreviewCacheDisposition.Hit, null);
+                return new PreviewCacheResult(winningContent, PreviewCacheDisposition.Hit, telemetry);
             }
 
             byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
@@ -147,15 +165,27 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         string finalPath = Path.GetFullPath(Path.Combine(cacheRoot, identity.RelativePath));
         string containedRoot = string.Concat(cacheRoot, Path.DirectorySeparatorChar);
-        StringComparison comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
+        StringComparison comparison = GetPathComparison();
         if (!finalPath.StartsWith(containedRoot, comparison))
         {
             throw new InvalidDataException("The Preview Cache Entry path escapes the Cache Tree.");
         }
 
         return finalPath;
+    }
+
+    private static StringComparer GetPathComparer()
+    {
+        return OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+    }
+
+    private static StringComparison GetPathComparison()
+    {
+        return OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
     }
 
     private static string CreateTemporaryPath(string finalPath)

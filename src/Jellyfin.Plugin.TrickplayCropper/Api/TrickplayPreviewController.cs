@@ -1,5 +1,4 @@
 using System.Globalization;
-using Jellyfin.Plugin.TrickplayCropper.Caching;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -70,9 +69,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     {
         ApplySharedHeaders(outcome.EntityTag, outcome.Telemetry);
         Response.Headers.ContentDisposition = "inline";
-        PreviewCacheDisposition disposition = outcome.Telemetry.CacheDisposition
-            ?? throw new InvalidOperationException("A successful Preview response requires a cache disposition.");
-        Response.Headers["X-Trickplay-Cache"] = disposition.ToString().ToUpperInvariant();
+        Response.Headers["X-Trickplay-Cache"] = outcome.Telemetry.CacheDisposition.ToString().ToUpperInvariant();
         byte[] content = outcome.Content.ToArray();
         Response.ContentLength = content.Length;
         return File(content, "image/jpeg");

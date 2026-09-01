@@ -130,7 +130,7 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage generatedResponse = await fixture.GetAsync();
         string entityTag = Assert.IsType<string>(generatedResponse.Headers.ETag?.Tag);
 
-        using HttpResponseMessage response = await fixture.GetAsync(entityTag);
+        using HttpResponseMessage response = await fixture.GetConditionalAsync(entityTag);
 
         Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
@@ -157,7 +157,7 @@ public sealed class TrickplayPreviewHttpSpecs
         string entityTag = Assert.IsType<string>(generatedResponse.Headers.ETag?.Tag);
         string condition = usesWildcard ? "*" : string.Concat("W/", entityTag);
 
-        using HttpResponseMessage response = await fixture.GetAsync(condition);
+        using HttpResponseMessage response = await fixture.GetConditionalAsync(condition);
 
         Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
         Assert.Equal(1, fixture.Cache.CallCount);
@@ -172,7 +172,7 @@ public sealed class TrickplayPreviewHttpSpecs
         DateTime changedWriteTime = File.GetLastWriteTimeUtc(fixture.SourceSpritePath).AddSeconds(1);
         File.SetLastWriteTimeUtc(fixture.SourceSpritePath, changedWriteTime);
 
-        using HttpResponseMessage response = await fixture.GetAsync(originalEntityTag);
+        using HttpResponseMessage response = await fixture.GetConditionalAsync(originalEntityTag);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotEqual(originalEntityTag, response.Headers.ETag?.Tag);
@@ -295,7 +295,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Single(Directory.EnumerateFiles(fixture.CacheRoot, "*.jpg", SearchOption.AllDirectories));
 
         fixture.SetPlaybackAccess(false);
-        using HttpResponseMessage deniedResponse = await fixture.GetAsync(entityTag);
+        using HttpResponseMessage deniedResponse = await fixture.GetConditionalAsync(entityTag);
 
         Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
         await AssertAuthorizationErrorResponseAsync(deniedResponse);
@@ -810,7 +810,30 @@ public sealed class TrickplayPreviewHttpSpecs
             Directory.Delete(temporaryDirectory, recursive: true);
         }
 
-        public async Task<HttpResponseMessage> GetAsync(string? ifNoneMatch = null)
+        public Task<HttpResponseMessage> GetAsync()
+        {
+            return SendAsync(null);
+        }
+
+        public Task<HttpResponseMessage> GetConditionalAsync(string ifNoneMatch)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(ifNoneMatch);
+            return SendAsync(ifNoneMatch);
+        }
+
+        public string[] EnumerateCacheFiles()
+        {
+            return Directory.Exists(CacheRoot)
+                ? Directory.EnumerateFiles(CacheRoot, "*", SearchOption.AllDirectories).ToArray()
+                : [];
+        }
+
+        public void SetPlaybackAccess(bool hasPlaybackAccess)
+        {
+            SetPlaybackPermission(Services.GetRequiredService<User>(), hasPlaybackAccess);
+        }
+
+        private async Task<HttpResponseMessage> SendAsync(string? ifNoneMatch)
         {
             PreviewScenario scenario = Services.GetRequiredService<PreviewScenario>();
             string mediaSourceQuery = scenario.UsesAlternateSource
@@ -827,18 +850,6 @@ public sealed class TrickplayPreviewHttpSpecs
             }
 
             return await Client.SendAsync(request, CancellationToken.None);
-        }
-
-        public string[] EnumerateCacheFiles()
-        {
-            return Directory.Exists(CacheRoot)
-                ? Directory.EnumerateFiles(CacheRoot, "*", SearchOption.AllDirectories).ToArray()
-                : [];
-        }
-
-        public void SetPlaybackAccess(bool hasPlaybackAccess)
-        {
-            SetPlaybackPermission(Services.GetRequiredService<User>(), hasPlaybackAccess);
         }
 
         private static void ConfigureWebHost(IWebHostBuilder webHost, PreviewHostContext context)
