@@ -1,54 +1,52 @@
 # C# Code Review Contract
 
-Use this contract for reviews of C# production code, tests, tools, and build
-configuration. Read the governing issue or specification, `CONTEXT.md`, relevant
-ADRs, and `docs/agents/csharp-coding-standard.md` before evaluating the diff.
+Use this contract to review C# production code, tests, tools, and build
+configuration in any repository that adopts these files.
 
-## Review sequence
+## Establish the contract
 
-### 1. Establish the contract
+Before reviewing the implementation:
 
-- Identify the requested behavior, explicit non-goals, compatibility promises,
-  and acceptance criteria.
-- Determine the review base and inspect the complete diff, including tests,
-  configuration, packaging, and documentation.
-- Inspect neighboring code and call sites before treating a local pattern as a
-  defect.
+1. Identify the review base and inspect the complete diff.
+2. Read the governing issue or specification, including explicit non-goals and
+   compatibility promises.
+3. Read `docs/agents/csharp-guidelines/SKILL.md` and every upstream reference
+   category touched by the change.
+4. Read `docs/agents/csharp-coding-standard.md` and
+   `docs/agents/csharp-guidelines-overrides.md` when it exists.
+5. Inspect affected call sites, configuration, and neighboring code.
 
-This step is complete when every changed behavior is mapped to an acceptance
-criterion or identified as unintended scope.
+This step is complete when every changed behavior maps to the requested contract
+or is identified as unintended scope.
 
-### 2. Review behavior and design
+## Review axes
 
-Check, in order:
+Review the change along both axes. Passing one does not compensate for failing
+the other.
 
-1. Correctness on success, empty, boundary, malformed, and failure paths.
-2. Authorization and media-source membership before Source Sprite access.
-3. Public API, plugin identity, package, and Jellyfin compatibility.
-4. Preview Identity, frame selection, crop bounds, cache validators, and HTTP
-   semantics.
-5. Cancellation, exception translation, logging context, and disposal.
-6. Preview Cache Entry races, Cache Tree leases, atomic publication, cleanup
-   revalidation, and reparse-point safety.
-7. Allocation, scanline decode behavior, concurrency bounds, and evidence for
-   performance claims.
-8. Tests that independently prove the changed behavior at the correct seam.
+### Specification
 
-This step is complete when every changed execution path and shared-state
-transition has been accounted for.
+- Verify success, empty, boundary, malformed-input, cancellation, and failure
+  paths that the contract makes relevant.
+- Preserve authorization, compatibility, serialization, persistence, packaging,
+  and public API behavior unless the contract changes them.
+- Account for state transitions, retries, partial failures, and shared-resource
+  ownership.
+- Confirm tests independently prove the requested behavior at stable seams.
 
-### 3. Review maintainability
+### Standards
 
-- Confirm names use the glossary and make ownership and units clear.
-- Confirm abstractions own real policy and dependencies point in the intended
-  direction.
-- Look for duplicated policy, hidden side effects, mixed abstraction levels,
-  and code that is difficult to test or diagnose.
-- Leave deterministic formatting, naming, and analyzer findings to the build
-  unless the configuration itself is incorrect.
+- Apply every relevant Must and Should rule from the vendored Skill, subject to
+  the adoption profile and documented overrides.
+- Check nullability, exception boundaries, disposal, asynchronous control flow,
+  cancellation propagation, concurrency, and allocation behavior where relevant.
+- Confirm types and methods remain cohesive, dependencies and ownership are
+  explicit, and abstractions own real policy.
+- Leave deterministic formatting and analyzer findings to configured tooling
+  unless the configuration itself is incorrect or was bypassed.
 
-This step is complete when every non-automated standard relevant to the diff has
-been considered.
+This step is complete when every changed execution path, shared-state transition,
+and applicable guideline category has been considered.
 
 ## Finding bar
 
@@ -58,34 +56,34 @@ with a concrete failure scenario or engineering impact. Each finding must:
 - identify one precise file and the smallest useful line range;
 - state the conditions that trigger the problem;
 - explain the observable impact;
-- cite the violated contract, ADR, analyzer, or project-standard section; and
-- describe a minimal direction for remediation without rewriting the patch.
+- cite the violated specification, guideline rule, analyzer, or contract; and
+- describe a minimal remediation direction without rewriting the patch.
 
-Avoid findings that are purely subjective, already produced by configured
-tooling, unrelated to the changed code, or unsupported by a plausible scenario.
-Do not inflate severity because a rule uses imperative wording.
+Do not report purely subjective preferences, diagnostics already produced by
+configured tooling, unrelated pre-existing problems, or concerns without a
+plausible trigger and impact.
 
 ## Severity
 
 - **P0 — Critical:** active security compromise, unrecoverable data loss, or a
   service-wide outage. Stop delivery.
-- **P1 — High:** authorization bypass, common-path incorrect output or crash,
-  broken public/package compatibility, or a likely server-wide availability
-  failure. Block the pull request.
-- **P2 — Medium:** a reproducible edge-case bug, race, resource leak, unsafe
-  filesystem behavior, or missing verification that permits a concrete
-  regression. Block until resolved or explicitly accepted.
+- **P1 — High:** authorization bypass, common-path incorrect behavior or crash,
+  broken compatibility, or a likely system-wide availability failure. Block the
+  change.
+- **P2 — Medium:** a reproducible edge-case defect, race, resource leak, unsafe
+  boundary behavior, or missing verification that permits a concrete regression.
+  Block until resolved or explicitly accepted.
 - **P3 — Low:** a narrow but concrete maintainability, diagnostics, or future
   correctness risk. Normally non-blocking.
 
 ## Verification and output
 
 Use tests or a focused reproduction when they can confirm or disprove a suspected
-finding. Run the configured formatter, Release build, and relevant tests when
-the review environment permits it. Report only checks that actually ran.
+finding. Run the configured formatter, production-equivalent build, and relevant
+tests when the review environment permits it. Report only checks that actually
+ran.
 
-Present findings first, ordered by severity and then file location. Use this
-shape:
+Present findings first, ordered by severity and then file location:
 
 ```text
 [P1] Short actionable title
@@ -97,15 +95,13 @@ Remediation: ...
 ```
 
 If there are no actionable findings, say so explicitly. Follow with residual
-risks or checks that could not be performed; do not invent a style finding to
-fill the response.
+risks and checks that could not be performed; do not invent a finding to fill the
+response.
 
 ## Upstream basis
 
-This contract adapts the CC BY 4.0 licensed
+This generic review contract is informed by the CC BY 4.0 licensed
 [Microsoft Engineering Fundamentals reviewer guidance](https://microsoft.github.io/code-with-engineering-playbook/code-reviews/process-guidance/reviewer-guidance/)
 and [C# review checklist](https://microsoft.github.io/code-with-engineering-playbook/code-reviews/recipes/csharp/),
 plus the MIT-licensed verification principles in the
 [.NET Runtime agent instructions](https://github.com/dotnet/runtime/blob/main/.github/copilot-instructions.md).
-Repository-specific requirements in this document are authoritative here;
-upstream changes are not adopted automatically.
