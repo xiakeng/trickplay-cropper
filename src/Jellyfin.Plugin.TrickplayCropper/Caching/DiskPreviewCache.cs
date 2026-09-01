@@ -12,6 +12,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
     private const string PluginDirectoryName = "Jellyfin.Plugin.TrickplayCropper";
 
     private readonly string cacheRoot;
+    private readonly CacheTreeLock cacheTreeLock = new();
     private readonly PreviewEntryLockRegistry entryLocks;
     private readonly StringComparison pathComparison;
     private readonly TimeProvider timeProvider;
@@ -47,7 +48,12 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cancellationToken.ThrowIfCancellationRequested();
         string finalPath = GetFinalPath(identity);
-        using IDisposable ownership = await entryLocks.AcquireAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        using IDisposable treeLease = await cacheTreeLock
+            .AcquireSharedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using IDisposable entryLease = await entryLocks
+            .AcquireAsync(finalPath, cancellationToken)
+            .ConfigureAwait(false);
         return await GetOrCreateOwnedAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
     }
 

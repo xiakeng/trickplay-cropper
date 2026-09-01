@@ -100,6 +100,170 @@ public sealed class DiskPreviewCacheSpecs
     }
 
     [Fact]
+    public async Task GeneratesIdenticalMissesOnlyOnce()
+    {
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+        var ownerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOwner = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        byte[] generatedContent = [0xFF, 0xD8, 1, 2, 0xFF, 0xD9];
+        int encodingCount = 0;
+        Task<PreviewCacheResult> owner = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                Interlocked.Increment(ref encodingCount);
+                ownerStarted.SetResult();
+                await releaseOwner.Task.WaitAsync(cancellationToken);
+                await destination.WriteAsync(generatedContent, cancellationToken);
+                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
+            },
+            CancellationToken.None);
+        await ownerStarted.Task;
+        Task<PreviewCacheResult> waiter = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            (_, _) => throw new InvalidOperationException("A same-entry waiter must not encode concurrently."),
+            CancellationToken.None);
+
+        Assert.False(waiter.IsCompleted);
+        releaseOwner.SetResult();
+        PreviewCacheResult[] results = await Task.WhenAll(owner, waiter);
+
+        Assert.Equal(1, encodingCount);
+        Assert.Equal(PreviewCacheDisposition.Miss, results[0].Disposition);
+        Assert.Equal(PreviewCacheDisposition.Hit, results[1].Disposition);
+        Assert.All(results, result => Assert.Equal(generatedContent, result.Content.ToArray()));
+    }
+
+    [Fact]
+    public async Task GeneratesDifferentEntriesConcurrently()
+    {
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+        PreviewIdentity secondIdentity = CreateIdentity("f0000000001.jpg");
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        byte[] firstContent = [0xFF, 0xD8, 1, 0xFF, 0xD9];
+        byte[] secondContent = [0xFF, 0xD8, 2, 0xFF, 0xD9];
+
+        Task<PreviewCacheResult> first = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                firstStarted.SetResult();
+                await secondStarted.Task.WaitAsync(cancellationToken);
+                await destination.WriteAsync(firstContent, cancellationToken);
+                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
+            },
+            CancellationToken.None);
+        Task<PreviewCacheResult> second = fixture.Cache.GetOrCreateAsync(
+            secondIdentity,
+            async (destination, cancellationToken) =>
+            {
+                secondStarted.SetResult();
+                await firstStarted.Task.WaitAsync(cancellationToken);
+                await destination.WriteAsync(secondContent, cancellationToken);
+                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
+            },
+            CancellationToken.None);
+
+        PreviewCacheResult[] results = await Task.WhenAll(first, second);
+
+        Assert.Equal(firstContent, results[0].Content.ToArray());
+        Assert.Equal(secondContent, results[1].Content.ToArray());
+    }
+
+    [Fact]
+    public async Task WaiterGeneratesAfterOwnerCancellation()
+    {
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+        using var ownerCancellation = new CancellationTokenSource();
+        var ownerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        byte[] generatedContent = [0xFF, 0xD8, 3, 4, 0xFF, 0xD9];
+        Task<PreviewCacheResult> owner = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
+                ownerStarted.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("Unreachable after cancellation.");
+            },
+            ownerCancellation.Token);
+        await ownerStarted.Task;
+        Task<PreviewCacheResult> waiter = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                await destination.WriteAsync(generatedContent, cancellationToken);
+                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
+            },
+            CancellationToken.None);
+
+        ownerCancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => owner);
+        PreviewCacheResult result = await waiter;
+        Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
+        Assert.Equal(generatedContent, result.Content.ToArray());
+        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task WaiterGeneratesAfterOwnerFailure()
+    {
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+        var ownerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failOwner = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        byte[] generatedContent = [0xFF, 0xD8, 5, 6, 0xFF, 0xD9];
+        Task<PreviewCacheResult> owner = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
+                ownerStarted.SetResult();
+                await failOwner.Task.WaitAsync(cancellationToken);
+                throw new IOException("Simulated generation failure.");
+            },
+            CancellationToken.None);
+        await ownerStarted.Task;
+        Task<PreviewCacheResult> waiter = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                await destination.WriteAsync(generatedContent, cancellationToken);
+                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
+            },
+            CancellationToken.None);
+
+        failOwner.SetResult();
+
+        await Assert.ThrowsAsync<IOException>(() => owner);
+        PreviewCacheResult result = await waiter;
+        Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
+        Assert.Equal(generatedContent, result.Content.ToArray());
+        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task BuffersGeneratedPreviewCacheEntryBeforeReturning()
+    {
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+        byte[] generatedContent = [0xFF, 0xD8, 7, 8, 0xFF, 0xD9];
+        PreviewCacheResult result = await fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                await destination.WriteAsync(generatedContent, cancellationToken);
+                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
+            },
+            CancellationToken.None);
+
+        await File.WriteAllBytesAsync(fixture.FinalPath, [9, 9, 9], CancellationToken.None);
+
+        Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
+        Assert.Equal(generatedContent, result.Content.ToArray());
+    }
+
+    [Fact]
     public async Task ServesCompleteOutsideWinnerWithoutOverwritingIt()
     {
         using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
@@ -192,6 +356,30 @@ public sealed class DiskPreviewCacheSpecs
         Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
     }
 
+    [Fact]
+    public async Task KeepsAtomicOutsideWinnerWhenCancellationAbandonsResponse()
+    {
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+        using var cancellation = new CancellationTokenSource();
+        byte[] outsideWinner = [0xFF, 0xD8, 8, 9, 0xFF, 0xD9];
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                await destination.WriteAsync(new byte[] { 1, 2, 3 }, cancellationToken);
+                string outsideTemporaryPath = string.Concat(fixture.FinalPath, ".outside.tmp");
+                await File.WriteAllBytesAsync(outsideTemporaryPath, outsideWinner, cancellationToken);
+                File.Move(outsideTemporaryPath, fixture.FinalPath, overwrite: false);
+                cancellation.Cancel();
+                return new PreviewEncodingTelemetry(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2));
+            },
+            cancellation.Token));
+
+        Assert.Equal(outsideWinner, await File.ReadAllBytesAsync(fixture.FinalPath, CancellationToken.None));
+        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
+    }
+
     private static IApplicationPaths CreateApplicationPaths(string temporaryDirectory)
     {
         IApplicationPaths paths = DispatchProxy.Create<IApplicationPaths, ApplicationPathsSpecs>();
@@ -201,6 +389,11 @@ public sealed class DiskPreviewCacheSpecs
 
     private static PreviewIdentity CreateIdentity()
     {
+        return CreateIdentity("f0000000000.jpg");
+    }
+
+    private static PreviewIdentity CreateIdentity(string entryName)
+    {
         return new PreviewIdentity(
             "0123456789abcdef0123456789abcdef",
             "\"0123456789abcdef0123456789abcdef-f0000000000\"",
@@ -208,7 +401,7 @@ public sealed class DiskPreviewCacheSpecs
                 "3f728b7b4aa54f65b488a6029edb6725",
                 "w0320",
                 "s000000-0123456789abcdef0123456789abcdef",
-                "f0000000000.jpg"));
+                entryName));
     }
 
     public class ApplicationPathsSpecs : DispatchProxy

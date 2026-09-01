@@ -17,6 +17,20 @@ internal sealed class PreviewEntryLockRegistry
     }
 
     /// <summary>
+    /// Gets the number of Preview Cache Entry locks with active owners or waiters.
+    /// </summary>
+    public int EntryCount
+    {
+        get
+        {
+            lock (entries)
+            {
+                return entries.Count;
+            }
+        }
+    }
+
+    /// <summary>
     /// Acquires exclusive ownership of one canonical Preview Cache Entry path.
     /// </summary>
     /// <param name="path">The canonical absolute final path.</param>
