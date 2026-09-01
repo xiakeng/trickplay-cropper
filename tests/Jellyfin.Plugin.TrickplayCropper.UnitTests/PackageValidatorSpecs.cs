@@ -1,12 +1,12 @@
-namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
-
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json.Nodes;
 using global::TrickplayCropper.PackageValidator;
 using Xunit;
 
-public sealed class PackageValidatorTests
+namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
+
+public sealed class PackageValidatorSpecs
 {
     [Theory]
     [InlineData("Jellyfin.Plugin.TrickplayCropper.pdb")]
@@ -162,7 +162,7 @@ public sealed class PackageValidatorTests
     [Fact]
     public void RejectsAnAssemblyWithTheWrongIdentity()
     {
-        var unitTestAssembly = File.ReadAllBytes(typeof(PackageValidatorTests).Assembly.Location);
+        var unitTestAssembly = File.ReadAllBytes(typeof(PackageValidatorSpecs).Assembly.Location);
         using var fixture = PackageFixture.Create(assembly: unitTestAssembly);
 
         var error = Assert.Throws<PackageValidationException>(

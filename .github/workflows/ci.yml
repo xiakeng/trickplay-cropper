@@ -30,6 +30,9 @@ jobs:
       - name: Restore locked dependencies
         run: dotnet restore TrickplayCropper.sln --locked-mode
 
+      - name: Verify formatting
+        run: dotnet format TrickplayCropper.sln --verify-no-changes --no-restore
+
       - name: Build Release
         run: dotnet build TrickplayCropper.sln --configuration Release --no-restore
 

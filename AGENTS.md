@@ -2,7 +2,7 @@
 
 1. Every change must have a GitHub issue.
 2. Create an issue branch named `issue-<number>` and make the change there.
-3. Open a pull request to this repository's `master` branch unless explicitly told otherwise.
+3. Open a pull request to this repository's `main` branch unless explicitly told otherwise.
 4. End the pull request description with:
 
    `Closes #<issue-number>`
@@ -20,3 +20,12 @@ Use the five default canonical triage labels. See `docs/agents/triage-labels.md`
 ### Domain docs
 
 This repository uses a single-context domain docs layout. See `docs/agents/domain.md`.
+
+### C# coding standard
+
+For C# code changes, apply `docs/agents/csharp-guidelines/SKILL.md` and
+`docs/agents/csharp-guidelines-overrides.md`.
+
+### C# code review
+
+For C# code reviews, follow `docs/agents/csharp-code-review.md`.

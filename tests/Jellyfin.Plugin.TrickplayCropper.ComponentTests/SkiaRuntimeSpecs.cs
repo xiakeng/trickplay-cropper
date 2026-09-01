@@ -1,9 +1,9 @@
-namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
-
 using SkiaSharp;
 using Xunit;
 
-public sealed class SkiaRuntimeTests
+namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
+
+public sealed class SkiaRuntimeSpecs
 {
     [Fact]
     public void LinuxNativeAssetsCanEncodeATrickplayPreview()
