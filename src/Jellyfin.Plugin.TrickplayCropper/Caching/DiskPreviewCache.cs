@@ -13,6 +13,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
 
     private readonly string cacheRoot;
     private readonly PreviewEntryLockRegistry entryLocks;
+    private readonly StringComparison pathComparison;
     private readonly TimeProvider timeProvider;
 
     /// <summary>
@@ -22,7 +23,19 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
-        entryLocks = new PreviewEntryLockRegistry(GetPathComparer());
+        StringComparer pathComparer;
+        if (OperatingSystem.IsWindows())
+        {
+            pathComparer = StringComparer.OrdinalIgnoreCase;
+            pathComparison = StringComparison.OrdinalIgnoreCase;
+        }
+        else
+        {
+            pathComparer = StringComparer.Ordinal;
+            pathComparison = StringComparison.Ordinal;
+        }
+
+        entryLocks = new PreviewEntryLockRegistry(pathComparer);
         this.timeProvider = timeProvider;
     }
 
@@ -165,27 +178,12 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         string finalPath = Path.GetFullPath(Path.Combine(cacheRoot, identity.RelativePath));
         string containedRoot = string.Concat(cacheRoot, Path.DirectorySeparatorChar);
-        StringComparison comparison = GetPathComparison();
-        if (!finalPath.StartsWith(containedRoot, comparison))
+        if (!finalPath.StartsWith(containedRoot, pathComparison))
         {
             throw new InvalidDataException("The Preview Cache Entry path escapes the Cache Tree.");
         }
 
         return finalPath;
-    }
-
-    private static StringComparer GetPathComparer()
-    {
-        return OperatingSystem.IsWindows()
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal;
-    }
-
-    private static StringComparison GetPathComparison()
-    {
-        return OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
     }
 
     private static string CreateTemporaryPath(string finalPath)

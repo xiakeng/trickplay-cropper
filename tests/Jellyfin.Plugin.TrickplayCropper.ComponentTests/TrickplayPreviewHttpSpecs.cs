@@ -99,18 +99,28 @@ public sealed class TrickplayPreviewHttpSpecs
     public async Task ServesBufferedExistingPreviewCacheEntry()
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
-        using HttpResponseMessage generatedResponse = await fixture.GetAsync();
-        byte[] generatedContent = await generatedResponse.Content.ReadAsByteArrayAsync(CancellationToken.None);
+        byte[] expectedContent = [0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9];
+        string entryPath = Path.Combine(
+            fixture.CacheRoot,
+            itemId.ToString("N"),
+            "w0320",
+            "s000000-d5b827fd3d17075e86151d7299ff22cd",
+            "f0000000000.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(entryPath)!);
+        await File.WriteAllBytesAsync(entryPath, expectedContent, CancellationToken.None);
 
         using HttpResponseMessage cachedResponse = await fixture.GetAsync();
+        await File.WriteAllBytesAsync(entryPath, [9, 9, 9], CancellationToken.None);
         byte[] cachedContent = await cachedResponse.Content.ReadAsByteArrayAsync(CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, cachedResponse.StatusCode);
-        Assert.Equal(generatedContent, cachedContent);
-        Assert.Equal(generatedContent.Length, cachedResponse.Content.Headers.ContentLength);
+        Assert.Equal(expectedContent, cachedContent);
+        Assert.Equal(expectedContent.Length, cachedResponse.Content.Headers.ContentLength);
         Assert.Equal("image/jpeg", cachedResponse.Content.Headers.ContentType?.MediaType);
         Assert.Equal("inline", cachedResponse.Content.Headers.ContentDisposition?.DispositionType);
-        Assert.Equal(generatedResponse.Headers.ETag, cachedResponse.Headers.ETag);
+        Assert.Equal(
+            "\"d5b827fd3d17075e86151d7299ff22cd-f0000000000\"",
+            cachedResponse.Headers.ETag?.Tag);
         Assert.True(cachedResponse.Headers.CacheControl?.Private);
         Assert.True(cachedResponse.Headers.CacheControl?.NoCache);
         Assert.Equal("HIT", cachedResponse.Headers.GetValues("X-Trickplay-Cache").Single());
@@ -120,7 +130,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Contains("cache;dur=", serverTiming, StringComparison.Ordinal);
         Assert.DoesNotContain("decode;dur=", serverTiming, StringComparison.Ordinal);
         Assert.DoesNotContain("encode;dur=", serverTiming, StringComparison.Ordinal);
-        Assert.Equal(2, fixture.Cache.CallCount);
+        Assert.Equal(1, fixture.Cache.CallCount);
     }
 
     [Fact]
@@ -148,14 +158,19 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task UsesWeakComparisonAndWildcardForConditionalRequests(bool usesWildcard)
+    [InlineData(ConditionalEntityTagKind.Weak)]
+    [InlineData(ConditionalEntityTagKind.Wildcard)]
+    public async Task UsesWeakComparisonAndWildcardForConditionalRequests(ConditionalEntityTagKind conditionKind)
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
         using HttpResponseMessage generatedResponse = await fixture.GetAsync();
         string entityTag = Assert.IsType<string>(generatedResponse.Headers.ETag?.Tag);
-        string condition = usesWildcard ? "*" : string.Concat("W/", entityTag);
+        string condition = conditionKind switch
+        {
+            ConditionalEntityTagKind.Weak => string.Concat("W/", entityTag),
+            ConditionalEntityTagKind.Wildcard => "*",
+            _ => throw new ArgumentOutOfRangeException(nameof(conditionKind), conditionKind, "Unknown condition kind."),
+        };
 
         using HttpResponseMessage response = await fixture.GetConditionalAsync(condition);
 
@@ -1529,6 +1544,12 @@ public sealed class TrickplayPreviewHttpSpecs
         Missing,
         Invalid,
         UnusableUserSession,
+    }
+
+    public enum ConditionalEntityTagKind
+    {
+        Weak,
+        Wildcard,
     }
 
     public enum ForbiddenCondition

@@ -84,8 +84,15 @@ public sealed class DiskPreviewCacheSpecs
             waiterCancellation.Token);
 
         waiterCancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
-        releaseOwner.SetResult();
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+        }
+        finally
+        {
+            releaseOwner.TrySetResult();
+        }
+
         PreviewCacheResult result = await owner;
 
         Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
