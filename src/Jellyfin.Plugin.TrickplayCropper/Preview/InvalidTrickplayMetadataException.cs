@@ -45,4 +45,9 @@ internal sealed class InvalidTrickplayMetadataException : InvalidOperationExcept
     /// Gets the frame selection when validation failed after selection completed.
     /// </summary>
     public FrameSelection? Selection { get; init; }
+
+    /// <summary>
+    /// Gets the selection values computed before coordinate narrowing failed.
+    /// </summary>
+    public FrameSelectionDiagnostics? SelectionDiagnostics { get; init; }
 }

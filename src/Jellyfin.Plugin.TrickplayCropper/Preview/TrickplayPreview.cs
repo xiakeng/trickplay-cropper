@@ -163,9 +163,9 @@ internal sealed class TrickplayPreview : ITrickplayPreview
 
         public int? CropWidth { get; private set; }
 
-        public int? CropX { get; private set; }
+        public long? CropX { get; private set; }
 
-        public int? CropY { get; private set; }
+        public long? CropY { get; private set; }
 
         public string? DecodePath { get; private set; }
 
@@ -217,6 +217,11 @@ internal sealed class TrickplayPreview : ITrickplayPreview
                     if (invalidMetadata.Selection is not null)
                     {
                         Capture(invalidMetadata.Selection);
+                    }
+
+                    if (invalidMetadata.SelectionDiagnostics is not null)
+                    {
+                        Capture(invalidMetadata.SelectionDiagnostics);
                     }
 
                     FailedValidation = invalidMetadata.FailedValidation;
@@ -312,6 +317,23 @@ internal sealed class TrickplayPreview : ITrickplayPreview
             CropY = selection.CropY;
             CropWidth = selection.CropWidth;
             CropHeight = selection.CropHeight;
+        }
+
+        private void Capture(FrameSelectionDiagnostics diagnostics)
+        {
+            FrameIndex = ConvertToInt32(diagnostics.FrameIndex);
+            SpriteIndex = ConvertToInt32(diagnostics.SpriteIndex);
+            Row = ConvertToInt32(diagnostics.Row);
+            Column = ConvertToInt32(diagnostics.Column);
+            CropX = diagnostics.CropX;
+            CropY = diagnostics.CropY;
+            CropWidth = diagnostics.CropWidth;
+            CropHeight = diagnostics.CropHeight;
+        }
+
+        private static int? ConvertToInt32(long value)
+        {
+            return value is >= int.MinValue and <= int.MaxValue ? (int)value : null;
         }
     }
 

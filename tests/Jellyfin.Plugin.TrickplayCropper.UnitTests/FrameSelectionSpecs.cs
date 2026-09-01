@@ -117,6 +117,9 @@ public sealed class FrameSelectionSpecs
 
         Assert.Equal(failedValidation, exception.FailedValidation);
         Assert.Equal(failedValue, exception.FailedValue);
+        FrameSelectionDiagnostics diagnostics = Assert.IsType<FrameSelectionDiagnostics>(
+            exception.SelectionDiagnostics);
+        AssertSelectionDiagnostics(overflow, diagnostics);
     }
 
     public static TheoryData<MetadataField, string, int> InvalidMetadata => new()
@@ -163,6 +166,46 @@ public sealed class FrameSelectionSpecs
     private static TrickplayMetadata CreateValidMetadata()
     {
         return new TrickplayMetadata(320, 180, 1_000, 3, 2, 8);
+    }
+
+    private static void AssertSelectionDiagnostics(
+        CoordinateOverflow overflow,
+        FrameSelectionDiagnostics diagnostics)
+    {
+        Assert.Equal(0, diagnostics.SpriteIndex);
+        switch (overflow)
+        {
+            case CoordinateOverflow.CropX:
+                Assert.Equal(2, diagnostics.FrameIndex);
+                Assert.Equal(0, diagnostics.Row);
+                Assert.Equal(2, diagnostics.Column);
+                Assert.Equal(2L * int.MaxValue, diagnostics.CropX);
+                Assert.Equal(0, diagnostics.CropY);
+                break;
+            case CoordinateOverflow.CropY:
+                Assert.Equal(2, diagnostics.FrameIndex);
+                Assert.Equal(2, diagnostics.Row);
+                Assert.Equal(0, diagnostics.Column);
+                Assert.Equal(0, diagnostics.CropX);
+                Assert.Equal(2L * int.MaxValue, diagnostics.CropY);
+                break;
+            case CoordinateOverflow.CropRight:
+                Assert.Equal(1, diagnostics.FrameIndex);
+                Assert.Equal(0, diagnostics.Row);
+                Assert.Equal(1, diagnostics.Column);
+                Assert.Equal(int.MaxValue, diagnostics.CropX);
+                Assert.Equal(0, diagnostics.CropY);
+                break;
+            case CoordinateOverflow.CropBottom:
+                Assert.Equal(1, diagnostics.FrameIndex);
+                Assert.Equal(1, diagnostics.Row);
+                Assert.Equal(0, diagnostics.Column);
+                Assert.Equal(0, diagnostics.CropX);
+                Assert.Equal(int.MaxValue, diagnostics.CropY);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(overflow), overflow, "Unknown overflow case.");
+        }
     }
 
     public enum MetadataField

@@ -271,6 +271,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(nameof(InvalidTrickplayMetadataException), log.Properties["ExceptionType"]);
         Assert.Equal(failedValidation, log.Properties["FailedValidation"]);
         Assert.Equal(failedValue, log.Properties["FailedValue"]);
+        AssertAvailableSelectionDiagnostics(condition, log);
         Assert.Empty(fixture.EnumerateCacheFiles());
     }
 
@@ -293,8 +294,8 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(0, log.Properties["SpriteIndex"]);
         Assert.Equal(1, log.Properties["Row"]);
         Assert.Equal(1, log.Properties["Column"]);
-        Assert.Equal(320, log.Properties["CropX"]);
-        Assert.Equal(180, log.Properties["CropY"]);
+        Assert.Equal(320L, log.Properties["CropX"]);
+        Assert.Equal(180L, log.Properties["CropY"]);
         Assert.Equal(nameof(IOException), log.Properties["ExceptionType"]);
         Assert.Null(log.Properties["SourceLength"]);
         Assert.DoesNotContain("manager-secret", log.Message, StringComparison.Ordinal);
@@ -355,8 +356,8 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(0, log.Properties["SpriteIndex"]);
         Assert.Equal(1, log.Properties["Row"]);
         Assert.Equal(1, log.Properties["Column"]);
-        Assert.Equal(320, log.Properties["CropX"]);
-        Assert.Equal(180, log.Properties["CropY"]);
+        Assert.Equal(320L, log.Properties["CropX"]);
+        Assert.Equal(180L, log.Properties["CropY"]);
         Assert.Equal(320, log.Properties["CropWidth"]);
         Assert.Equal(180, log.Properties["CropHeight"]);
         Assert.Equal(new FileInfo(fixture.SourceSpritePath).Length, log.Properties["SourceLength"]);
@@ -498,6 +499,35 @@ public sealed class TrickplayPreviewHttpSpecs
             },
             _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown failure condition."),
         };
+    }
+
+    private static void AssertAvailableSelectionDiagnostics(
+        InternalFailureCondition condition,
+        RecordedLog log)
+    {
+        switch (condition)
+        {
+            case InternalFailureCondition.CropXOverflow:
+                Assert.Equal(2, log.Properties["FrameIndex"]);
+                Assert.Equal(0, log.Properties["SpriteIndex"]);
+                Assert.Equal(0, log.Properties["Row"]);
+                Assert.Equal(2, log.Properties["Column"]);
+                Assert.Equal(4_294_967_294L, log.Properties["CropX"]);
+                Assert.Equal(0L, log.Properties["CropY"]);
+                Assert.Equal(int.MaxValue, log.Properties["CropWidth"]);
+                Assert.Equal(180, log.Properties["CropHeight"]);
+                break;
+            case InternalFailureCondition.CropYOverflow:
+                Assert.Equal(2, log.Properties["FrameIndex"]);
+                Assert.Equal(0, log.Properties["SpriteIndex"]);
+                Assert.Equal(2, log.Properties["Row"]);
+                Assert.Equal(0, log.Properties["Column"]);
+                Assert.Equal(0L, log.Properties["CropX"]);
+                Assert.Equal(4_294_967_294L, log.Properties["CropY"]);
+                Assert.Equal(320, log.Properties["CropWidth"]);
+                Assert.Equal(int.MaxValue, log.Properties["CropHeight"]);
+                break;
+        }
     }
 
     private static TrickplayMetadata CreateExpectedMetadata(InternalFailureCondition condition)
