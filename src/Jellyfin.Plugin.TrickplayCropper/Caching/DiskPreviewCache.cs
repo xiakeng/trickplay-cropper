@@ -32,6 +32,13 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cancellationToken.ThrowIfCancellationRequested();
         string finalPath = GetFinalPath(identity);
+        byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        if (existingContent is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, null);
+        }
+
         Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
         return await GenerateAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
     }
@@ -57,9 +64,27 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 temporaryPath,
                 writer,
                 cancellationToken).ConfigureAwait(false);
+            ValidateCompletedOutput(temporaryPath);
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporaryPath, finalPath, overwrite: false);
+            try
+            {
+                File.Move(temporaryPath, finalPath, overwrite: false);
+            }
+            catch (IOException)
+            {
+                byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken)
+                    .ConfigureAwait(false);
+                if (winningContent is null)
+                {
+                    throw;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                return new PreviewCacheResult(winningContent, PreviewCacheDisposition.Hit, null);
+            }
+
             byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             return new PreviewCacheResult(content, PreviewCacheDisposition.Miss, telemetry);
         }
         finally
@@ -68,6 +93,27 @@ internal sealed class DiskPreviewCache : IPreviewCache
             {
                 File.Delete(temporaryPath);
             }
+        }
+    }
+
+    private static async Task<byte[]?> TryReadExistingAsync(
+        string finalPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
+            return content.Length > 0
+                ? content
+                : throw new InvalidDataException("The existing Preview Cache Entry is empty.");
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
         }
     }
 
@@ -86,6 +132,15 @@ internal sealed class DiskPreviewCache : IPreviewCache
         PreviewEncodingTelemetry telemetry = await writer(output, cancellationToken).ConfigureAwait(false);
         await output.FlushAsync(cancellationToken).ConfigureAwait(false);
         return telemetry;
+    }
+
+    private static void ValidateCompletedOutput(string temporaryPath)
+    {
+        var output = new FileInfo(temporaryPath);
+        if (!output.Exists || output.Length == 0)
+        {
+            throw new InvalidDataException("The generated Preview Cache Entry is empty or missing.");
+        }
     }
 
     private string GetFinalPath(PreviewIdentity identity)

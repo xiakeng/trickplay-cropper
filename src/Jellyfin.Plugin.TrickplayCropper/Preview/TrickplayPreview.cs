@@ -105,7 +105,12 @@ internal sealed class TrickplayPreview : ITrickplayPreview
     {
         failureContext.Capture(source);
         PreviewIdentity identity = PreviewIdentity.Create(source);
-        _ = conditionalEntityTags;
+        if (MatchesConditionalEntityTag(identity.EntityTag, conditionalEntityTags))
+        {
+            var notModifiedTelemetry = new PreviewTelemetry(lookupDuration, null, null, null, null);
+            return new PreviewOutcome.NotModified(identity.EntityTag, notModifiedTelemetry);
+        }
+
         long cacheStarted = Stopwatch.GetTimestamp();
         PreviewCacheResult cacheResult = await previewCache.GetOrCreateAsync(
             identity,
@@ -114,6 +119,15 @@ internal sealed class TrickplayPreview : ITrickplayPreview
         TimeSpan cacheDuration = Stopwatch.GetElapsedTime(cacheStarted);
         PreviewTelemetry telemetry = CreateTelemetry(lookupDuration, cacheDuration, cacheResult);
         return new PreviewOutcome.Ok(cacheResult.Content, identity.EntityTag, telemetry);
+    }
+
+    private static bool MatchesConditionalEntityTag(
+        string entityTag,
+        IReadOnlyCollection<EntityTagHeaderValue> conditionalEntityTags)
+    {
+        var currentEntityTag = new EntityTagHeaderValue(entityTag);
+        return conditionalEntityTags.Any(
+            candidate => candidate.Tag.ToString() == "*" || currentEntityTag.Compare(candidate, false));
     }
 
     private static PreviewTelemetry CreateTelemetry(
