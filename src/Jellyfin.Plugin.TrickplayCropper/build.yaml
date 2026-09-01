@@ -11,5 +11,5 @@
   "artifacts": [
     "Jellyfin.Plugin.TrickplayCropper.dll"
   ],
-  "changelog": "Initial v1 package foundation."
+  "changelog": "Initial Trickplay Cropper v1 release."
 }

@@ -35,7 +35,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     /// <returns>The mapped HTTP response.</returns>
     [HttpGet]
     public async Task<IActionResult> GetAsync(
-        Guid itemId,
+        [FromRoute] Guid itemId,
         [FromQuery] PreviewQueryParameters parameters,
         CancellationToken cancellationToken)
     {

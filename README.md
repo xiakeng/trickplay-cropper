@@ -3,9 +3,9 @@
 Trickplay Cropper is a Jellyfin server plugin that exposes authenticated,
 single-frame Trickplay Previews from Jellyfin-owned Source Sprites.
 
-This repository currently contains the reproducible plugin, test, packaging,
-and CI foundation. The request and image-processing slices are implemented by
-subsequent issues.
+This repository contains the complete Trickplay Cropper v1 implementation,
+its deterministic unit and component verification, and its reproducible
+packaging pipeline.
 
 ## Compatibility
 
@@ -52,6 +52,14 @@ The validated ZIP is flat and contains exactly:
 Jellyfin.Plugin.TrickplayCropper.dll
 meta.json
 ```
+
+## Release evidence
+
+A successful CI workflow, its source commit, the validated ZIP, and the
+matching SHA-256 file are the complete required v1 release evidence. CI does
+not claim proof of a live Jellyfin plugin load, host-provided Skia resolution,
+live authentication or manager integration, Dashboard persistence, or decoding
+of a real Jellyfin Source Sprite.
 
 For manual installation, extract those two files into one dedicated direct
 child directory of Jellyfin's plugins directory, then restart Jellyfin.

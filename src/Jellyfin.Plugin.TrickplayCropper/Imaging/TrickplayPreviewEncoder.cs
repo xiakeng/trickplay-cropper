@@ -244,7 +244,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
         return codec.GetScanlines(destination, count, rowBytes);
     }
 
-    private static void SkipToCrop(
+    private void SkipToCrop(
         SKCodec codec,
         int cropY,
         ResolvedPreviewSource source,
@@ -256,6 +256,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
             cancellationToken.ThrowIfCancellationRequested();
             int batchSize = Math.Min(remainingRows, ScanlineBatchSize);
             bool skipped = codec.SkipScanlines(batchSize);
+            checkpointObserver(PreviewEncodingCheckpoint.AfterSkipBatch);
             cancellationToken.ThrowIfCancellationRequested();
             if (!skipped)
             {
@@ -443,6 +444,11 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
     /// </summary>
     internal enum PreviewEncodingCheckpoint
     {
+        /// <summary>
+        /// Occurs after one native scanline skip and before its cancellation and completeness checks.
+        /// </summary>
+        AfterSkipBatch,
+
         /// <summary>
         /// Occurs after one native scanline read and before its cancellation and completeness checks.
         /// </summary>
