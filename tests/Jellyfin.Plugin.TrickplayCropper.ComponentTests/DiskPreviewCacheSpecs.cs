@@ -3,6 +3,10 @@ using Jellyfin.Plugin.TrickplayCropper.Caching;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
@@ -10,6 +14,23 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 public sealed class DiskPreviewCacheSpecs
 {
     private static readonly TimeSpan coordinationTimeout = TimeSpan.FromSeconds(10);
+
+    [Fact]
+    public void RegistersOneCacheInstanceForRequestsAndMaintenance()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(CreateApplicationPaths(Path.GetTempPath()));
+        var registrator = new PluginServiceRegistrator();
+        IServerApplicationHost applicationHost = DispatchProxy.Create<IServerApplicationHost, ServerApplicationHostSpecs>();
+        registrator.RegisterServices(services, applicationHost);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        IPreviewCache previewCache = provider.GetRequiredService<IPreviewCache>();
+        IPreviewCacheMaintenance maintenance = provider.GetRequiredService<IPreviewCacheMaintenance>();
+
+        Assert.Same(previewCache, maintenance);
+    }
 
     [Fact]
     public async Task BuffersExistingPreviewCacheEntryBeforeReturning()
@@ -473,6 +494,378 @@ public sealed class DiskPreviewCacheSpecs
         Assert.Equal(PreviewCacheDisposition.Hit, hit.Disposition);
     }
 
+    [Fact]
+    public async Task DeletesOnlyEligibleFilesAtTheFixedRunBoundary()
+    {
+        DateTimeOffset boundary = new(2030, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        var timeProvider = new FixedTimeProvider(boundary);
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            static _ => { },
+            timeProvider,
+            logger);
+        string directoryPath = Path.GetDirectoryName(fixture.FinalPath)!;
+        Directory.CreateDirectory(directoryPath);
+        string temporaryPath = Path.Combine(
+            directoryPath,
+            "f0000000001.00000000000000000000000000000000.tmp");
+        string unknownJpegPath = Path.Combine(directoryPath, "notes.jpg");
+        string unknownTemporaryPath = Path.Combine(directoryPath, "f0000000002.random.tmp");
+        string laterPath = Path.Combine(directoryPath, "f0000000003.jpg");
+        foreach (string path in new[] { fixture.FinalPath, temporaryPath, unknownJpegPath, unknownTemporaryPath })
+        {
+            await File.WriteAllBytesAsync(path, [1], CancellationToken.None);
+            File.SetLastWriteTimeUtc(path, boundary.AddMinutes(-1).UtcDateTime);
+        }
+
+        await File.WriteAllBytesAsync(laterPath, [1], CancellationToken.None);
+        File.SetLastWriteTimeUtc(laterPath, boundary.AddMinutes(1).UtcDateTime);
+        var progress = new RecordingProgress();
+
+        await fixture.Cache.ClearAsync(progress, CancellationToken.None).WaitAsync(coordinationTimeout);
+
+        Assert.False(File.Exists(fixture.FinalPath));
+        Assert.False(File.Exists(temporaryPath));
+        Assert.True(File.Exists(unknownJpegPath));
+        Assert.True(File.Exists(unknownTemporaryPath));
+        Assert.True(File.Exists(laterPath));
+        Assert.Equal(1, timeProvider.GetUtcNowCallCount);
+        Assert.Equal(new double[] { 0, 100 }, progress.Values);
+        RecordedLog summary = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Equal(2, summary.Properties["DeletedFiles"]);
+        Assert.Equal(0, summary.Properties["FailedFiles"]);
+        Assert.Equal(0, summary.Properties["SkippedChangedFiles"]);
+        Assert.Equal(false, summary.Properties["Cancelled"]);
+    }
+
+    [Fact]
+    public async Task SkipsAChangedCandidateAfterTakingItsEntryLock()
+    {
+        TemporaryCacheFixture? observedFixture = null;
+        bool changedCandidate = false;
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupCandidateCaptured && !changedCandidate)
+                {
+                    changedCandidate = true;
+                    TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                    File.WriteAllBytes(activeFixture.FinalPath, [1, 2]);
+                }
+            },
+            TimeProvider.System,
+            logger);
+        observedFixture = fixture;
+        Directory.CreateDirectory(Path.GetDirectoryName(fixture.FinalPath)!);
+        await File.WriteAllBytesAsync(fixture.FinalPath, [1], CancellationToken.None);
+
+        await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+            .WaitAsync(coordinationTimeout);
+
+        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(fixture.FinalPath, CancellationToken.None));
+        RecordedLog summary = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Equal(0, summary.Properties["DeletedFiles"]);
+        Assert.Equal(1, summary.Properties["SkippedChangedFiles"]);
+    }
+
+    [Fact]
+    public async Task TreatsACandidateThatDisappearsBeforeItsEntryLockAsANormalRace()
+    {
+        TemporaryCacheFixture? observedFixture = null;
+        bool removedCandidate = false;
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupCandidateCaptured && !removedCandidate)
+                {
+                    removedCandidate = true;
+                    TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                    File.Delete(activeFixture.FinalPath);
+                }
+            },
+            TimeProvider.System,
+            logger);
+        observedFixture = fixture;
+        Directory.CreateDirectory(Path.GetDirectoryName(fixture.FinalPath)!);
+        await File.WriteAllBytesAsync(fixture.FinalPath, [1], CancellationToken.None);
+
+        await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+            .WaitAsync(coordinationTimeout);
+
+        Assert.False(File.Exists(fixture.FinalPath));
+        Assert.DoesNotContain(logger.Entries, entry => entry.Level == LogLevel.Warning);
+        RecordedLog summary = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Equal(0, summary.Properties["DeletedFiles"]);
+        Assert.Equal(0, summary.Properties["FailedFiles"]);
+        Assert.Equal(0, summary.Properties["SkippedChangedFiles"]);
+    }
+
+    [Fact]
+    public async Task SerializesOverlappingCleanupRuns()
+    {
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int requestedRuns = 0;
+        int startedRuns = 0;
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        {
+            if (checkpoint == PreviewCacheCheckpoint.CleanupRunRequested
+                && Interlocked.Increment(ref requestedRuns) == 2)
+            {
+                secondRequested.SetResult();
+            }
+
+            if (checkpoint != PreviewCacheCheckpoint.CleanupStarted)
+            {
+                return;
+            }
+
+            int runNumber = Interlocked.Increment(ref startedRuns);
+            if (runNumber == 1)
+            {
+                firstStarted.SetResult();
+                releaseFirst.Task.GetAwaiter().GetResult();
+            }
+        });
+
+        Task first = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
+        await firstStarted.Task.WaitAsync(coordinationTimeout);
+        Task second = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
+        await secondRequested.Task.WaitAsync(coordinationTimeout);
+
+        Assert.False(second.IsCompleted);
+        Assert.Equal(1, Volatile.Read(ref startedRuns));
+        releaseFirst.SetResult();
+        await Task.WhenAll(first, second).WaitAsync(coordinationTimeout);
+        Assert.Equal(2, Volatile.Read(ref startedRuns));
+    }
+
+    [Fact]
+    public async Task LogsCancellationWhileWaitingForAnotherCleanupRun()
+    {
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int requestedRuns = 0;
+        int startedRuns = 0;
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupRunRequested
+                    && Interlocked.Increment(ref requestedRuns) == 2)
+                {
+                    secondRequested.SetResult();
+                }
+
+                if (checkpoint == PreviewCacheCheckpoint.CleanupStarted
+                    && Interlocked.Increment(ref startedRuns) == 1)
+                {
+                    firstStarted.SetResult();
+                    releaseFirst.Task.GetAwaiter().GetResult();
+                }
+            },
+            TimeProvider.System,
+            logger);
+        using var cancellation = new CancellationTokenSource();
+        Task first = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
+        await firstStarted.Task.WaitAsync(coordinationTimeout);
+        Task second = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), cancellation.Token));
+        await secondRequested.Task.WaitAsync(coordinationTimeout);
+
+        try
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => second.WaitAsync(coordinationTimeout));
+            RecordedLog cancelledSummary = Assert.Single(
+                logger.Entries,
+                entry => entry.Level == LogLevel.Information
+                    && Equals(entry.Properties["Cancelled"], true));
+            Assert.Equal(0, cancelledSummary.Properties["DeletedFiles"]);
+            Assert.Equal(1, Volatile.Read(ref startedRuns));
+        }
+        finally
+        {
+            releaseFirst.TrySetResult();
+            await first.WaitAsync(coordinationTimeout);
+        }
+    }
+
+    [Fact]
+    public async Task DoesNotTraverseANestedDirectoryReparsePoint()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string externalDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"trickplay-external-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(externalDirectory);
+        string externalEntryPath = Path.Combine(externalDirectory, "f0000000000.jpg");
+        await File.WriteAllBytesAsync(externalEntryPath, [1], CancellationToken.None);
+        try
+        {
+            using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+            Directory.CreateDirectory(fixture.CacheRoot);
+            Directory.CreateSymbolicLink(Path.Combine(fixture.CacheRoot, "linked"), externalDirectory);
+
+            await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+                .WaitAsync(coordinationTimeout);
+
+            Assert.True(File.Exists(externalEntryPath));
+        }
+        finally
+        {
+            Directory.Delete(externalDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CancelsBeforeTheNextFilesystemOperationAndLogsTheSummary()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupEntryLeaseAcquired)
+                {
+                    cancellation.Cancel();
+                }
+            },
+            TimeProvider.System,
+            logger);
+        Directory.CreateDirectory(Path.GetDirectoryName(fixture.FinalPath)!);
+        await File.WriteAllBytesAsync(fixture.FinalPath, [1], CancellationToken.None);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fixture.Cache.ClearAsync(new RecordingProgress(), cancellation.Token)
+                .WaitAsync(coordinationTimeout));
+
+        Assert.True(File.Exists(fixture.FinalPath));
+        RecordedLog summary = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Equal(0, summary.Properties["DeletedFiles"]);
+        Assert.Equal(true, summary.Properties["Cancelled"]);
+    }
+
+    [Fact]
+    public async Task ContinuesAfterAnIndividualFileFailure()
+    {
+        bool failedFirstCandidate = false;
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupEntryLeaseAcquired && !failedFirstCandidate)
+                {
+                    failedFirstCandidate = true;
+                    throw new IOException("Simulated deletion failure.");
+                }
+            },
+            TimeProvider.System,
+            logger);
+        string directoryPath = Path.GetDirectoryName(fixture.FinalPath)!;
+        Directory.CreateDirectory(directoryPath);
+        string secondPath = Path.Combine(directoryPath, "f0000000001.jpg");
+        await File.WriteAllBytesAsync(fixture.FinalPath, [1], CancellationToken.None);
+        await File.WriteAllBytesAsync(secondPath, [2], CancellationToken.None);
+
+        await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+            .WaitAsync(coordinationTimeout);
+
+        Assert.Single(new[] { fixture.FinalPath, secondPath }, File.Exists);
+        Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning);
+        RecordedLog summary = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Equal(1, summary.Properties["DeletedFiles"]);
+        Assert.Equal(1, summary.Properties["FailedFiles"]);
+    }
+
+    [Fact]
+    public async Task WaitsForAnActiveHitBeforeDeletingItsEntry()
+    {
+        TemporaryCacheFixture? observedFixture = null;
+        Task? cleanup = null;
+        var candidateCaptured = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool startedCleanup = false;
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        {
+            if (checkpoint == PreviewCacheCheckpoint.EntryLeaseAcquired && !startedCleanup)
+            {
+                startedCleanup = true;
+                TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                cleanup = Task.Run(
+                    () => activeFixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
+                Assert.True(candidateCaptured.Task.Wait(coordinationTimeout));
+                Assert.False(cleanup.IsCompleted);
+            }
+
+            if (checkpoint == PreviewCacheCheckpoint.CleanupCandidateCaptured)
+            {
+                candidateCaptured.TrySetResult();
+            }
+        });
+        observedFixture = fixture;
+        byte[] content = [0xFF, 0xD8, 1, 0xFF, 0xD9];
+        Directory.CreateDirectory(Path.GetDirectoryName(fixture.FinalPath)!);
+        await File.WriteAllBytesAsync(fixture.FinalPath, content, CancellationToken.None);
+
+        PreviewCacheResult hit = await fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            (_, _) => throw new InvalidOperationException("An existing entry must remain a HIT."),
+            CancellationToken.None).WaitAsync(coordinationTimeout);
+        Task completedCleanup = Assert.IsAssignableFrom<Task>(cleanup);
+        await completedCleanup.WaitAsync(coordinationTimeout);
+
+        Assert.Equal(PreviewCacheDisposition.Hit, hit.Disposition);
+        Assert.Equal(content, hit.Content.ToArray());
+        Assert.False(File.Exists(fixture.FinalPath));
+    }
+
+    [Fact]
+    public async Task WaitsForAnActiveMissAndLeavesItsPublicationIntact()
+    {
+        var writerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseWriter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var candidateCaptured = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        {
+            if (checkpoint == PreviewCacheCheckpoint.CleanupCandidateCaptured)
+            {
+                candidateCaptured.TrySetResult();
+            }
+        });
+        byte[] content = [0xFF, 0xD8, 2, 0xFF, 0xD9];
+        Task<PreviewCacheResult> miss = fixture.Cache.GetOrCreateAsync(
+            fixture.Identity,
+            async (destination, cancellationToken) =>
+            {
+                writerStarted.SetResult();
+                await releaseWriter.Task.WaitAsync(cancellationToken);
+                await destination.WriteAsync(content, cancellationToken);
+                return new PreviewEncodingTelemetry(TimeSpan.Zero, TimeSpan.Zero);
+            },
+            CancellationToken.None);
+        await writerStarted.Task.WaitAsync(coordinationTimeout);
+
+        Task cleanup = Task.Run(
+            () => fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
+        await candidateCaptured.Task.WaitAsync(coordinationTimeout);
+        Assert.False(cleanup.IsCompleted);
+        releaseWriter.SetResult();
+        PreviewCacheResult result = await miss.WaitAsync(coordinationTimeout);
+        await cleanup.WaitAsync(coordinationTimeout);
+
+        Assert.Equal(PreviewCacheDisposition.Miss, result.Disposition);
+        Assert.Equal(content, await File.ReadAllBytesAsync(fixture.FinalPath, CancellationToken.None));
+        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(fixture.FinalPath)!, "*.tmp"));
+    }
+
     private static IApplicationPaths CreateApplicationPaths(string temporaryDirectory)
     {
         IApplicationPaths paths = DispatchProxy.Create<IApplicationPaths, ApplicationPathsSpecs>();
@@ -517,6 +910,98 @@ public sealed class DiskPreviewCacheSpecs
         }
     }
 
+    public class ServerApplicationHostSpecs : DispatchProxy
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ServerApplicationHostSpecs"/> class.
+        /// </summary>
+        public ServerApplicationHostSpecs()
+        {
+        }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            throw new InvalidOperationException($"Unexpected application-host call: {targetMethod?.Name}.");
+        }
+    }
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset utcNow;
+
+        public FixedTimeProvider(DateTimeOffset utcNow)
+        {
+            this.utcNow = utcNow;
+        }
+
+        public int GetUtcNowCallCount { get; private set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            GetUtcNowCallCount++;
+            return utcNow;
+        }
+    }
+
+    private sealed class RecordingProgress : IProgress<double>
+    {
+        private readonly List<double> values = [];
+
+        public IReadOnlyList<double> Values => values;
+
+        public void Report(double value)
+        {
+            values.Add(value);
+        }
+    }
+
+    private sealed class RecordingLogger<TCategory> : ILogger<TCategory>
+    {
+        private readonly List<RecordedLog> entries = [];
+
+        public IReadOnlyList<RecordedLog> Entries
+        {
+            get
+            {
+                lock (entries)
+                {
+                    return entries.ToArray();
+                }
+            }
+        }
+
+        IDisposable? ILogger.BeginScope<TState>(TState state)
+        {
+            return null;
+        }
+
+        bool ILogger.IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        void ILogger.Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Dictionary<string, object?> properties = state is IEnumerable<KeyValuePair<string, object?>> values
+                ? values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+                : [];
+            lock (entries)
+            {
+                entries.Add(new RecordedLog(logLevel, exception, properties));
+            }
+        }
+    }
+
+    private sealed record RecordedLog(
+        LogLevel Level,
+        Exception? Exception,
+        IReadOnlyDictionary<string, object?> Properties);
+
     private sealed class TemporaryCacheFixture : IDisposable
     {
         private readonly string temporaryDirectory;
@@ -524,7 +1009,9 @@ public sealed class DiskPreviewCacheSpecs
         private TemporaryCacheFixture(
             string temporaryDirectory,
             PreviewIdentity identity,
-            PreviewCacheCoordination coordination)
+            PreviewCacheCoordination coordination,
+            TimeProvider timeProvider,
+            ILogger<DiskPreviewCache> logger)
         {
             this.temporaryDirectory = temporaryDirectory;
             Identity = identity;
@@ -536,11 +1023,17 @@ public sealed class DiskPreviewCacheSpecs
             Coordination = coordination;
             Cache = new DiskPreviewCache(
                 CreateApplicationPaths(temporaryDirectory),
-                TimeProvider.System,
-                coordination);
+                timeProvider,
+                coordination,
+                logger);
         }
 
         public DiskPreviewCache Cache { get; }
+
+        public string CacheRoot => Path.Combine(
+            temporaryDirectory,
+            "Jellyfin.Plugin.TrickplayCropper",
+            PreviewIdentity.CacheNamespace);
 
         public string FinalPath { get; }
 
@@ -556,17 +1049,34 @@ public sealed class DiskPreviewCacheSpecs
         public static TemporaryCacheFixture Create(
             Action<PreviewCacheCheckpoint> checkpointObserver)
         {
+            return Create(
+                checkpointObserver,
+                TimeProvider.System,
+                NullLogger<DiskPreviewCache>.Instance);
+        }
+
+        public static TemporaryCacheFixture Create(
+            Action<PreviewCacheCheckpoint> checkpointObserver,
+            TimeProvider timeProvider,
+            ILogger<DiskPreviewCache> logger)
+        {
             string temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
                 $"trickplay-cache-{Guid.NewGuid():N}");
             Directory.CreateDirectory(temporaryDirectory);
             PreviewIdentity identity = CreateIdentity();
             var coordination = new PreviewCacheCoordination(checkpointObserver);
-            return new TemporaryCacheFixture(temporaryDirectory, identity, coordination);
+            return new TemporaryCacheFixture(
+                temporaryDirectory,
+                identity,
+                coordination,
+                timeProvider,
+                logger);
         }
 
         public void Dispose()
         {
+            Cache.Dispose();
             Directory.Delete(temporaryDirectory, recursive: true);
         }
     }
