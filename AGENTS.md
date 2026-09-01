@@ -1,17 +1,25 @@
 # Contribution Workflow
 
 1. Every change must have a GitHub issue.
-2. Create an issue branch named `issue-<number>` and make the change there.
-3. Open a pull request to this repository's `main` branch unless explicitly told otherwise.
-4. End the pull request description with:
+2. Bootstrap implementation worktrees serially. Immediately before creating each
+   issue branch, fetch `origin/main` and post the fetched commit to the issue as
+   its implementation base.
+3. Create `issue-<number>` at that exact commit in a dedicated worktree. Assign
+   exactly one implementation session to the issue branch and worktree.
+4. After bootstrap, run implementation sessions concurrently only when their
+   issues have no open blocking relationship. Keep each session's uncommitted
+   state in its owning worktree; do not use `git stash` during concurrent
+   implementation.
+5. Open a pull request to this repository's `main` branch unless explicitly told otherwise.
+6. End the pull request description with:
 
    `Closes #<issue-number>`
-5. After opening the pull request, run `/code-review` against its exact base and
+7. After opening the pull request, run `/code-review` against its exact base and
    current head, and publish every actionable finding on the pull request.
-6. Resolve every actionable finding and push the fixes to the pull request branch.
-7. Repeat steps 5 and 6 until `/code-review` reports no actionable findings for
+8. Resolve every actionable finding and push the fixes to the pull request branch.
+9. Repeat steps 7 and 8 until `/code-review` reports no actionable findings for
    the pull request's current head.
-8. Leave the pull request open after review. Merge it only when the user explicitly
+10. Leave the pull request open after review. Merge it only when the user explicitly
    requests the merge.
 
 ## Agent skills
