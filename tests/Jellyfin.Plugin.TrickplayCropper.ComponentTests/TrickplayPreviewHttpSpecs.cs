@@ -2,6 +2,7 @@ using System.Net;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using System.Text.Json;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.TrickplayCropper.Api;
@@ -17,6 +18,7 @@ using MediaBrowser.Controller.Trickplay;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dto;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -34,7 +36,6 @@ public sealed class TrickplayPreviewHttpSpecs
     private static readonly Guid alternateSourceId = Guid.Parse("9fe0dc1f-c780-483e-86c8-fc16267127f6");
     private static readonly Guid itemId = Guid.Parse("3f728b7b-4aa5-4f65-b488-a6029edb6725");
     private static readonly Guid unavailableSourceId = Guid.Parse("59036707-aa98-4b65-8875-d63c9d110906");
-    private static readonly Guid unknownUserId = Guid.Parse("68ebfc33-0160-4f11-8faf-b1be419449fe");
     private static readonly Guid userId = Guid.Parse("e07c89e3-a67e-49f5-9cbf-76b980ebe59a");
 
     [Fact]
@@ -119,12 +120,12 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage response = await fixture.GetAsync();
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(response);
         Assert.Equal(0, fixture.Cache.CallCount);
-        Assert.Equal(0, fixture.RequestFailureLogCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
     }
 
     [Theory]
-    [InlineData(ForbiddenCondition.ApiKeyWithoutCurrentUser)]
     [InlineData(ForbiddenCondition.LogicalVideoPlaybackDenied)]
     [InlineData(ForbiddenCondition.SelectedVideoPlaybackDenied)]
     public async Task ForbidsAuthenticatedPlaybackDenial(ForbiddenCondition condition)
@@ -134,8 +135,38 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage response = await fixture.GetAsync();
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(response);
         Assert.Equal(0, fixture.Cache.CallCount);
-        Assert.Equal(0, fixture.RequestFailureLogCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
+    [Fact]
+    public async Task ForbidsApiKeyWithoutCurrentUser()
+    {
+        var scenario = new PreviewScenario
+        {
+            Authentication = AuthenticationState.ApiKeyWithoutCurrentUser,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(response);
+        Assert.Equal(0, fixture.Cache.CallCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
+    [Fact]
+    public async Task ForbidsDefaultAuthorizationPolicyDenial()
+    {
+        var scenario = new PreviewScenario { DeniesDefaultAuthorizationPolicy = true };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(response);
+        Assert.Equal(0, fixture.Cache.CallCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
     }
 
     [Theory]
@@ -158,8 +189,9 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage response = await fixture.GetAsync();
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertProblemDetailsResponseAsync(response);
         Assert.Equal(0, fixture.Cache.CallCount);
-        Assert.Equal(0, fixture.RequestFailureLogCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
     }
 
     [Fact]
@@ -175,19 +207,16 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage deniedResponse = await fixture.GetAsync();
 
         Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(deniedResponse);
         Assert.Equal(1, fixture.Cache.CallCount);
         Assert.Single(Directory.EnumerateFiles(fixture.CacheRoot, "*.jpg", SearchOption.AllDirectories));
-        Assert.Equal(0, fixture.RequestFailureLogCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
     }
 
     private static PreviewScenario CreateForbiddenScenario(ForbiddenCondition condition)
     {
         return condition switch
         {
-            ForbiddenCondition.ApiKeyWithoutCurrentUser => new PreviewScenario
-            {
-                Authentication = AuthenticationState.ApiKeyWithoutCurrentUser,
-            },
             ForbiddenCondition.LogicalVideoPlaybackDenied => new PreviewScenario
             {
                 DeniesLogicalVideoPlayback = true,
@@ -255,6 +284,24 @@ public sealed class TrickplayPreviewHttpSpecs
         };
     }
 
+    private static async Task AssertAuthorizationErrorResponseAsync(HttpResponseMessage response)
+    {
+        Assert.Null(response.Content.Headers.ContentType);
+        Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
+        Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
+    }
+
+    private static async Task AssertProblemDetailsResponseAsync(HttpResponseMessage response)
+    {
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        await using Stream content = await response.Content.ReadAsStreamAsync(CancellationToken.None);
+        using JsonDocument problem = await JsonDocument.ParseAsync(content, cancellationToken: CancellationToken.None);
+        Assert.Equal((int)response.StatusCode, problem.RootElement.GetProperty("status").GetInt32());
+        Assert.True(problem.RootElement.TryGetProperty("title", out JsonElement title));
+        Assert.False(string.IsNullOrWhiteSpace(title.GetString()));
+        Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
+    }
+
     private sealed class PreviewHostFixture : IAsyncDisposable
     {
         private readonly IHost host;
@@ -276,8 +323,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public HttpClient Client { get; }
 
-        public int RequestFailureLogCount =>
-            Services.GetRequiredService<RecordingLogger<TrickplayPreview>>().RequestFailureCount;
+        public int ErrorLogCount => Services.GetRequiredService<RecordingLogger<TrickplayPreview>>().ErrorCount;
 
         public IServiceProvider Services => host.Services;
 
@@ -341,22 +387,48 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             services.AddLogging();
             services.AddSingleton(context.Scenario);
+            ConfigureAuthenticationServices(services);
+            services.AddControllers().AddApplicationPart(typeof(TrickplayPreviewController).Assembly);
+
+            IApplicationPaths applicationPaths = CreateApplicationPaths(context.TemporaryDirectory);
+            RegisterJellyfinFakes(services, context, applicationPaths);
+            RegisterPluginServices(services, applicationPaths);
+        }
+
+        private static void ConfigureAuthenticationServices(IServiceCollection services)
+        {
             services.AddAuthentication(TestAuthenticationHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
                     TestAuthenticationHandler.SchemeName,
                     _ => { });
-            services.AddAuthorization();
-            services.AddControllers().AddApplicationPart(typeof(TrickplayPreviewController).Assembly);
+            services.AddAuthorization(options =>
+            {
+                options.DefaultPolicy = new AuthorizationPolicyBuilder(TestAuthenticationHandler.SchemeName)
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new TestDefaultAuthorizationRequirement())
+                    .Build();
+            });
+            services.AddSingleton<IAuthorizationHandler, TestDefaultAuthorizationHandler>();
+        }
 
+        private static void RegisterJellyfinFakes(
+            IServiceCollection services,
+            PreviewHostContext context,
+            IApplicationPaths applicationPaths)
+        {
             User user = CreateUser(context.Scenario);
-            IApplicationPaths applicationPaths = CreateApplicationPaths(context.TemporaryDirectory);
             services.AddSingleton(user);
             services.AddSingleton(CreateUserManager(user));
             services.AddSingleton(CreateLibraryManager(context.Scenario, user));
             services.AddSingleton(CreateMediaSourceManager(context.Scenario, user));
             services.AddSingleton(CreateTrickplayManager(context));
             services.AddSingleton(applicationPaths);
+        }
 
+        private static void RegisterPluginServices(
+            IServiceCollection services,
+            IApplicationPaths applicationPaths)
+        {
             var registrator = new PluginServiceRegistrator();
             registrator.RegisterServices(services, InterfaceMock.Create<IServerApplicationHost>().Service);
 
@@ -398,50 +470,49 @@ public sealed class TrickplayPreviewHttpSpecs
                 Id = scenario.SelectedSourceId,
                 Name = "Component selected source video",
             };
+            var context = new VideoLookupContext
+            {
+                LogicalVideo = logicalVideo,
+                Scenario = scenario,
+                SelectedVideo = selectedVideo,
+                User = user,
+            };
 
             InterfaceMockSpecs<ILibraryManager> mock = InterfaceMock.Create<ILibraryManager>();
-            mock.Handle("GetItemById", arguments => ResolveVideoLookup(
-                arguments,
-                scenario,
-                user,
-                logicalVideo,
-                selectedVideo));
+            mock.Handle("GetItemById", arguments => ResolveVideoLookup(arguments, context));
             mock.Handle("GetLibraryOptions", arguments =>
-                ReferenceEquals(arguments?[0], selectedVideo)
+                ReferenceEquals(arguments?[0], context.SelectedVideo)
                     ? new LibraryOptions { SaveTrickplayWithMedia = false }
                     : throw new InvalidOperationException("Library options were requested for the wrong video."));
             return mock.Service;
         }
 
-        private static Video? ResolveVideoLookup(
-            object?[]? arguments,
-            PreviewScenario scenario,
-            User user,
-            Video logicalVideo,
-            Video selectedVideo)
+        private static Video? ResolveVideoLookup(object?[]? arguments, VideoLookupContext context)
         {
-            if (arguments?.Length != 2 || !ReferenceEquals(arguments[1], user) || arguments[0] is not Guid requestedId)
+            if (arguments?.Length != 2
+                || !ReferenceEquals(arguments[1], context.User)
+                || arguments[0] is not Guid requestedId)
             {
                 throw new InvalidOperationException("The video lookup did not use the current user-scoped overload.");
             }
 
-            scenario.LibraryLookupIds.Add(requestedId);
-            if (scenario.LibraryLookupIds.Count == 1)
+            context.Scenario.LibraryLookupIds.Add(requestedId);
+            if (context.Scenario.LibraryLookupIds.Count == 1)
             {
-                return scenario.LogicalVideo == ItemAvailability.Available ? logicalVideo : null;
+                return context.Scenario.LogicalVideo == ItemAvailability.Available ? context.LogicalVideo : null;
             }
 
-            if (requestedId != scenario.SelectedSourceId)
+            if (requestedId != context.Scenario.SelectedSourceId)
             {
                 return null;
             }
 
-            if (scenario.DeniesSelectedVideoPlayback)
+            if (context.Scenario.DeniesSelectedVideoPlayback)
             {
-                SetPlaybackPermission(user, false);
+                SetPlaybackPermission(context.User, false);
             }
 
-            return scenario.SelectedVideo == ItemAvailability.Available ? selectedVideo : null;
+            return context.Scenario.SelectedVideo == ItemAvailability.Available ? context.SelectedVideo : null;
         }
 
         private static IMediaSourceManager CreateMediaSourceManager(PreviewScenario scenario, User user)
@@ -553,10 +624,10 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private sealed class TestAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
-        public const string SchemeName = "ComponentTest";
-
         private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
         private const string UserIdClaim = "Jellyfin-UserId";
+
+        public const string SchemeName = "ComponentTest";
 
         private readonly PreviewScenario scenario;
 
@@ -574,29 +645,74 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             AuthenticateResult result = scenario.Authentication switch
             {
-                AuthenticationState.UserSession => CreateAuthenticatedResult(userId, false),
-                AuthenticationState.ApiKeyWithoutCurrentUser => CreateAuthenticatedResult(Guid.Empty, true),
+                AuthenticationState.UserSession => CreateUserSessionResult(userId),
+                AuthenticationState.ApiKeyWithoutCurrentUser => CreateApiKeyResult(),
                 AuthenticationState.Missing => AuthenticateResult.NoResult(),
                 AuthenticationState.Invalid => AuthenticateResult.Fail("The component-test session is invalid."),
-                AuthenticationState.UnusableUserSession => CreateAuthenticatedResult(unknownUserId, false),
+                AuthenticationState.UnusableUserSession => AuthenticateResult.Fail(
+                    "The component-test session is no longer usable."),
                 _ => throw new InvalidOperationException("Unknown authentication scenario."),
             };
             return Task.FromResult(result);
         }
 
-        private static AuthenticateResult CreateAuthenticatedResult(Guid authenticatedUserId, bool isApiKey)
+        private static AuthenticateResult CreateUserSessionResult(Guid authenticatedUserId)
         {
             Claim[] claims =
             [
                 new Claim(UserIdClaim, authenticatedUserId.ToString("N")),
-                new Claim(IsApiKeyClaim, isApiKey.ToString()),
+                new Claim(IsApiKeyClaim, bool.FalseString),
             ];
+            return CreateAuthenticatedResult(claims);
+        }
+
+        private static AuthenticateResult CreateApiKeyResult()
+        {
+            Claim[] claims =
+            [
+                new Claim(UserIdClaim, Guid.Empty.ToString("N")),
+                new Claim(IsApiKeyClaim, bool.TrueString),
+            ];
+            return CreateAuthenticatedResult(claims);
+        }
+
+        private static AuthenticateResult CreateAuthenticatedResult(Claim[] claims)
+        {
             var identity = new ClaimsIdentity(claims, SchemeName);
             var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, SchemeName);
             return AuthenticateResult.Success(ticket);
         }
     }
+
+    private sealed class TestDefaultAuthorizationHandler
+        : AuthorizationHandler<TestDefaultAuthorizationRequirement>
+    {
+        private readonly PreviewScenario scenario;
+
+        public TestDefaultAuthorizationHandler(PreviewScenario scenario)
+        {
+            this.scenario = scenario;
+        }
+
+        protected override Task HandleRequirementAsync(
+            AuthorizationHandlerContext context,
+            TestDefaultAuthorizationRequirement requirement)
+        {
+            if (scenario.DeniesDefaultAuthorizationPolicy)
+            {
+                context.Fail();
+            }
+            else
+            {
+                context.Succeed(requirement);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestDefaultAuthorizationRequirement : IAuthorizationRequirement;
 
     private sealed class RecordingPreviewCache : IPreviewCache
     {
@@ -644,9 +760,9 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private sealed class RecordingLogger<TCategory> : ILogger<TCategory>
     {
-        private int requestFailureCount;
+        private int errorCount;
 
-        public int RequestFailureCount => Volatile.Read(ref requestFailureCount);
+        public int ErrorCount => Volatile.Read(ref errorCount);
 
         IDisposable? ILogger.BeginScope<TState>(TState state)
         {
@@ -665,9 +781,9 @@ public sealed class TrickplayPreviewHttpSpecs
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (eventId.Id == 1000)
+            if (logLevel >= LogLevel.Error)
             {
-                Interlocked.Increment(ref requestFailureCount);
+                Interlocked.Increment(ref errorCount);
             }
         }
     }
@@ -719,9 +835,22 @@ public sealed class TrickplayPreviewHttpSpecs
         string SourceSpritePath,
         PreviewScenario Scenario);
 
+    private sealed class VideoLookupContext
+    {
+        public required Video LogicalVideo { get; init; }
+
+        public required PreviewScenario Scenario { get; init; }
+
+        public required Video SelectedVideo { get; init; }
+
+        public required User User { get; init; }
+    }
+
     private sealed class PreviewScenario
     {
         public AuthenticationState Authentication { get; init; } = AuthenticationState.UserSession;
+
+        public bool DeniesDefaultAuthorizationPolicy { get; init; }
 
         public bool DeniesLogicalVideoPlayback { get; init; }
 
@@ -755,7 +884,6 @@ public sealed class TrickplayPreviewHttpSpecs
 
     public enum ForbiddenCondition
     {
-        ApiKeyWithoutCurrentUser,
         LogicalVideoPlaybackDenied,
         SelectedVideoPlaybackDenied,
     }
