@@ -31,6 +31,11 @@ internal enum PreviewCacheCheckpoint
     ResponseBuffered,
 
     /// <summary>
+    /// Occurs immediately before a cleanup invocation requests the single-run mutex.
+    /// </summary>
+    CleanupRunRequested,
+
+    /// <summary>
     /// Occurs after a cleanup run owns the single-run mutex and captures its fixed boundary.
     /// </summary>
     CleanupStarted,

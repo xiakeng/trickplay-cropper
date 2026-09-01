@@ -570,13 +570,54 @@ public sealed class DiskPreviewCacheSpecs
     }
 
     [Fact]
+    public async Task TreatsACandidateThatDisappearsBeforeItsEntryLockAsANormalRace()
+    {
+        TemporaryCacheFixture? observedFixture = null;
+        bool removedCandidate = false;
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupCandidateCaptured && !removedCandidate)
+                {
+                    removedCandidate = true;
+                    TemporaryCacheFixture activeFixture = Assert.IsType<TemporaryCacheFixture>(observedFixture);
+                    File.Delete(activeFixture.FinalPath);
+                }
+            },
+            TimeProvider.System,
+            logger);
+        observedFixture = fixture;
+        Directory.CreateDirectory(Path.GetDirectoryName(fixture.FinalPath)!);
+        await File.WriteAllBytesAsync(fixture.FinalPath, [1], CancellationToken.None);
+
+        await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+            .WaitAsync(coordinationTimeout);
+
+        Assert.False(File.Exists(fixture.FinalPath));
+        Assert.DoesNotContain(logger.Entries, entry => entry.Level == LogLevel.Warning);
+        RecordedLog summary = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Equal(0, summary.Properties["DeletedFiles"]);
+        Assert.Equal(0, summary.Properties["FailedFiles"]);
+        Assert.Equal(0, summary.Properties["SkippedChangedFiles"]);
+    }
+
+    [Fact]
     public async Task SerializesOverlappingCleanupRuns()
     {
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int requestedRuns = 0;
         int startedRuns = 0;
         using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
         {
+            if (checkpoint == PreviewCacheCheckpoint.CleanupRunRequested
+                && Interlocked.Increment(ref requestedRuns) == 2)
+            {
+                secondRequested.SetResult();
+            }
+
             if (checkpoint != PreviewCacheCheckpoint.CleanupStarted)
             {
                 return;
@@ -593,13 +634,96 @@ public sealed class DiskPreviewCacheSpecs
         Task first = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
         await firstStarted.Task.WaitAsync(coordinationTimeout);
         Task second = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
-        Task earlyCompletion = await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(200)));
+        await secondRequested.Task.WaitAsync(coordinationTimeout);
 
-        Assert.NotSame(second, earlyCompletion);
+        Assert.False(second.IsCompleted);
         Assert.Equal(1, Volatile.Read(ref startedRuns));
         releaseFirst.SetResult();
         await Task.WhenAll(first, second).WaitAsync(coordinationTimeout);
         Assert.Equal(2, Volatile.Read(ref startedRuns));
+    }
+
+    [Fact]
+    public async Task LogsCancellationWhileWaitingForAnotherCleanupRun()
+    {
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int requestedRuns = 0;
+        int startedRuns = 0;
+        var logger = new RecordingLogger<DiskPreviewCache>();
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(
+            checkpoint =>
+            {
+                if (checkpoint == PreviewCacheCheckpoint.CleanupRunRequested
+                    && Interlocked.Increment(ref requestedRuns) == 2)
+                {
+                    secondRequested.SetResult();
+                }
+
+                if (checkpoint == PreviewCacheCheckpoint.CleanupStarted
+                    && Interlocked.Increment(ref startedRuns) == 1)
+                {
+                    firstStarted.SetResult();
+                    releaseFirst.Task.GetAwaiter().GetResult();
+                }
+            },
+            TimeProvider.System,
+            logger);
+        using var cancellation = new CancellationTokenSource();
+        Task first = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None));
+        await firstStarted.Task.WaitAsync(coordinationTimeout);
+        Task second = Task.Run(() => fixture.Cache.ClearAsync(new RecordingProgress(), cancellation.Token));
+        await secondRequested.Task.WaitAsync(coordinationTimeout);
+
+        try
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => second.WaitAsync(coordinationTimeout));
+            RecordedLog cancelledSummary = Assert.Single(
+                logger.Entries,
+                entry => entry.Level == LogLevel.Information
+                    && Equals(entry.Properties["Cancelled"], true));
+            Assert.Equal(0, cancelledSummary.Properties["DeletedFiles"]);
+            Assert.Equal(1, Volatile.Read(ref startedRuns));
+        }
+        finally
+        {
+            releaseFirst.TrySetResult();
+            await first.WaitAsync(coordinationTimeout);
+        }
+    }
+
+    [Fact]
+    public async Task DoesNotTraverseANestedDirectoryReparsePoint()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string externalDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"trickplay-external-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(externalDirectory);
+        string externalEntryPath = Path.Combine(externalDirectory, "f0000000000.jpg");
+        await File.WriteAllBytesAsync(externalEntryPath, [1], CancellationToken.None);
+        try
+        {
+            using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create();
+            Directory.CreateDirectory(fixture.CacheRoot);
+            Directory.CreateSymbolicLink(Path.Combine(fixture.CacheRoot, "linked"), externalDirectory);
+
+            await fixture.Cache.ClearAsync(new RecordingProgress(), CancellationToken.None)
+                .WaitAsync(coordinationTimeout);
+
+            Assert.True(File.Exists(externalEntryPath));
+        }
+        finally
+        {
+            Directory.Delete(externalDirectory, recursive: true);
+        }
     }
 
     [Fact]
@@ -835,7 +959,16 @@ public sealed class DiskPreviewCacheSpecs
     {
         private readonly List<RecordedLog> entries = [];
 
-        public IReadOnlyList<RecordedLog> Entries => entries;
+        public IReadOnlyList<RecordedLog> Entries
+        {
+            get
+            {
+                lock (entries)
+                {
+                    return entries.ToArray();
+                }
+            }
+        }
 
         IDisposable? ILogger.BeginScope<TState>(TState state)
         {
@@ -857,7 +990,10 @@ public sealed class DiskPreviewCacheSpecs
             Dictionary<string, object?> properties = state is IEnumerable<KeyValuePair<string, object?>> values
                 ? values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
                 : [];
-            entries.Add(new RecordedLog(logLevel, exception, properties));
+            lock (entries)
+            {
+                entries.Add(new RecordedLog(logLevel, exception, properties));
+            }
         }
     }
 

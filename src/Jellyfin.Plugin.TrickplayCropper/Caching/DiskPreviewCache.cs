@@ -78,21 +78,20 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
     /// <inheritdoc />
     public async Task ClearAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        long cleanupStarted = 0;
+        long cleanupRequested = Stopwatch.GetTimestamp();
         var counters = new CleanupCounters();
-        bool ownsMutex = false;
-        bool runStarted = false;
         try
         {
+            coordination.ObserveCleanupRunRequested();
             await cleanupMutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-            ownsMutex = true;
-            cleanupStarted = Stopwatch.GetTimestamp();
-            DateTime cleanupStartedUtc = timeProvider.GetUtcNow().UtcDateTime;
-            runStarted = true;
-            coordination.ObserveCleanupStarted();
-            progress.Report(0);
-            await DeleteCandidatesAsync(cleanupStartedUtc, counters, cancellationToken).ConfigureAwait(false);
-            progress.Report(100);
+            try
+            {
+                await ExecuteCleanupRunAsync(progress, counters, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                cleanupMutex.Release();
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -101,16 +100,20 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         }
         finally
         {
-            if (ownsMutex)
-            {
-                cleanupMutex.Release();
-            }
-
-            if (runStarted)
-            {
-                WriteCleanupSummary(counters, Stopwatch.GetElapsedTime(cleanupStarted));
-            }
+            WriteCleanupSummary(counters, Stopwatch.GetElapsedTime(cleanupRequested));
         }
+    }
+
+    private async Task ExecuteCleanupRunAsync(
+        IProgress<double> progress,
+        CleanupCounters counters,
+        CancellationToken cancellationToken)
+    {
+        DateTime cleanupStartedUtc = timeProvider.GetUtcNow().UtcDateTime;
+        coordination.ObserveCleanupStarted();
+        progress.Report(0);
+        await DeleteCandidatesAsync(cleanupStartedUtc, counters, cancellationToken).ConfigureAwait(false);
+        progress.Report(100);
     }
 
     private async Task DeleteCandidatesAsync(
@@ -118,12 +121,26 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         CleanupCounters counters,
         CancellationToken cancellationToken)
     {
-        if (!Directory.Exists(cacheRoot))
+        var root = new DirectoryInfo(cacheRoot);
+        root.Refresh();
+        if (!root.Exists)
         {
             return;
         }
 
-        foreach (string filePath in Directory.EnumerateFiles(cacheRoot, "*", SearchOption.AllDirectories))
+        if ((root.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException("The Cache Tree root is a reparse point.");
+        }
+
+        var enumeration = new EnumerationOptions
+        {
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false,
+            RecurseSubdirectories = true,
+            ReturnSpecialDirectories = false,
+        };
+        foreach (string filePath in Directory.EnumerateFiles(cacheRoot, "*", enumeration))
         {
             cancellationToken.ThrowIfCancellationRequested();
             await TryDeleteCandidateAsync(filePath, cleanupStartedUtc, counters, cancellationToken)

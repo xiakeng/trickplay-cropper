@@ -104,6 +104,14 @@ internal sealed class PreviewCacheCoordination
     }
 
     /// <summary>
+    /// Reports that a cleanup invocation is about to request the single-run mutex.
+    /// </summary>
+    public void ObserveCleanupRunRequested()
+    {
+        checkpointObserver(PreviewCacheCheckpoint.CleanupRunRequested);
+    }
+
+    /// <summary>
     /// Reports that cleanup owns the single-run mutex and has captured its fixed boundary.
     /// </summary>
     public void ObserveCleanupStarted()
