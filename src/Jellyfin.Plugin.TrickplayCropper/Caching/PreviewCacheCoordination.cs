@@ -6,6 +6,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Caching;
 internal sealed class PreviewCacheCoordination
 {
     private readonly Action<PreviewCacheCheckpoint> checkpointObserver;
+    private readonly PreviewEntryLockRegistry entryLocks;
     private readonly CacheTreeLock treeLock = new();
 
     /// <summary>
@@ -23,16 +24,50 @@ internal sealed class PreviewCacheCoordination
     internal PreviewCacheCoordination(Action<PreviewCacheCheckpoint> checkpointObserver)
     {
         this.checkpointObserver = checkpointObserver;
+        StringComparer pathComparer;
+        if (OperatingSystem.IsWindows())
+        {
+            pathComparer = StringComparer.OrdinalIgnoreCase;
+            PathComparison = StringComparison.OrdinalIgnoreCase;
+        }
+        else
+        {
+            pathComparer = StringComparer.Ordinal;
+            PathComparison = StringComparison.Ordinal;
+        }
+
+        entryLocks = new PreviewEntryLockRegistry(pathComparer);
     }
 
     /// <summary>
-    /// Acquires a shared Cache Tree lease for a request.
+    /// Gets the platform path comparison shared by Cache Tree containment and keyed entry identity.
     /// </summary>
+    public StringComparison PathComparison { get; }
+
+    /// <summary>
+    /// Executes one Preview Cache Entry operation under the required Cache Tree and entry lease order.
+    /// </summary>
+    /// <typeparam name="TResult">The immutable buffered operation result.</typeparam>
+    /// <param name="path">The canonical absolute final Preview Cache Entry path.</param>
+    /// <param name="operation">The operation that reads or generates and buffers the entry.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
-    /// <returns>A lease that releases shared ownership when disposed.</returns>
-    public ValueTask<IDisposable> AcquireSharedAsync(CancellationToken cancellationToken)
+    /// <returns>The result produced before both leases are released.</returns>
+    public async Task<TResult> ExecuteEntryAsync<TResult>(
+        string path,
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken)
     {
-        return treeLock.AcquireSharedAsync(cancellationToken);
+        using IDisposable treeLease = await treeLock
+            .AcquireSharedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        checkpointObserver(PreviewCacheCheckpoint.TreeLeaseAcquired);
+        using IDisposable entryLease = await entryLocks
+            .AcquireAsync(path, cancellationToken)
+            .ConfigureAwait(false);
+        checkpointObserver(PreviewCacheCheckpoint.EntryLeaseAcquired);
+        TResult result = await operation(cancellationToken).ConfigureAwait(false);
+        checkpointObserver(PreviewCacheCheckpoint.ResponseBuffered);
+        return result;
     }
 
     /// <summary>
@@ -46,11 +81,18 @@ internal sealed class PreviewCacheCoordination
     }
 
     /// <summary>
-    /// Reports a deterministic Preview Cache Entry boundary.
+    /// Reports the final-path recheck boundary immediately before publication.
     /// </summary>
-    /// <param name="checkpoint">The boundary reached by the cache.</param>
-    public void Observe(PreviewCacheCheckpoint checkpoint)
+    public void ObserveBeforePublication()
     {
-        checkpointObserver(checkpoint);
+        checkpointObserver(PreviewCacheCheckpoint.BeforePublication);
+    }
+
+    /// <summary>
+    /// Reports the boundary immediately after this process publishes a Preview Cache Entry.
+    /// </summary>
+    public void ObserveAfterPublication()
+    {
+        checkpointObserver(PreviewCacheCheckpoint.AfterPublication);
     }
 }

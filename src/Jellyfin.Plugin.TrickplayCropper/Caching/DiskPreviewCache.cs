@@ -14,7 +14,6 @@ internal sealed class DiskPreviewCache : IPreviewCache
 
     private readonly string cacheRoot;
     private readonly PreviewCacheCoordination coordination;
-    private readonly PreviewEntryLockRegistry entryLocks;
     private readonly StringComparison pathComparison;
     private readonly TimeProvider timeProvider;
 
@@ -39,20 +38,8 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
-        StringComparer pathComparer;
-        if (OperatingSystem.IsWindows())
-        {
-            pathComparer = StringComparer.OrdinalIgnoreCase;
-            pathComparison = StringComparison.OrdinalIgnoreCase;
-        }
-        else
-        {
-            pathComparer = StringComparer.Ordinal;
-            pathComparison = StringComparison.Ordinal;
-        }
-
         this.coordination = coordination;
-        entryLocks = new PreviewEntryLockRegistry(pathComparer);
+        pathComparison = coordination.PathComparison;
         this.timeProvider = timeProvider;
     }
 
@@ -64,18 +51,10 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cancellationToken.ThrowIfCancellationRequested();
         string finalPath = GetFinalPath(identity);
-        using IDisposable treeLease = await coordination
-            .AcquireSharedAsync(cancellationToken)
-            .ConfigureAwait(false);
-        coordination.Observe(PreviewCacheCheckpoint.TreeLeaseAcquired);
-        using IDisposable entryLease = await entryLocks
-            .AcquireAsync(finalPath, cancellationToken)
-            .ConfigureAwait(false);
-        coordination.Observe(PreviewCacheCheckpoint.EntryLeaseAcquired);
-        PreviewCacheResult result = await GetOrCreateOwnedAsync(finalPath, writer, cancellationToken)
-            .ConfigureAwait(false);
-        coordination.Observe(PreviewCacheCheckpoint.ResponseBuffered);
-        return result;
+        return await coordination.ExecuteEntryAsync(
+            finalPath,
+            token => GetOrCreateOwnedAsync(finalPath, writer, token),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -144,7 +123,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
             return (existingContent, PreviewCacheDisposition.Hit);
         }
 
-        coordination.Observe(PreviewCacheCheckpoint.BeforePublication);
+        coordination.ObserveBeforePublication();
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
@@ -155,7 +134,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
             return await ReadWinningPublicationAsync(finalPath, exception, cancellationToken).ConfigureAwait(false);
         }
 
-        coordination.Observe(PreviewCacheCheckpoint.AfterPublication);
+        coordination.ObserveAfterPublication();
         cancellationToken.ThrowIfCancellationRequested();
         byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
