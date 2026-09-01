@@ -21,9 +21,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
     /// Initializes a new instance of the <see cref="TrickplayPreviewEncoder"/> class.
     /// </summary>
     public TrickplayPreviewEncoder()
-        : this(
-            static _ => { },
-            static (codec, destination, count, rowBytes) => codec.GetScanlines(destination, count, rowBytes))
+        : this(static _ => { })
     {
     }
 
@@ -37,8 +35,7 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
         Func<SKCodec, IntPtr, int, int, int>? scanlineReader = null)
     {
         this.checkpointObserver = checkpointObserver;
-        this.scanlineReader = scanlineReader
-            ?? (static (codec, destination, count, rowBytes) => codec.GetScanlines(destination, count, rowBytes));
+        this.scanlineReader = scanlineReader ?? ReadScanlines;
     }
 
     /// <inheritdoc />
@@ -240,6 +237,11 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
             };
             throw new PreviewStageException(cause, details);
         }
+    }
+
+    private static int ReadScanlines(SKCodec codec, IntPtr destination, int count, int rowBytes)
+    {
+        return codec.GetScanlines(destination, count, rowBytes);
     }
 
     private static void SkipToCrop(
