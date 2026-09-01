@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Claims;
 using Jellyfin.Plugin.TrickplayCropper.Caching;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
@@ -11,7 +13,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 /// <summary>
 /// Owns the ordered workflow for one Trickplay Preview request.
 /// </summary>
-internal sealed partial class TrickplayPreview : ITrickplayPreview
+internal sealed class TrickplayPreview : ITrickplayPreview
 {
     private readonly IPreviewSourceResolver sourceResolver;
     private readonly IPreviewCache previewCache;
@@ -46,7 +48,7 @@ internal sealed partial class TrickplayPreview : ITrickplayPreview
         }
 
         long requestStarted = Stopwatch.GetTimestamp();
-        var failureContext = new RequestFailureContext();
+        var failureContext = new RequestFailureContext(query);
         try
         {
             return await ProcessAsync(
@@ -62,7 +64,7 @@ internal sealed partial class TrickplayPreview : ITrickplayPreview
         }
         catch (Exception exception)
         {
-            LogFailure(exception, query, failureContext, Stopwatch.GetElapsedTime(requestStarted));
+            LogFailure(exception, failureContext, Stopwatch.GetElapsedTime(requestStarted));
             return new PreviewOutcome.InternalError();
         }
     }
@@ -129,78 +131,32 @@ internal sealed partial class TrickplayPreview : ITrickplayPreview
 
     private void LogFailure(
         Exception exception,
-        PreviewQuery query,
         RequestFailureContext failureContext,
         TimeSpan elapsed)
     {
         failureContext.Capture(exception);
-        LogRequestFailure(
-            logger,
-            query.ItemId,
-            query.ResolvedMediaSourceId,
-            query.PositionTicks,
-            failureContext.FrameWidth,
-            failureContext.FrameHeight,
-            failureContext.IntervalMilliseconds,
-            failureContext.TileWidth,
-            failureContext.TileHeight,
-            failureContext.ThumbnailCount,
-            failureContext.FrameIndex,
-            failureContext.SpriteIndex,
-            failureContext.Row,
-            failureContext.Column,
-            failureContext.CropX,
-            failureContext.CropY,
-            failureContext.CropWidth,
-            failureContext.CropHeight,
-            failureContext.SourceLength,
-            failureContext.SourceLastWriteUtcTicks,
-            exception.GetType().Name,
-            failureContext.FailedValidation,
-            failureContext.FailedValue,
-            elapsed.TotalMilliseconds);
+        PreviewFailureLog failureLog = failureContext.CreateLog(elapsed.TotalMilliseconds);
+        logger.Log(
+            LogLevel.Error,
+            PreviewFailureLog.Event,
+            failureLog,
+            null,
+            static (state, _) => state.Message);
     }
-
-    [LoggerMessage(
-        EventId = 1000,
-        EventName = "TrickplayPreviewRequestFailed",
-        Level = LogLevel.Error,
-        Message = "Trickplay Preview request failed for ItemId {ItemId}, MediaSourceId {MediaSourceId}, "
-            + "PositionTicks {PositionTicks}, FrameWidth {FrameWidth}, FrameHeight {FrameHeight}, "
-            + "IntervalMilliseconds {IntervalMilliseconds}, TileWidth {TileWidth}, TileHeight {TileHeight}, "
-            + "ThumbnailCount {ThumbnailCount}, FrameIndex {FrameIndex}, SpriteIndex {SpriteIndex}, Row {Row}, "
-            + "Column {Column}, CropX {CropX}, CropY {CropY}, CropWidth {CropWidth}, CropHeight {CropHeight}, "
-            + "SourceLength {SourceLength}, SourceLastWriteUtcTicks {SourceLastWriteUtcTicks}, "
-            + "ExceptionType {ExceptionType}, FailedValidation {FailedValidation}, FailedValue {FailedValue}, "
-            + "ElapsedMilliseconds {ElapsedMilliseconds}")]
-    private static partial void LogRequestFailure(
-        ILogger logger,
-        Guid itemId,
-        Guid mediaSourceId,
-        long positionTicks,
-        int? frameWidth,
-        int? frameHeight,
-        int? intervalMilliseconds,
-        int? tileWidth,
-        int? tileHeight,
-        int? thumbnailCount,
-        int? frameIndex,
-        int? spriteIndex,
-        int? row,
-        int? column,
-        int? cropX,
-        int? cropY,
-        int? cropWidth,
-        int? cropHeight,
-        long? sourceLength,
-        long? sourceLastWriteUtcTicks,
-        string exceptionType,
-        string? failedValidation,
-        long? failedValue,
-        double elapsedMilliseconds);
 
     private sealed class RequestFailureContext
     {
+        private readonly PreviewQuery query;
+
+        public RequestFailureContext(PreviewQuery query)
+        {
+            this.query = query;
+        }
+
+        public int? ActualHeight { get; private set; }
+
+        public int? ActualWidth { get; private set; }
+
         public int? Column { get; private set; }
 
         public int? CropHeight { get; private set; }
@@ -210,6 +166,10 @@ internal sealed partial class TrickplayPreview : ITrickplayPreview
         public int? CropX { get; private set; }
 
         public int? CropY { get; private set; }
+
+        public string? DecodePath { get; private set; }
+
+        public string ExceptionType { get; private set; } = nameof(Exception);
 
         public string? FailedValidation { get; private set; }
 
@@ -224,6 +184,8 @@ internal sealed partial class TrickplayPreview : ITrickplayPreview
         public int? IntervalMilliseconds { get; private set; }
 
         public int? Row { get; private set; }
+
+        public string? SkiaResult { get; private set; }
 
         public long? SourceLastWriteUtcTicks { get; private set; }
 
@@ -240,26 +202,94 @@ internal sealed partial class TrickplayPreview : ITrickplayPreview
         public void Capture(ResolvedPreviewSource source)
         {
             Capture(source.Metadata);
-            FrameIndex = source.Selection.FrameIndex;
-            SpriteIndex = source.Selection.SpriteIndex;
-            Row = source.Selection.Row;
-            Column = source.Selection.Column;
-            CropX = source.Selection.CropX;
-            CropY = source.Selection.CropY;
-            CropWidth = source.Selection.CropWidth;
-            CropHeight = source.Selection.CropHeight;
+            Capture(source.Selection);
             SourceLength = source.SourceLength;
             SourceLastWriteUtcTicks = source.SourceLastWriteUtcTicks;
         }
 
         public void Capture(Exception exception)
         {
-            if (exception is InvalidTrickplayMetadataException invalidMetadata)
+            ExceptionType = exception.GetType().Name;
+            switch (exception)
             {
-                Capture(invalidMetadata.Metadata);
-                FailedValidation = invalidMetadata.FailedValidation;
-                FailedValue = invalidMetadata.FailedValue;
+                case InvalidTrickplayMetadataException invalidMetadata:
+                    Capture(invalidMetadata.Metadata);
+                    if (invalidMetadata.Selection is not null)
+                    {
+                        Capture(invalidMetadata.Selection);
+                    }
+
+                    FailedValidation = invalidMetadata.FailedValidation;
+                    FailedValue = invalidMetadata.FailedValue;
+                    break;
+                case PreviewStageException stageException:
+                    ExceptionType = stageException.CauseType;
+                    Capture(stageException.Details);
+                    break;
             }
+        }
+
+        public PreviewFailureLog CreateLog(double elapsedMilliseconds)
+        {
+            string message = string.Create(
+                CultureInfo.InvariantCulture,
+                $"Trickplay Preview request failed with {ExceptionType} for ItemId {query.ItemId}, "
+                + $"MediaSourceId {query.ResolvedMediaSourceId}, PositionTicks {query.PositionTicks}, "
+                + $"ElapsedMilliseconds {elapsedMilliseconds}.");
+            KeyValuePair<string, object?>[] properties =
+            [
+                new("ItemId", query.ItemId),
+                new("MediaSourceId", query.ResolvedMediaSourceId),
+                new("PositionTicks", query.PositionTicks),
+                new("FrameWidth", FrameWidth),
+                new("FrameHeight", FrameHeight),
+                new("IntervalMilliseconds", IntervalMilliseconds),
+                new("TileWidth", TileWidth),
+                new("TileHeight", TileHeight),
+                new("ThumbnailCount", ThumbnailCount),
+                new("FrameIndex", FrameIndex),
+                new("SpriteIndex", SpriteIndex),
+                new("Row", Row),
+                new("Column", Column),
+                new("CropX", CropX),
+                new("CropY", CropY),
+                new("CropWidth", CropWidth),
+                new("CropHeight", CropHeight),
+                new("SourceLength", SourceLength),
+                new("SourceLastWriteUtcTicks", SourceLastWriteUtcTicks),
+                new("ActualWidth", ActualWidth),
+                new("ActualHeight", ActualHeight),
+                new("DecodePath", DecodePath),
+                new("SkiaResult", SkiaResult),
+                new("ExceptionType", ExceptionType),
+                new("FailedValidation", FailedValidation),
+                new("FailedValue", FailedValue),
+                new("ElapsedMilliseconds", elapsedMilliseconds),
+                new("{OriginalFormat}", PreviewFailureLog.MessageTemplate),
+            ];
+            return new PreviewFailureLog(message, properties);
+        }
+
+        private void Capture(PreviewFailureDetails details)
+        {
+            if (details.Metadata is not null)
+            {
+                Capture(details.Metadata);
+            }
+
+            if (details.Selection is not null)
+            {
+                Capture(details.Selection);
+            }
+
+            ActualHeight = details.ActualHeight ?? ActualHeight;
+            ActualWidth = details.ActualWidth ?? ActualWidth;
+            DecodePath = details.DecodePath ?? DecodePath;
+            FailedValidation = details.FailedValidation ?? FailedValidation;
+            FailedValue = details.FailedValue ?? FailedValue;
+            SkiaResult = details.SkiaResult ?? SkiaResult;
+            SourceLastWriteUtcTicks = details.SourceLastWriteUtcTicks ?? SourceLastWriteUtcTicks;
+            SourceLength = details.SourceLength ?? SourceLength;
         }
 
         private void Capture(TrickplayMetadata metadata)
@@ -270,6 +300,57 @@ internal sealed partial class TrickplayPreview : ITrickplayPreview
             TileWidth = metadata.TileWidth;
             TileHeight = metadata.TileHeight;
             ThumbnailCount = metadata.ThumbnailCount;
+        }
+
+        private void Capture(FrameSelection selection)
+        {
+            FrameIndex = selection.FrameIndex;
+            SpriteIndex = selection.SpriteIndex;
+            Row = selection.Row;
+            Column = selection.Column;
+            CropX = selection.CropX;
+            CropY = selection.CropY;
+            CropWidth = selection.CropWidth;
+            CropHeight = selection.CropHeight;
+        }
+    }
+
+    private sealed class PreviewFailureLog : IReadOnlyList<KeyValuePair<string, object?>>
+    {
+        public const string MessageTemplate =
+            "Trickplay Preview request failed with {ExceptionType} for ItemId {ItemId}, "
+            + "MediaSourceId {MediaSourceId}, PositionTicks {PositionTicks}, "
+            + "ElapsedMilliseconds {ElapsedMilliseconds}.";
+
+        private readonly KeyValuePair<string, object?>[] properties;
+
+        public PreviewFailureLog(string message, KeyValuePair<string, object?>[] properties)
+        {
+            Message = message;
+            this.properties = properties;
+        }
+
+        public static EventId Event { get; } = new(1000, "TrickplayPreviewRequestFailed");
+
+        public int Count => properties.Length;
+
+        public KeyValuePair<string, object?> this[int index] => properties[index];
+
+        public string Message { get; }
+
+        public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
+        {
+            return ((IEnumerable<KeyValuePair<string, object?>>)properties).GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return properties.GetEnumerator();
+        }
+
+        public override string ToString()
+        {
+            return Message;
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using Xunit;
 
@@ -80,24 +81,39 @@ public sealed class FrameSelectionSpecs
         Assert.Equal(failedValidation, exception.FailedValidation);
         Assert.Equal(failedValue, exception.FailedValue);
         Assert.Same(metadata, exception.Metadata);
+        Assert.Contains(failedValidation, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            failedValue.ToString(CultureInfo.InvariantCulture),
+            exception.Message,
+            StringComparison.Ordinal);
     }
 
     [Theory]
     [MemberData(nameof(OverflowingCoordinates))]
     public void RejectsCoordinatesThatDoNotFitSkiaIntegers(
-        MetadataField field,
+        CoordinateOverflow overflow,
         string failedValidation,
         long failedValue)
     {
-        TrickplayMetadata metadata = field switch
+        (TrickplayMetadata metadata, long positionTicks) = overflow switch
         {
-            MetadataField.FrameWidth => new TrickplayMetadata(int.MaxValue, 1, 1, 3, 1, 3),
-            MetadataField.FrameHeight => new TrickplayMetadata(1, int.MaxValue, 1, 1, 3, 3),
-            _ => throw new ArgumentOutOfRangeException(nameof(field), field, "Unknown overflow field."),
+            CoordinateOverflow.CropX => (
+                new TrickplayMetadata(int.MaxValue, 1, 1, 3, 1, 3),
+                2 * TimeSpan.TicksPerMillisecond),
+            CoordinateOverflow.CropY => (
+                new TrickplayMetadata(1, int.MaxValue, 1, 1, 3, 3),
+                2 * TimeSpan.TicksPerMillisecond),
+            CoordinateOverflow.CropRight => (
+                new TrickplayMetadata(int.MaxValue, 1, 1, 2, 1, 2),
+                TimeSpan.TicksPerMillisecond),
+            CoordinateOverflow.CropBottom => (
+                new TrickplayMetadata(1, int.MaxValue, 1, 1, 2, 2),
+                TimeSpan.TicksPerMillisecond),
+            _ => throw new ArgumentOutOfRangeException(nameof(overflow), overflow, "Unknown overflow case."),
         };
 
         InvalidTrickplayMetadataException exception = Assert.Throws<InvalidTrickplayMetadataException>(
-            () => FrameSelection.Create(metadata, 2 * TimeSpan.TicksPerMillisecond));
+            () => FrameSelection.Create(metadata, positionTicks));
 
         Assert.Equal(failedValidation, exception.FailedValidation);
         Assert.Equal(failedValue, exception.FailedValue);
@@ -119,10 +135,12 @@ public sealed class FrameSelectionSpecs
         { MetadataField.ThumbnailCount, "ThumbnailCountPositive", -1 },
     };
 
-    public static TheoryData<MetadataField, string, long> OverflowingCoordinates => new()
+    public static TheoryData<CoordinateOverflow, string, long> OverflowingCoordinates => new()
     {
-        { MetadataField.FrameWidth, "CropXInt32", 2L * int.MaxValue },
-        { MetadataField.FrameHeight, "CropYInt32", 2L * int.MaxValue },
+        { CoordinateOverflow.CropX, "CropXInt32", 2L * int.MaxValue },
+        { CoordinateOverflow.CropY, "CropYInt32", 2L * int.MaxValue },
+        { CoordinateOverflow.CropRight, "CropRightInt32", 2L * int.MaxValue },
+        { CoordinateOverflow.CropBottom, "CropBottomInt32", 2L * int.MaxValue },
     };
 
     private static TrickplayMetadata ChangeMetadataField(
@@ -155,5 +173,13 @@ public sealed class FrameSelectionSpecs
         TileWidth,
         TileHeight,
         ThumbnailCount,
+    }
+
+    public enum CoordinateOverflow
+    {
+        CropX,
+        CropY,
+        CropRight,
+        CropBottom,
     }
 }

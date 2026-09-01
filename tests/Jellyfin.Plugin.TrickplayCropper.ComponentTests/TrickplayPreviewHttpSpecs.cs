@@ -239,16 +239,18 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Theory]
-    [InlineData(InternalFailureCondition.ContradictoryFrameWidth)]
-    [InlineData(InternalFailureCondition.FrameWidthZero)]
-    [InlineData(InternalFailureCondition.FrameHeightZero)]
-    [InlineData(InternalFailureCondition.IntervalZero)]
-    [InlineData(InternalFailureCondition.TileWidthZero)]
-    [InlineData(InternalFailureCondition.TileHeightZero)]
-    [InlineData(InternalFailureCondition.CropXOverflow)]
-    [InlineData(InternalFailureCondition.CropYOverflow)]
+    [InlineData(InternalFailureCondition.ContradictoryFrameWidth, "FrameWidthMatchesResolutionKey", 640)]
+    [InlineData(InternalFailureCondition.FrameWidthZero, "FrameWidthPositive", 0)]
+    [InlineData(InternalFailureCondition.FrameHeightZero, "FrameHeightPositive", 0)]
+    [InlineData(InternalFailureCondition.IntervalZero, "IntervalMillisecondsPositive", 0)]
+    [InlineData(InternalFailureCondition.TileWidthZero, "TileWidthPositive", 0)]
+    [InlineData(InternalFailureCondition.TileHeightZero, "TileHeightPositive", 0)]
+    [InlineData(InternalFailureCondition.CropXOverflow, "CropXInt32", 4_294_967_294L)]
+    [InlineData(InternalFailureCondition.CropYOverflow, "CropYInt32", 4_294_967_294L)]
     public async Task ReportsInvalidMetadataAndCheckedArithmeticAsInternalErrors(
-        InternalFailureCondition condition)
+        InternalFailureCondition condition,
+        string failedValidation,
+        long failedValue)
     {
         PreviewScenario scenario = CreateInternalFailureScenario(condition);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
@@ -258,7 +260,67 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         await AssertProblemDetailsResponseAsync(response);
         Assert.Equal(0, fixture.Cache.CallCount);
-        Assert.Equal(1, fixture.ErrorLogCount);
+        RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        TrickplayMetadata expectedMetadata = CreateExpectedMetadata(condition);
+        Assert.Equal(expectedMetadata.FrameWidth, log.Properties["FrameWidth"]);
+        Assert.Equal(expectedMetadata.FrameHeight, log.Properties["FrameHeight"]);
+        Assert.Equal(expectedMetadata.IntervalMilliseconds, log.Properties["IntervalMilliseconds"]);
+        Assert.Equal(expectedMetadata.TileWidth, log.Properties["TileWidth"]);
+        Assert.Equal(expectedMetadata.TileHeight, log.Properties["TileHeight"]);
+        Assert.Equal(expectedMetadata.ThumbnailCount, log.Properties["ThumbnailCount"]);
+        Assert.Equal(nameof(InvalidTrickplayMetadataException), log.Properties["ExceptionType"]);
+        Assert.Equal(failedValidation, log.Properties["FailedValidation"]);
+        Assert.Equal(failedValue, log.Properties["FailedValue"]);
+        Assert.Empty(fixture.EnumerateCacheFiles());
+    }
+
+    [Fact]
+    public async Task PreservesSelectionDiagnosticsWhenManagerPathResolutionFails()
+    {
+        long positionTicks = 3L * 10_000 * TimeSpan.TicksPerMillisecond;
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = positionTicks,
+            SourceSprite = SourceSpriteAvailability.ManagerFailure,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(3, log.Properties["FrameIndex"]);
+        Assert.Equal(0, log.Properties["SpriteIndex"]);
+        Assert.Equal(1, log.Properties["Row"]);
+        Assert.Equal(1, log.Properties["Column"]);
+        Assert.Equal(320, log.Properties["CropX"]);
+        Assert.Equal(180, log.Properties["CropY"]);
+        Assert.Equal(nameof(IOException), log.Properties["ExceptionType"]);
+        Assert.Null(log.Properties["SourceLength"]);
+        Assert.DoesNotContain("manager-secret", log.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.SourceSpritePath, log.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LogsActualDimensionsSubsetPathAndSkiaResult()
+    {
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = 10_000L * TimeSpan.TicksPerMillisecond,
+            SourceSprite = SourceSpriteAvailability.InvalidSubset,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(320, log.Properties["ActualWidth"]);
+        Assert.Equal(360, log.Properties["ActualHeight"]);
+        Assert.Equal("SUBSET", log.Properties["DecodePath"]);
+        Assert.NotNull(log.Properties["SkiaResult"]);
+        Assert.NotEqual(SKCodecResult.Success.ToString(), log.Properties["SkiaResult"]);
+        Assert.Equal("SubsetScanlineDecodeStarted", log.Properties["FailedValidation"]);
         Assert.Empty(fixture.EnumerateCacheFiles());
     }
 
@@ -438,6 +500,34 @@ public sealed class TrickplayPreviewHttpSpecs
         };
     }
 
+    private static TrickplayMetadata CreateExpectedMetadata(InternalFailureCondition condition)
+    {
+        return condition switch
+        {
+            InternalFailureCondition.ContradictoryFrameWidth => new TrickplayMetadata(640, 180, 10_000, 2, 2, 4),
+            InternalFailureCondition.FrameWidthZero => new TrickplayMetadata(0, 180, 10_000, 2, 2, 4),
+            InternalFailureCondition.FrameHeightZero => new TrickplayMetadata(320, 0, 10_000, 2, 2, 4),
+            InternalFailureCondition.IntervalZero => new TrickplayMetadata(320, 180, 0, 2, 2, 4),
+            InternalFailureCondition.TileWidthZero => new TrickplayMetadata(320, 180, 10_000, 0, 2, 4),
+            InternalFailureCondition.TileHeightZero => new TrickplayMetadata(320, 180, 10_000, 2, 0, 4),
+            InternalFailureCondition.CropXOverflow => new TrickplayMetadata(
+                int.MaxValue,
+                180,
+                1,
+                3,
+                1,
+                3),
+            InternalFailureCondition.CropYOverflow => new TrickplayMetadata(
+                320,
+                int.MaxValue,
+                1,
+                1,
+                3,
+                3),
+            _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown failure condition."),
+        };
+    }
+
     private static PreviewScenario CreateLogicalAvailabilityScenario(ItemAvailability availability)
     {
         return new PreviewScenario { LogicalVideo = availability };
@@ -511,7 +601,7 @@ public sealed class TrickplayPreviewHttpSpecs
                 Path.GetTempPath(),
                 $"trickplay-preview-{Guid.NewGuid():N}");
             Directory.CreateDirectory(temporaryDirectory);
-            string sourceSpritePath = CreateSourceSprite(temporaryDirectory);
+            string sourceSpritePath = CreateSourceSprite(temporaryDirectory, scenario);
             var context = new PreviewHostContext(temporaryDirectory, sourceSpritePath, scenario);
 
             var hostBuilder = new HostBuilder();
@@ -753,53 +843,102 @@ public sealed class TrickplayPreviewHttpSpecs
 
         private static TrickplayInfo CreateMetadata(PreviewScenario scenario)
         {
-            return new TrickplayInfo
+            var metadata = new TrickplayInfo
             {
                 ItemId = scenario.SelectedSourceId,
-                Width = scenario.Metadata switch
-                {
-                    MetadataAvailability.ContradictoryFrameWidth => 640,
-                    MetadataAvailability.CropXOverflow => int.MaxValue,
-                    MetadataAvailability.ExactWidthMissing => 640,
-                    MetadataAvailability.FrameWidthZero => 0,
-                    _ => 320,
-                },
-                Height = scenario.Metadata switch
-                {
-                    MetadataAvailability.CropYOverflow => int.MaxValue,
-                    MetadataAvailability.FrameHeightZero => 0,
-                    _ => 180,
-                },
-                TileWidth = scenario.Metadata switch
-                {
-                    MetadataAvailability.CropXOverflow => 3,
-                    MetadataAvailability.CropYOverflow => 1,
-                    MetadataAvailability.TileWidthZero => 0,
-                    _ => 2,
-                },
-                TileHeight = scenario.Metadata switch
-                {
-                    MetadataAvailability.CropXOverflow => 1,
-                    MetadataAvailability.CropYOverflow => 3,
-                    MetadataAvailability.TileHeightZero => 0,
-                    _ => 2,
-                },
-                ThumbnailCount = scenario.Metadata switch
-                {
-                    MetadataAvailability.CropXOverflow => 3,
-                    MetadataAvailability.CropYOverflow => 3,
-                    MetadataAvailability.NegativeThumbnails => -1,
-                    MetadataAvailability.NoThumbnails => 0,
-                    _ => 4,
-                },
-                Interval = scenario.Metadata switch
-                {
-                    MetadataAvailability.CropXOverflow => 1,
-                    MetadataAvailability.CropYOverflow => 1,
-                    MetadataAvailability.IntervalZero => 0,
-                    _ => 10_000,
-                },
+                Width = 320,
+                Height = 180,
+                TileWidth = 2,
+                TileHeight = 2,
+                ThumbnailCount = 4,
+                Interval = 10_000,
             };
+            switch (scenario.Metadata)
+            {
+                case MetadataAvailability.Available:
+                    {
+                        break;
+                    }
+
+                case MetadataAvailability.ContradictoryFrameWidth:
+                case MetadataAvailability.ExactWidthMissing:
+                    {
+                        metadata.Width = 640;
+                        break;
+                    }
+
+                case MetadataAvailability.CropXOverflow:
+                    {
+                        metadata.Width = int.MaxValue;
+                        metadata.TileWidth = 3;
+                        metadata.TileHeight = 1;
+                        metadata.ThumbnailCount = 3;
+                        metadata.Interval = 1;
+                        break;
+                    }
+
+                case MetadataAvailability.CropYOverflow:
+                    {
+                        metadata.Height = int.MaxValue;
+                        metadata.TileWidth = 1;
+                        metadata.TileHeight = 3;
+                        metadata.ThumbnailCount = 3;
+                        metadata.Interval = 1;
+                        break;
+                    }
+
+                case MetadataAvailability.FrameHeightZero:
+                    {
+                        metadata.Height = 0;
+                        break;
+                    }
+
+                case MetadataAvailability.FrameWidthZero:
+                    {
+                        metadata.Width = 0;
+                        break;
+                    }
+
+                case MetadataAvailability.IntervalZero:
+                    {
+                        metadata.Interval = 0;
+                        break;
+                    }
+
+                case MetadataAvailability.NegativeThumbnails:
+                    {
+                        metadata.ThumbnailCount = -1;
+                        break;
+                    }
+
+                case MetadataAvailability.NoThumbnails:
+                    {
+                        metadata.ThumbnailCount = 0;
+                        break;
+                    }
+
+                case MetadataAvailability.TileHeightZero:
+                    {
+                        metadata.TileHeight = 0;
+                        break;
+                    }
+
+                case MetadataAvailability.TileWidthZero:
+                    {
+                        metadata.TileWidth = 0;
+                        break;
+                    }
+
+                default:
+                    {
+                        throw new ArgumentOutOfRangeException(
+                            nameof(scenario),
+                            scenario.Metadata,
+                            "Unknown metadata scenario.");
+                    }
+            }
+
+            return metadata;
         }
 
         private static Task<string> ResolveSourceSpritePath(object?[]? arguments, PreviewHostContext context)
@@ -814,6 +953,9 @@ public sealed class TrickplayPreviewHttpSpecs
             string path = context.Scenario.SourceSprite switch
             {
                 SourceSpriteAvailability.Available => context.SourceSpritePath,
+                SourceSpriteAvailability.InvalidSubset => context.SourceSpritePath,
+                SourceSpriteAvailability.ManagerFailure => throw new IOException(
+                    $"manager-secret SourceSpritePath={context.SourceSpritePath}"),
                 SourceSpriteAvailability.ManagerPathMissing => string.Empty,
                 SourceSpriteAvailability.FileMissing => Path.Combine(
                     context.TemporaryDirectory,
@@ -830,10 +972,11 @@ public sealed class TrickplayPreviewHttpSpecs
             return mock.Service;
         }
 
-        private static string CreateSourceSprite(string temporaryDirectory)
+        private static string CreateSourceSprite(string temporaryDirectory, PreviewScenario scenario)
         {
             string sourceSpritePath = Path.Combine(temporaryDirectory, "source-sprite.jpg");
-            using var bitmap = new SKBitmap(640, 360, SKColorType.Rgba8888, SKAlphaType.Opaque);
+            int sourceWidth = scenario.SourceSprite == SourceSpriteAvailability.InvalidSubset ? 320 : 640;
+            using var bitmap = new SKBitmap(sourceWidth, 360, SKColorType.Rgba8888, SKAlphaType.Opaque);
             using var canvas = new SKCanvas(bitmap);
             DrawCell(canvas, SKColors.Red, 0, 0);
             DrawCell(canvas, SKColors.Green, 320, 0);
@@ -1228,6 +1371,8 @@ public sealed class TrickplayPreviewHttpSpecs
     private enum SourceSpriteAvailability
     {
         Available,
+        InvalidSubset,
+        ManagerFailure,
         ManagerPathMissing,
         FileMissing,
     }

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 
 /// <summary>
@@ -15,7 +17,9 @@ internal sealed class InvalidTrickplayMetadataException : InvalidOperationExcept
         TrickplayMetadata metadata,
         string failedValidation,
         long failedValue)
-        : base("Jellyfin trickplay metadata failed a required validation.")
+        : base(string.Create(
+            CultureInfo.InvariantCulture,
+            $"Jellyfin trickplay metadata failed validation {failedValidation} for value {failedValue}."))
     {
         Metadata = metadata;
         FailedValidation = failedValidation;
@@ -36,4 +40,9 @@ internal sealed class InvalidTrickplayMetadataException : InvalidOperationExcept
     /// Gets the metadata snapshot that failed validation.
     /// </summary>
     public TrickplayMetadata Metadata { get; }
+
+    /// <summary>
+    /// Gets the frame selection when validation failed after selection completed.
+    /// </summary>
+    public FrameSelection? Selection { get; init; }
 }

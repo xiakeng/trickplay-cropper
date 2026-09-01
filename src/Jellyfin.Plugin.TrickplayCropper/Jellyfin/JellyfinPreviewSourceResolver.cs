@@ -142,29 +142,54 @@ internal sealed class JellyfinPreviewSourceResolver : IPreviewSourceResolver
             throw new InvalidTrickplayMetadataException(
                 metadata,
                 "FrameWidthMatchesResolutionKey",
-                metadata.FrameWidth);
+                metadata.FrameWidth)
+            {
+                Selection = selection,
+            };
         }
 
-        LibraryOptions libraryOptions = libraryManager.GetLibraryOptions(sourceVideo);
-        string sourceSpritePath = await trickplayManager.GetTrickplayTilePathAsync(
-            sourceVideo,
-            PreviewWidth,
-            selection.SpriteIndex,
-            libraryOptions.SaveTrickplayWithMedia).ConfigureAwait(false);
-        if (!File.Exists(sourceSpritePath))
+        long? sourceLength = null;
+        long? sourceLastWriteUtcTicks = null;
+        try
         {
-            return new PreviewSourceResolution.NotFound();
-        }
+            LibraryOptions libraryOptions = libraryManager.GetLibraryOptions(sourceVideo);
+            string sourceSpritePath = await trickplayManager.GetTrickplayTilePathAsync(
+                sourceVideo,
+                PreviewWidth,
+                selection.SpriteIndex,
+                libraryOptions.SaveTrickplayWithMedia).ConfigureAwait(false);
+            if (!File.Exists(sourceSpritePath))
+            {
+                return new PreviewSourceResolution.NotFound();
+            }
 
-        var sourceSprite = new FileInfo(sourceSpritePath);
-        return new PreviewSourceResolution.Found(
-            new ResolvedPreviewSource(
-                mediaSourceId,
-                sourceSpritePath,
-                sourceSprite.Length,
-                sourceSprite.LastWriteTimeUtc.Ticks,
-                metadata,
-                selection));
+            var sourceSprite = new FileInfo(sourceSpritePath);
+            sourceLength = sourceSprite.Length;
+            sourceLastWriteUtcTicks = sourceSprite.LastWriteTimeUtc.Ticks;
+            return new PreviewSourceResolution.Found(
+                new ResolvedPreviewSource(
+                    mediaSourceId,
+                    sourceSpritePath,
+                    sourceLength.Value,
+                    sourceLastWriteUtcTicks.Value,
+                    metadata,
+                    selection));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            var details = new PreviewFailureDetails
+            {
+                Metadata = metadata,
+                Selection = selection,
+                SourceLength = sourceLength,
+                SourceLastWriteUtcTicks = sourceLastWriteUtcTicks,
+            };
+            throw new PreviewStageException(exception, details);
+        }
     }
 
     private static bool IsSelectedSource(MediaSourceInfo source, Guid mediaSourceId)

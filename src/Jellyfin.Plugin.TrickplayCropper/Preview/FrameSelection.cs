@@ -48,13 +48,19 @@ internal sealed record FrameSelection(
         long column = cellIndex % metadata.TileWidth;
         long cropX = checked(column * metadata.FrameWidth);
         long cropY = checked(row * metadata.FrameHeight);
+        long cropRight = checked(cropX + metadata.FrameWidth);
+        long cropBottom = checked(cropY + metadata.FrameHeight);
+        int normalizedCropX = ConvertToInt32(cropX, metadata, "CropXInt32");
+        int normalizedCropY = ConvertToInt32(cropY, metadata, "CropYInt32");
+        _ = ConvertToInt32(cropRight, metadata, "CropRightInt32");
+        _ = ConvertToInt32(cropBottom, metadata, "CropBottomInt32");
         return new FrameSelection(
             ConvertToInt32(selectedFrameIndex, metadata, "FrameIndexInt32"),
             ConvertToInt32(selectedSpriteIndex, metadata, "SpriteIndexInt32"),
             ConvertToInt32(row, metadata, "RowInt32"),
             ConvertToInt32(column, metadata, "ColumnInt32"),
-            ConvertToInt32(cropX, metadata, "CropXInt32"),
-            ConvertToInt32(cropY, metadata, "CropYInt32"),
+            normalizedCropX,
+            normalizedCropY,
             metadata.FrameWidth,
             metadata.FrameHeight);
     }
