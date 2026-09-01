@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Common.Configuration;
@@ -12,7 +13,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
     private const string PluginDirectoryName = "Jellyfin.Plugin.TrickplayCropper";
 
     private readonly string cacheRoot;
-    private readonly PreviewEntryLockRegistry entryLocks;
+    private readonly PreviewCacheCoordination coordination;
     private readonly StringComparison pathComparison;
     private readonly TimeProvider timeProvider;
 
@@ -20,22 +21,25 @@ internal sealed class DiskPreviewCache : IPreviewCache
     /// Initializes a new instance of the <see cref="DiskPreviewCache"/> class.
     /// </summary>
     public DiskPreviewCache(IApplicationPaths applicationPaths, TimeProvider timeProvider)
+        : this(applicationPaths, timeProvider, new PreviewCacheCoordination())
+    {
+    }
+
+    /// <summary>
+    /// Initializes a cache with an explicit process-local coordination collaborator.
+    /// </summary>
+    /// <param name="applicationPaths">The Jellyfin application paths.</param>
+    /// <param name="timeProvider">The source of cleanup time.</param>
+    /// <param name="coordination">Coordinates Cache Tree ownership and deterministic boundaries.</param>
+    internal DiskPreviewCache(
+        IApplicationPaths applicationPaths,
+        TimeProvider timeProvider,
+        PreviewCacheCoordination coordination)
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
-        StringComparer pathComparer;
-        if (OperatingSystem.IsWindows())
-        {
-            pathComparer = StringComparer.OrdinalIgnoreCase;
-            pathComparison = StringComparison.OrdinalIgnoreCase;
-        }
-        else
-        {
-            pathComparer = StringComparer.Ordinal;
-            pathComparison = StringComparison.Ordinal;
-        }
-
-        entryLocks = new PreviewEntryLockRegistry(pathComparer);
+        this.coordination = coordination;
+        pathComparison = coordination.PathComparison;
         this.timeProvider = timeProvider;
     }
 
@@ -47,8 +51,10 @@ internal sealed class DiskPreviewCache : IPreviewCache
     {
         cancellationToken.ThrowIfCancellationRequested();
         string finalPath = GetFinalPath(identity);
-        using IDisposable ownership = await entryLocks.AcquireAsync(finalPath, cancellationToken).ConfigureAwait(false);
-        return await GetOrCreateOwnedAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
+        return await coordination.ExecuteEntryAsync(
+            finalPath,
+            token => GetOrCreateOwnedAsync(finalPath, writer, token),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -60,7 +66,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
         return Task.CompletedTask;
     }
 
-    private static async Task<PreviewCacheResult> GetOrCreateOwnedAsync(
+    private async Task<PreviewCacheResult> GetOrCreateOwnedAsync(
         string finalPath,
         Func<Stream, CancellationToken, Task<PreviewEncodingTelemetry>> writer,
         CancellationToken cancellationToken)
@@ -76,7 +82,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
         return await GenerateAsync(finalPath, writer, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<PreviewCacheResult> GenerateAsync(
+    private async Task<PreviewCacheResult> GenerateAsync(
         string finalPath,
         Func<Stream, CancellationToken, Task<PreviewEncodingTelemetry>> writer,
         CancellationToken cancellationToken)
@@ -90,33 +96,11 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 cancellationToken).ConfigureAwait(false);
             ValidateCompletedOutput(temporaryPath);
             cancellationToken.ThrowIfCancellationRequested();
-            byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
-            if (existingContent is not null)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, telemetry);
-            }
-
-            try
-            {
-                File.Move(temporaryPath, finalPath, overwrite: false);
-            }
-            catch (IOException)
-            {
-                byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken)
-                    .ConfigureAwait(false);
-                if (winningContent is null)
-                {
-                    throw;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                return new PreviewCacheResult(winningContent, PreviewCacheDisposition.Hit, telemetry);
-            }
-
-            byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            return new PreviewCacheResult(content, PreviewCacheDisposition.Miss, telemetry);
+            (ReadOnlyMemory<byte> content, PreviewCacheDisposition disposition) = await PublishAsync(
+                finalPath,
+                temporaryPath,
+                cancellationToken).ConfigureAwait(false);
+            return new PreviewCacheResult(content, disposition, telemetry);
         }
         finally
         {
@@ -125,6 +109,52 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 File.Delete(temporaryPath);
             }
         }
+    }
+
+    private async Task<(ReadOnlyMemory<byte> Content, PreviewCacheDisposition Disposition)> PublishAsync(
+        string finalPath,
+        string temporaryPath,
+        CancellationToken cancellationToken)
+    {
+        byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        if (existingContent is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return (existingContent, PreviewCacheDisposition.Hit);
+        }
+
+        coordination.ObserveBeforePublication();
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            File.Move(temporaryPath, finalPath, overwrite: false);
+        }
+        catch (IOException exception)
+        {
+            return await ReadWinningPublicationAsync(finalPath, exception, cancellationToken).ConfigureAwait(false);
+        }
+
+        coordination.ObserveAfterPublication();
+        cancellationToken.ThrowIfCancellationRequested();
+        byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return (content, PreviewCacheDisposition.Miss);
+    }
+
+    private static async Task<(ReadOnlyMemory<byte> Content, PreviewCacheDisposition Disposition)>
+        ReadWinningPublicationAsync(
+            string finalPath,
+            IOException publicationFailure,
+            CancellationToken cancellationToken)
+    {
+        byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        if (winningContent is null)
+        {
+            ExceptionDispatchInfo.Throw(publicationFailure);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return (winningContent, PreviewCacheDisposition.Hit);
     }
 
     private static async Task<byte[]?> TryReadExistingAsync(
@@ -192,4 +222,5 @@ internal sealed class DiskPreviewCache : IPreviewCache
         string entryName = Path.GetFileNameWithoutExtension(finalPath);
         return Path.Combine(directoryPath, $"{entryName}.{Guid.NewGuid():N}.tmp");
     }
+
 }
