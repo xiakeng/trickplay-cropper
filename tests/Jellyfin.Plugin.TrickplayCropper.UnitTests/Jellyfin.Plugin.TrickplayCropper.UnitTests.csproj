@@ -19,4 +19,10 @@
     <ProjectReference Include="../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin.Plugin.TrickplayCropper.csproj" />
     <ProjectReference Include="../../tools/TrickplayCropper.PackageValidator/TrickplayCropper.PackageValidator.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../src/Jellyfin.Plugin.TrickplayCropper/build.yaml"
+          Link="build.yaml"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
