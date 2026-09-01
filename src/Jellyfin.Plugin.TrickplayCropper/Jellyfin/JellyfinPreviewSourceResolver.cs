@@ -15,6 +15,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// </summary>
 internal sealed class JellyfinPreviewSourceResolver : IPreviewSourceResolver
 {
+    private const string JellyfinIsApiKeyClaim = "Jellyfin-IsApiKey";
     private const string JellyfinUserIdClaim = "Jellyfin-UserId";
     private const int PreviewWidth = 320;
 
@@ -44,10 +45,17 @@ internal sealed class JellyfinPreviewSourceResolver : IPreviewSourceResolver
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        if (principal.Identity?.IsAuthenticated != true)
+        {
+            return new PreviewSourceResolution.Unauthorized();
+        }
+
         User? user = ResolveUser(principal);
         if (user is null)
         {
-            return new PreviewSourceResolution.Unauthorized();
+            return IsApiKey(principal)
+                ? new PreviewSourceResolution.Forbidden()
+                : new PreviewSourceResolution.Unauthorized();
         }
 
         Video? logicalVideo = libraryManager.GetItemById<Video>(query.ItemId, user);
@@ -68,10 +76,17 @@ internal sealed class JellyfinPreviewSourceResolver : IPreviewSourceResolver
     {
         Claim? userIdClaim = principal.Claims.FirstOrDefault(
             claim => claim.Type.Equals(JellyfinUserIdClaim, StringComparison.OrdinalIgnoreCase));
-        bool hasUserId = Guid.TryParse(userIdClaim?.Value, out Guid userId);
-        return principal.Identity?.IsAuthenticated == true && hasUserId
+        bool hasUserId = Guid.TryParse(userIdClaim?.Value, out Guid userId) && userId != Guid.Empty;
+        return hasUserId
             ? userManager.GetUserById(userId)
             : null;
+    }
+
+    private static bool IsApiKey(ClaimsPrincipal principal)
+    {
+        Claim? apiKeyClaim = principal.Claims.FirstOrDefault(
+            claim => claim.Type.Equals(JellyfinIsApiKeyClaim, StringComparison.OrdinalIgnoreCase));
+        return bool.TryParse(apiKeyClaim?.Value, out bool isApiKey) && isApiKey;
     }
 
     private async Task<PreviewSourceResolution> ResolveMediaSourceAsync(
