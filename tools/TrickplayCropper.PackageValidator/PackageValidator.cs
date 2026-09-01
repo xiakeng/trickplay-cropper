@@ -217,9 +217,9 @@ public static class PackageValidator
 
     private static string GetTargetFrameworkName(string framework)
     {
-        const string netPrefix = "net";
-        if (!framework.StartsWith(netPrefix, StringComparison.OrdinalIgnoreCase)
-            || !Version.TryParse(framework[netPrefix.Length..], out var version)
+        const string NetPrefix = "net";
+        if (!framework.StartsWith(NetPrefix, StringComparison.OrdinalIgnoreCase)
+            || !Version.TryParse(framework[NetPrefix.Length..], out var version)
             || version.Major < 5
             || version.Build >= 0)
         {
