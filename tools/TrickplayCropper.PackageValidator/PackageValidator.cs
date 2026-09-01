@@ -9,22 +9,7 @@ using System.Text.Json.Serialization;
 
 public static class PackageValidator
 {
-    private const string ProductionAssemblyFileName = "Jellyfin.Plugin.TrickplayCropper.dll";
-    private const string ProductionAssemblyName = "Jellyfin.Plugin.TrickplayCropper";
-    private const string PluginName = "Trickplay Cropper";
-    private const string PluginGuid = "630fb758-9a29-4f2c-a54c-95793651bb8a";
-    private const string PluginVersion = "1.0.0.0";
-    private const string TargetAbi = "10.11.0.0";
-    private const string TargetFramework = "net9.0";
-    private const string TargetFrameworkName = ".NETCoreApp,Version=v9.0";
-    private static readonly Version AssemblyVersion = new(1, 0, 0, 0);
-    private static readonly Version JellyfinContractVersion = new(10, 11, 11, 0);
-    private static readonly string[] ExpectedArtifacts = [ProductionAssemblyFileName];
-    private static readonly HashSet<string> ExpectedMembers = new(StringComparer.Ordinal)
-    {
-        ProductionAssemblyFileName,
-        "meta.json",
-    };
+    private const string MetadataFileName = "meta.json";
 
     public static void Validate(string packagePath, string manifestPath)
     {
@@ -32,74 +17,136 @@ public static class PackageValidator
         ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
 
         var manifest = ReadJson<BuildManifest>(manifestPath, "build manifest");
-        ValidateBuildManifest(manifest);
+        var contract = CreatePackageContract(manifest);
 
         using var package = ZipFile.OpenRead(packagePath);
-        ValidateArchiveMembers(package);
-        ValidateMetadata(package, manifest);
-        ValidateProductionAssembly(package);
+        ValidateArchiveMembers(package, contract.ExpectedMembers);
+        ValidateMetadata(package, contract);
+        ValidateProductionAssembly(package, contract);
     }
 
-    private static void ValidateBuildManifest(BuildManifest manifest)
+    private static PackageContract CreatePackageContract(BuildManifest manifest)
     {
-        RequireEqual("build manifest name", manifest.Name, PluginName);
-        RequireEqual("build manifest guid", manifest.Guid, PluginGuid);
-        RequireEqual("build manifest version", manifest.Version, PluginVersion);
-        RequireEqual("build manifest targetAbi", manifest.TargetAbi, TargetAbi);
-        RequireEqual("build manifest framework", manifest.Framework, TargetFramework);
-
-        if (manifest.Artifacts is null
-            || !manifest.Artifacts.SequenceEqual(ExpectedArtifacts, StringComparer.Ordinal))
+        var name = RequireValue("build manifest name", manifest.Name);
+        var guidText = RequireValue("build manifest guid", manifest.Guid);
+        if (!Guid.TryParse(guidText, out var pluginGuid))
         {
             throw new PackageValidationException(
-                $"Build manifest artifacts must be [{string.Join(", ", ExpectedArtifacts)}].");
+                $"Build manifest guid must be a valid GUID, got {guidText}.");
         }
+
+        var versionText = RequireValue("build manifest version", manifest.Version);
+        if (!Version.TryParse(versionText, out var pluginVersion)
+            || pluginVersion.Revision < 0)
+        {
+            throw new PackageValidationException(
+                $"Build manifest version must contain four numeric components, got {versionText}.");
+        }
+
+        var targetAbi = RequireValue("build manifest targetAbi", manifest.TargetAbi);
+        var framework = RequireValue("build manifest framework", manifest.Framework);
+        var targetFrameworkName = GetTargetFrameworkName(framework);
+
+        if (manifest.Artifacts is null || manifest.Artifacts.Length == 0)
+        {
+            throw new PackageValidationException("Build manifest artifacts must not be empty.");
+        }
+
+        var artifacts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var artifact in manifest.Artifacts)
+        {
+            if (string.IsNullOrWhiteSpace(artifact)
+                || artifact.Contains('/')
+                || artifact.Contains('\\')
+                || !string.Equals(artifact, Path.GetFileName(artifact), StringComparison.Ordinal)
+                || string.Equals(artifact, MetadataFileName, StringComparison.Ordinal))
+            {
+                throw new PackageValidationException(
+                    $"Build manifest artifact must be a flat package member, got {artifact ?? "<null>"}.");
+            }
+
+            if (!artifacts.Add(artifact))
+            {
+                throw new PackageValidationException(
+                    $"Build manifest contains duplicate artifact {artifact}.");
+            }
+        }
+
+        var assemblyArtifacts = artifacts
+            .Where(artifact => artifact.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (assemblyArtifacts.Length != 1)
+        {
+            throw new PackageValidationException(
+                "Build manifest must contain exactly one assembly artifact.");
+        }
+
+        var assemblyFileName = assemblyArtifacts[0];
+        var assemblyName = Path.GetFileNameWithoutExtension(assemblyFileName);
+        var expectedMembers = new HashSet<string>(artifacts, StringComparer.Ordinal)
+        {
+            MetadataFileName,
+        };
+
+        return new PackageContract(
+            name,
+            guidText,
+            pluginGuid,
+            versionText,
+            pluginVersion,
+            targetAbi,
+            targetFrameworkName,
+            assemblyFileName,
+            assemblyName,
+            expectedMembers);
     }
 
-    private static void ValidateArchiveMembers(ZipArchive package)
+    private static void ValidateArchiveMembers(
+        ZipArchive package,
+        IReadOnlySet<string> expectedMembers)
     {
         var memberNames = package.Entries.Select(entry => entry.FullName).ToArray();
-        var unexpectedMembers = memberNames.Except(ExpectedMembers, StringComparer.Ordinal).ToArray();
+        var unexpectedMembers = memberNames.Except(expectedMembers, StringComparer.Ordinal).ToArray();
         if (unexpectedMembers.Length > 0)
         {
             throw new PackageValidationException(
                 $"Unexpected archive members: {string.Join(", ", unexpectedMembers)}");
         }
 
-        var missingMembers = ExpectedMembers.Except(memberNames, StringComparer.Ordinal).ToArray();
+        var missingMembers = expectedMembers.Except(memberNames, StringComparer.Ordinal).ToArray();
         if (missingMembers.Length > 0)
         {
             throw new PackageValidationException(
                 $"Missing archive members: {string.Join(", ", missingMembers)}");
         }
 
-        if (memberNames.Length != ExpectedMembers.Count)
+        if (memberNames.Length != expectedMembers.Count)
         {
             throw new PackageValidationException("Duplicate archive members are not allowed.");
         }
     }
 
-    private static void ValidateMetadata(ZipArchive package, BuildManifest manifest)
+    private static void ValidateMetadata(ZipArchive package, PackageContract contract)
     {
-        var metadataEntry = package.GetEntry("meta.json")
-            ?? throw new PackageValidationException("Package does not contain meta.json.");
+        var metadataEntry = package.GetEntry(MetadataFileName)
+            ?? throw new PackageValidationException($"Package does not contain {MetadataFileName}.");
         using var metadataStream = metadataEntry.Open();
-        var metadata = ReadJson<PackageMetadata>(metadataStream, "meta.json");
+        var metadata = ReadJson<PackageMetadata>(metadataStream, MetadataFileName);
 
-        RequireEqual("meta.json name", metadata.Name, manifest.Name);
-        RequireEqual("meta.json guid", metadata.Guid, manifest.Guid);
-        RequireEqual("meta.json version", metadata.Version, manifest.Version);
-        RequireEqual("meta.json targetAbi", metadata.TargetAbi, manifest.TargetAbi);
+        RequireEqual("meta.json name", metadata.Name, contract.Name);
+        RequireEqual("meta.json guid", metadata.Guid, contract.GuidText);
+        RequireEqual("meta.json version", metadata.Version, contract.VersionText);
+        RequireEqual("meta.json targetAbi", metadata.TargetAbi, contract.TargetAbi);
     }
 
-    private static void ValidateProductionAssembly(ZipArchive package)
+    private static void ValidateProductionAssembly(ZipArchive package, PackageContract contract)
     {
-        var assemblyEntry = package.GetEntry(ProductionAssemblyFileName)
+        var assemblyEntry = package.GetEntry(contract.AssemblyFileName)
             ?? throw new PackageValidationException(
-                $"Package does not contain {ProductionAssemblyFileName}.");
+                $"Package does not contain {contract.AssemblyFileName}.");
         var temporaryAssemblyPath = Path.Combine(
             Path.GetTempPath(),
-            $"{ProductionAssemblyName}-{Guid.NewGuid():N}.dll");
+            $"{contract.AssemblyName}-{Guid.NewGuid():N}.dll");
 
         try
         {
@@ -110,33 +157,23 @@ public static class PackageValidator
             }
 
             var assemblyIdentity = AssemblyName.GetAssemblyName(temporaryAssemblyPath);
-            RequireEqual("assembly name", assemblyIdentity.Name, ProductionAssemblyName);
-            if (assemblyIdentity.Version != AssemblyVersion)
+            RequireEqual("assembly name", assemblyIdentity.Name, contract.AssemblyName);
+            if (assemblyIdentity.Version != contract.Version)
             {
                 throw new PackageValidationException(
-                    $"Assembly version must be {AssemblyVersion}, got {assemblyIdentity.Version}.");
+                    $"Assembly version must be {contract.Version}, got {assemblyIdentity.Version}.");
             }
 
             var fileVersion = FileVersionInfo.GetVersionInfo(temporaryAssemblyPath).FileVersion;
-            RequireEqual("file version", fileVersion, PluginVersion);
+            RequireEqual("file version", fileVersion, contract.VersionText);
 
             var assembly = Assembly.Load(File.ReadAllBytes(temporaryAssemblyPath));
             var frameworkName = assembly
                 .GetCustomAttribute<TargetFrameworkAttribute>()
                 ?.FrameworkName;
-            RequireEqual("assembly target framework", frameworkName, TargetFrameworkName);
+            RequireEqual("assembly target framework", frameworkName, contract.TargetFrameworkName);
 
-            var jellyfinContract = assembly
-                .GetReferencedAssemblies()
-                .SingleOrDefault(reference => reference.Name == "MediaBrowser.Common");
-            if (jellyfinContract?.Version != JellyfinContractVersion)
-            {
-                throw new PackageValidationException(
-                    $"MediaBrowser.Common reference must be {JellyfinContractVersion}, "
-                    + $"got {jellyfinContract?.Version}.");
-            }
-
-            ValidatePluginIdentity(assembly);
+            ValidatePluginIdentity(assembly, contract);
         }
         catch (PackageValidationException)
         {
@@ -150,7 +187,7 @@ public static class PackageValidator
             or TypeLoadException)
         {
             throw new PackageValidationException(
-                $"{ProductionAssemblyFileName} is not a valid plugin assembly: {error.Message}",
+                $"{contract.AssemblyFileName} is not a valid plugin assembly: {error.Message}",
                 error);
         }
         finally
@@ -159,10 +196,10 @@ public static class PackageValidator
         }
     }
 
-    private static void ValidatePluginIdentity(Assembly assembly)
+    private static void ValidatePluginIdentity(Assembly assembly, PackageContract contract)
     {
         var pluginType = assembly.GetType(
-            $"{ProductionAssemblyName}.Plugin",
+            $"{contract.AssemblyName}.Plugin",
             throwOnError: true,
             ignoreCase: false)!;
         var plugin = Activator.CreateInstance(pluginType)
@@ -170,12 +207,27 @@ public static class PackageValidator
         var name = pluginType.GetProperty("Name")?.GetValue(plugin) as string;
         var id = pluginType.GetProperty("Id")?.GetValue(plugin);
 
-        RequireEqual("plugin name", name, PluginName);
-        if (id is not Guid pluginId || pluginId != Guid.Parse(PluginGuid))
+        RequireEqual("plugin name", name, contract.Name);
+        if (id is not Guid pluginId || pluginId != contract.Guid)
         {
             throw new PackageValidationException(
-                $"Plugin ID must be {PluginGuid}, got {id}.");
+                $"Plugin ID must be {contract.GuidText}, got {id}.");
         }
+    }
+
+    private static string GetTargetFrameworkName(string framework)
+    {
+        const string netPrefix = "net";
+        if (!framework.StartsWith(netPrefix, StringComparison.OrdinalIgnoreCase)
+            || !Version.TryParse(framework[netPrefix.Length..], out var version)
+            || version.Major < 5
+            || version.Build >= 0)
+        {
+            throw new PackageValidationException(
+                $"Build manifest framework must use the modern net<major>.<minor> form, got {framework}.");
+        }
+
+        return new FrameworkName(".NETCoreApp", version).FullName;
     }
 
     private static T ReadJson<T>(string path, string description)
@@ -221,6 +273,16 @@ public static class PackageValidator
         }
     }
 
+    private static string RequireValue(string field, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new PackageValidationException($"{field} must not be empty.");
+        }
+
+        return value;
+    }
+
     private sealed record BuildManifest(
         [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("guid")] string? Guid,
@@ -234,4 +296,16 @@ public static class PackageValidator
         [property: JsonPropertyName("guid")] string? Guid,
         [property: JsonPropertyName("version")] string? Version,
         [property: JsonPropertyName("targetAbi")] string? TargetAbi);
+
+    private sealed record PackageContract(
+        string Name,
+        string GuidText,
+        Guid Guid,
+        string VersionText,
+        Version Version,
+        string TargetAbi,
+        string TargetFrameworkName,
+        string AssemblyFileName,
+        string AssemblyName,
+        IReadOnlySet<string> ExpectedMembers);
 }

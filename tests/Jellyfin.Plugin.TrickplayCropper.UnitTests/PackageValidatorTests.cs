@@ -46,16 +46,57 @@ public sealed class PackageValidatorTests
         Assert.Contains(forbiddenMember, error.Message, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData("name", "Another Plugin")]
-    [InlineData("guid", "00000000-0000-0000-0000-000000000000")]
-    [InlineData("version", "2.0.0.0")]
-    [InlineData("targetAbi", "10.12.0.0")]
-    [InlineData("framework", "net10.0")]
-    public void RejectsIncorrectBuildManifestValues(string key, string incorrectValue)
+    [Fact]
+    public void RejectsDuplicateArchiveMembers()
+    {
+        using var fixture = PackageFixture.Create(extraMember: "Jellyfin.Plugin.TrickplayCropper.dll");
+
+        var error = Assert.Throws<PackageValidationException>(
+            () => PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath));
+
+        Assert.Contains("duplicate", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AcceptsAdditionalManifestArtifact()
     {
         var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
-        manifest[key] = incorrectValue;
+        manifest["artifacts"] = new JsonArray(
+            "Jellyfin.Plugin.TrickplayCropper.dll",
+            "README.txt");
+        using var fixture = PackageFixture.Create(
+            extraMember: "README.txt",
+            assembly: ReadProductionAssembly(),
+            manifest: manifest.ToJsonString());
+
+        PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath);
+    }
+
+    [Fact]
+    public void RejectsMissingManifestArtifact()
+    {
+        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        manifest["artifacts"] = new JsonArray(
+            "Jellyfin.Plugin.TrickplayCropper.dll",
+            "README.txt");
+        using var fixture = PackageFixture.Create(manifest: manifest.ToJsonString());
+
+        var error = Assert.Throws<PackageValidationException>(
+            () => PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath));
+
+        Assert.Contains("README.txt", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("name", "")]
+    [InlineData("guid", "not-a-guid")]
+    [InlineData("version", "1.0")]
+    [InlineData("targetAbi", "")]
+    [InlineData("framework", "netstandard2.0")]
+    public void RejectsInvalidBuildManifestValues(string key, string invalidValue)
+    {
+        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        manifest[key] = invalidValue;
         using var fixture = PackageFixture.Create(manifest: manifest.ToJsonString());
 
         var error = Assert.Throws<PackageValidationException>(
@@ -64,17 +105,64 @@ public sealed class PackageValidatorTests
         Assert.Contains(key, error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void RejectsIncorrectBuildManifestArtifacts()
+    [Theory]
+    [InlineData("nested/Plugin.dll")]
+    [InlineData("nested\\Plugin.dll")]
+    [InlineData("meta.json")]
+    public void RejectsNonFlatBuildManifestArtifacts(string artifact)
     {
         var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
-        manifest["artifacts"] = new JsonArray("Jellyfin.Plugin.TrickplayCropper.pdb");
+        manifest["artifacts"] = new JsonArray(artifact);
         using var fixture = PackageFixture.Create(manifest: manifest.ToJsonString());
 
         var error = Assert.Throws<PackageValidationException>(
             () => PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath));
 
-        Assert.Contains("artifacts", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("artifact", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("name", "Another Plugin", "plugin name")]
+    [InlineData("guid", "00000000-0000-0000-0000-000000000000", "plugin ID")]
+    [InlineData("version", "2.0.0.0", "assembly version")]
+    [InlineData("framework", "net8.0", "assembly target framework")]
+    public void RejectsAssemblyOrPluginManifestMismatch(
+        string key,
+        string mismatchedValue,
+        string expectedError)
+    {
+        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        manifest[key] = mismatchedValue;
+        var metadata = JsonNode.Parse(ValidMetadata)!.AsObject();
+        if (metadata.ContainsKey(key))
+        {
+            metadata[key] = mismatchedValue;
+        }
+
+        using var fixture = PackageFixture.Create(
+            assembly: ReadProductionAssembly(),
+            metadata: metadata.ToJsonString(),
+            manifest: manifest.ToJsonString());
+
+        var error = Assert.Throws<PackageValidationException>(
+            () => PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath));
+
+        Assert.Contains(expectedError, error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AcceptsManifestDrivenTargetAbi()
+    {
+        var manifest = JsonNode.Parse(ValidManifest)!.AsObject();
+        manifest["targetAbi"] = "99.0.0.0";
+        var metadata = JsonNode.Parse(ValidMetadata)!.AsObject();
+        metadata["targetAbi"] = "99.0.0.0";
+        using var fixture = PackageFixture.Create(
+            assembly: ReadProductionAssembly(),
+            metadata: metadata.ToJsonString(),
+            manifest: manifest.ToJsonString());
+
+        PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath);
     }
 
     [Theory]
@@ -118,10 +206,14 @@ public sealed class PackageValidatorTests
     [Fact]
     public void AcceptsTheInstallContract()
     {
-        var productionAssembly = File.ReadAllBytes(typeof(Plugin).Assembly.Location);
-        using var fixture = PackageFixture.Create(assembly: productionAssembly);
+        using var fixture = PackageFixture.Create(assembly: ReadProductionAssembly());
 
         PackageValidator.Validate(fixture.PackagePath, fixture.ManifestPath);
+    }
+
+    private static byte[] ReadProductionAssembly()
+    {
+        return File.ReadAllBytes(typeof(Plugin).Assembly.Location);
     }
 
     private sealed class PackageFixture : IDisposable
