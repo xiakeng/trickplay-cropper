@@ -519,6 +519,30 @@ public sealed class TrickplayPreviewHttpSpecs
     {
         switch (condition)
         {
+            case InternalFailureCondition.ContradictoryFrameWidth:
+                Assert.Equal(0, log.Properties["FrameIndex"]);
+                Assert.Equal(0, log.Properties["SpriteIndex"]);
+                Assert.Equal(0, log.Properties["Row"]);
+                Assert.Equal(0, log.Properties["Column"]);
+                Assert.Equal(0L, log.Properties["CropX"]);
+                Assert.Equal(0L, log.Properties["CropY"]);
+                Assert.Equal(640, log.Properties["CropWidth"]);
+                Assert.Equal(180, log.Properties["CropHeight"]);
+                break;
+            case InternalFailureCondition.FrameWidthZero:
+            case InternalFailureCondition.FrameHeightZero:
+            case InternalFailureCondition.IntervalZero:
+            case InternalFailureCondition.TileWidthZero:
+            case InternalFailureCondition.TileHeightZero:
+                Assert.Null(log.Properties["FrameIndex"]);
+                Assert.Null(log.Properties["SpriteIndex"]);
+                Assert.Null(log.Properties["Row"]);
+                Assert.Null(log.Properties["Column"]);
+                Assert.Null(log.Properties["CropX"]);
+                Assert.Null(log.Properties["CropY"]);
+                Assert.Null(log.Properties["CropWidth"]);
+                Assert.Null(log.Properties["CropHeight"]);
+                break;
             case InternalFailureCondition.CropXOverflow:
                 Assert.Equal(2, log.Properties["FrameIndex"]);
                 Assert.Equal(0, log.Properties["SpriteIndex"]);
@@ -559,6 +583,11 @@ public sealed class TrickplayPreviewHttpSpecs
                 Assert.Equal(320, log.Properties["CropWidth"]);
                 Assert.Equal(int.MaxValue, log.Properties["CropHeight"]);
                 break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(condition),
+                    condition,
+                    "Unknown internal failure condition.");
         }
     }
 

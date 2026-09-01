@@ -231,6 +231,8 @@ internal sealed class TrickplayPreview : ITrickplayPreview
                     ExceptionType = stageException.CauseType;
                     Capture(stageException.Details);
                     break;
+                default:
+                    break;
             }
         }
 
