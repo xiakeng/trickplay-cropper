@@ -34,6 +34,11 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class TrickplayPreviewHttpSpecs
 {
+    private const string ExpectedDefaultFrameToken = "f0000000000";
+    private const string ExpectedDefaultSourceStamp = "d5b827fd3d17075e86151d7299ff22cd";
+    private const string ExpectedDefaultEntityTag =
+        $"\"{ExpectedDefaultSourceStamp}-{ExpectedDefaultFrameToken}\"";
+
     private static readonly Guid alternateSourceId = Guid.Parse("9fe0dc1f-c780-483e-86c8-fc16267127f6");
     private static readonly Guid itemId = Guid.Parse("3f728b7b-4aa5-4f65-b488-a6029edb6725");
     private static readonly Guid otherItemId = Guid.Parse("86bfb88a-2931-4454-8d5d-15a8c427f235");
@@ -52,9 +57,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal("inline", response.Content.Headers.ContentDisposition?.DispositionType);
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoCache);
-        Assert.Equal(
-            "\"d5b827fd3d17075e86151d7299ff22cd-f0000000000\"",
-            response.Headers.ETag?.Tag);
+        Assert.Equal(ExpectedDefaultEntityTag, response.Headers.ETag?.Tag);
         Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
         Assert.False(response.Headers.Contains("X-Trickplay-Cache-File"));
         Assert.Contains("lookup;dur=", response.Headers.GetValues("Server-Timing").Single(), StringComparison.Ordinal);
@@ -71,12 +74,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.InRange(center.Red, 240, 255);
         Assert.InRange(center.Green, 0, 15);
         Assert.InRange(center.Blue, 0, 15);
-        string expectedEntryPath = Path.Combine(
-            fixture.CacheRoot,
-            itemId.ToString("N"),
-            "w0320",
-            "s000000-d5b827fd3d17075e86151d7299ff22cd",
-            "f0000000000.jpg");
+        string expectedEntryPath = GetDefaultEntryPath(fixture);
         Assert.True(File.Exists(expectedEntryPath));
         Assert.Single(Directory.EnumerateFiles(fixture.CacheRoot, "*.jpg", SearchOption.AllDirectories));
         Assert.Empty(Directory.EnumerateFiles(fixture.CacheRoot, "*.tmp", SearchOption.AllDirectories));
@@ -93,6 +91,100 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Same(
             fixture.Services.GetRequiredService<ITrickplayPreviewEncoder>(),
             fixture.Services.GetRequiredService<ITrickplayPreviewEncoder>());
+    }
+
+    [Fact]
+    public async Task ServesBufferedExistingPreviewCacheEntry()
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+        byte[] expectedContent = [0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9];
+        string entryPath = GetDefaultEntryPath(fixture);
+        Directory.CreateDirectory(Path.GetDirectoryName(entryPath)!);
+        await File.WriteAllBytesAsync(entryPath, expectedContent, CancellationToken.None);
+
+        using HttpResponseMessage cachedResponse = await fixture.GetAsync();
+        await File.WriteAllBytesAsync(entryPath, [9, 9, 9], CancellationToken.None);
+        byte[] cachedContent = await cachedResponse.Content.ReadAsByteArrayAsync(CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, cachedResponse.StatusCode);
+        Assert.Equal(expectedContent, cachedContent);
+        Assert.Equal(expectedContent.Length, cachedResponse.Content.Headers.ContentLength);
+        Assert.Equal("image/jpeg", cachedResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("inline", cachedResponse.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal(ExpectedDefaultEntityTag, cachedResponse.Headers.ETag?.Tag);
+        Assert.True(cachedResponse.Headers.CacheControl?.Private);
+        Assert.True(cachedResponse.Headers.CacheControl?.NoCache);
+        Assert.Equal("HIT", cachedResponse.Headers.GetValues("X-Trickplay-Cache").Single());
+        Assert.False(cachedResponse.Headers.Contains("X-Trickplay-Cache-File"));
+        string serverTiming = cachedResponse.Headers.GetValues("Server-Timing").Single();
+        Assert.Contains("lookup;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.Contains("cache;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.DoesNotContain("decode;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.DoesNotContain("encode;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.Equal(1, fixture.Cache.CallCount);
+    }
+
+    [Fact]
+    public async Task ReturnsNotModifiedAfterRevalidatingCurrentSource()
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+        using HttpResponseMessage generatedResponse = await fixture.GetAsync();
+        string entityTag = Assert.IsType<string>(generatedResponse.Headers.ETag?.Tag);
+
+        using HttpResponseMessage response = await fixture.GetConditionalAsync(entityTag);
+
+        Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
+        Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
+        Assert.Equal(entityTag, response.Headers.ETag?.Tag);
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoCache);
+        Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
+        Assert.False(response.Headers.Contains("X-Trickplay-Cache-File"));
+        string serverTiming = response.Headers.GetValues("Server-Timing").Single();
+        Assert.Contains("lookup;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.DoesNotContain("cache;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.DoesNotContain("decode;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.DoesNotContain("encode;dur=", serverTiming, StringComparison.Ordinal);
+        Assert.Equal(1, fixture.Cache.CallCount);
+    }
+
+    [Theory]
+    [InlineData(ConditionalEntityTagKind.Weak)]
+    [InlineData(ConditionalEntityTagKind.Wildcard)]
+    public async Task UsesWeakComparisonAndWildcardForConditionalRequests(ConditionalEntityTagKind conditionKind)
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+        using HttpResponseMessage generatedResponse = await fixture.GetAsync();
+        string entityTag = Assert.IsType<string>(generatedResponse.Headers.ETag?.Tag);
+        string condition = conditionKind switch
+        {
+            ConditionalEntityTagKind.Weak => string.Concat("W/", entityTag),
+            ConditionalEntityTagKind.Wildcard => "*",
+            _ => throw new ArgumentOutOfRangeException(nameof(conditionKind), conditionKind, "Unknown condition kind."),
+        };
+
+        using HttpResponseMessage response = await fixture.GetConditionalAsync(condition);
+
+        Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
+        Assert.Equal(1, fixture.Cache.CallCount);
+    }
+
+    [Fact]
+    public async Task IgnoresStaleConditionalEntityTagAfterSourceSnapshotChanges()
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+        using HttpResponseMessage originalResponse = await fixture.GetAsync();
+        string originalEntityTag = Assert.IsType<string>(originalResponse.Headers.ETag?.Tag);
+        DateTime changedWriteTime = File.GetLastWriteTimeUtc(fixture.SourceSpritePath).AddSeconds(1);
+        File.SetLastWriteTimeUtc(fixture.SourceSpritePath, changedWriteTime);
+
+        using HttpResponseMessage response = await fixture.GetConditionalAsync(originalEntityTag);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotEqual(originalEntityTag, response.Headers.ETag?.Tag);
+        Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
+        Assert.Equal(2, fixture.Cache.CallCount);
+        Assert.Equal(2, Directory.EnumerateFiles(fixture.CacheRoot, "*.jpg", SearchOption.AllDirectories).Count());
     }
 
     [Fact]
@@ -203,12 +295,13 @@ public sealed class TrickplayPreviewHttpSpecs
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
         using HttpResponseMessage authorizedResponse = await fixture.GetAsync();
+        string entityTag = Assert.IsType<string>(authorizedResponse.Headers.ETag?.Tag);
         Assert.Equal(HttpStatusCode.OK, authorizedResponse.StatusCode);
         Assert.Equal(1, fixture.Cache.CallCount);
         Assert.Single(Directory.EnumerateFiles(fixture.CacheRoot, "*.jpg", SearchOption.AllDirectories));
 
         fixture.SetPlaybackAccess(false);
-        using HttpResponseMessage deniedResponse = await fixture.GetAsync();
+        using HttpResponseMessage deniedResponse = await fixture.GetConditionalAsync(entityTag);
 
         Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
         await AssertAuthorizationErrorResponseAsync(deniedResponse);
@@ -398,6 +491,16 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.NotEqual(baseline.SourceSpritePath, changed.SourceSpritePath);
         Assert.NotEqual(baseline.CacheRoot, changed.CacheRoot);
         Assert.Equal(Assert.Single(baseline.Cache.Identities), Assert.Single(changed.Cache.Identities));
+    }
+
+    private static string GetDefaultEntryPath(PreviewHostFixture fixture)
+    {
+        return Path.Combine(
+            fixture.CacheRoot,
+            itemId.ToString("N"),
+            "w0320",
+            $"s000000-{ExpectedDefaultSourceStamp}",
+            $"{ExpectedDefaultFrameToken}.jpg");
     }
 
     private static PreviewScenario CreateForbiddenScenario(ForbiddenCondition condition)
@@ -725,15 +828,13 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public Task<HttpResponseMessage> GetAsync()
         {
-            PreviewScenario scenario = Services.GetRequiredService<PreviewScenario>();
-            string mediaSourceQuery = scenario.UsesAlternateSource
-                ? $"MediaSourceId={alternateSourceId.ToString(scenario.MediaSourceIdFormat)}&"
-                : string.Empty;
-            string requestPath = string.Create(
-                CultureInfo.InvariantCulture,
-                $"/TrickplayCropper/Videos/{scenario.LogicalItemId:D}/Preview?{mediaSourceQuery}"
-                + $"PositionTicks={scenario.RequestPositionTicks}");
-            return Client.GetAsync(requestPath, CancellationToken.None);
+            return SendAsync(null);
+        }
+
+        public Task<HttpResponseMessage> GetConditionalAsync(string ifNoneMatch)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(ifNoneMatch);
+            return SendAsync(ifNoneMatch);
         }
 
         public string[] EnumerateCacheFiles()
@@ -746,6 +847,25 @@ public sealed class TrickplayPreviewHttpSpecs
         public void SetPlaybackAccess(bool hasPlaybackAccess)
         {
             SetPlaybackPermission(Services.GetRequiredService<User>(), hasPlaybackAccess);
+        }
+
+        private async Task<HttpResponseMessage> SendAsync(string? ifNoneMatch)
+        {
+            PreviewScenario scenario = Services.GetRequiredService<PreviewScenario>();
+            string mediaSourceQuery = scenario.UsesAlternateSource
+                ? $"MediaSourceId={alternateSourceId.ToString(scenario.MediaSourceIdFormat)}&"
+                : string.Empty;
+            string requestPath = string.Create(
+                CultureInfo.InvariantCulture,
+                $"/TrickplayCropper/Videos/{scenario.LogicalItemId:D}/Preview?{mediaSourceQuery}"
+                + $"PositionTicks={scenario.RequestPositionTicks}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, requestPath);
+            if (ifNoneMatch is not null)
+            {
+                request.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
+            }
+
+            return await Client.SendAsync(request, CancellationToken.None);
         }
 
         private static void ConfigureWebHost(IWebHostBuilder webHost, PreviewHostContext context)
@@ -1425,6 +1545,12 @@ public sealed class TrickplayPreviewHttpSpecs
         Missing,
         Invalid,
         UnusableUserSession,
+    }
+
+    public enum ConditionalEntityTagKind
+    {
+        Weak,
+        Wildcard,
     }
 
     public enum ForbiddenCondition

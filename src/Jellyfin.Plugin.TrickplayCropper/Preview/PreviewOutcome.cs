@@ -14,14 +14,16 @@ public abstract record PreviewOutcome
     public sealed record Ok(
         ReadOnlyMemory<byte> Content,
         string EntityTag,
-        PreviewTelemetry Telemetry) : PreviewOutcome;
+        PreviewTelemetry.CacheAccess Telemetry) : PreviewOutcome;
 
     /// <summary>
     /// Represents a conditional request whose entity is unchanged.
     /// </summary>
     /// <param name="EntityTag">The canonical entity tag.</param>
     /// <param name="Telemetry">The completed request telemetry.</param>
-    public sealed record NotModified(string EntityTag, PreviewTelemetry Telemetry) : PreviewOutcome;
+    public sealed record NotModified(
+        string EntityTag,
+        PreviewTelemetry.Conditional Telemetry) : PreviewOutcome;
 
     /// <summary>
     /// Represents an invalid request.

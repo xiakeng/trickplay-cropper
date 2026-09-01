@@ -105,28 +105,30 @@ internal sealed class TrickplayPreview : ITrickplayPreview
     {
         failureContext.Capture(source);
         PreviewIdentity identity = PreviewIdentity.Create(source);
-        _ = conditionalEntityTags;
+        if (MatchesConditionalEntityTag(identity.EntityTag, conditionalEntityTags))
+        {
+            var notModifiedTelemetry = new PreviewTelemetry.Conditional(lookupDuration);
+            return new PreviewOutcome.NotModified(identity.EntityTag, notModifiedTelemetry);
+        }
+
         long cacheStarted = Stopwatch.GetTimestamp();
         PreviewCacheResult cacheResult = await previewCache.GetOrCreateAsync(
             identity,
             (destination, token) => encoder.EncodeAsync(source, destination, token),
             cancellationToken).ConfigureAwait(false);
         TimeSpan cacheDuration = Stopwatch.GetElapsedTime(cacheStarted);
-        PreviewTelemetry telemetry = CreateTelemetry(lookupDuration, cacheDuration, cacheResult);
+        var telemetry = new PreviewTelemetry.CacheAccess(lookupDuration, cacheDuration, cacheResult);
         return new PreviewOutcome.Ok(cacheResult.Content, identity.EntityTag, telemetry);
     }
 
-    private static PreviewTelemetry CreateTelemetry(
-        TimeSpan lookupDuration,
-        TimeSpan cacheDuration,
-        PreviewCacheResult cacheResult)
+    private static bool MatchesConditionalEntityTag(
+        string entityTag,
+        IReadOnlyCollection<EntityTagHeaderValue> conditionalEntityTags)
     {
-        return new PreviewTelemetry(
-            lookupDuration,
-            cacheDuration,
-            cacheResult.EncodingTelemetry?.Decode,
-            cacheResult.EncodingTelemetry?.Encode,
-            cacheResult.Disposition);
+        var currentEntityTag = new EntityTagHeaderValue(entityTag);
+        return conditionalEntityTags.Any(
+            candidate => candidate.Equals(EntityTagHeaderValue.Any)
+                || currentEntityTag.Compare(candidate, useStrongComparison: false));
     }
 
     private void LogFailure(
