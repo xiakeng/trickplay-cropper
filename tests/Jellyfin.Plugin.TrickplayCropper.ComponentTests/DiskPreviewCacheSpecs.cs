@@ -38,7 +38,7 @@ public sealed class DiskPreviewCacheSpecs
         TemporaryCacheFixture? observedFixture = null;
         Task<PreviewCacheResult>? entryWaiter = null;
         bool deletedEntry = false;
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, _) =>
         {
             if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.EntryLeaseAcquired && !deletedEntry)
             {
@@ -287,7 +287,7 @@ public sealed class DiskPreviewCacheSpecs
         byte[] generated = [1, 2, 3, 4];
         byte[] outsideWinner = [0xFF, 0xD8, 0xFF, 0xD9];
         TemporaryCacheFixture? observedFixture = null;
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, _) =>
         {
             if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.BeforePublication)
             {
@@ -391,7 +391,7 @@ public sealed class DiskPreviewCacheSpecs
     public async Task KeepsPublishedEntryWhenCancellationAbandonsResponse()
     {
         using var cancellation = new CancellationTokenSource();
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, _) =>
         {
             if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.AfterPublication)
             {
@@ -425,7 +425,7 @@ public sealed class DiskPreviewCacheSpecs
         bool observedTreeLease = false;
         bool observedEntryLease = false;
         bool startedWaiters = false;
-        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create(checkpoint =>
+        using TemporaryCacheFixture fixture = TemporaryCacheFixture.Create((checkpoint, treeLock) =>
         {
             if (checkpoint == DiskPreviewCache.PreviewCacheCheckpoint.TreeLeaseAcquired)
             {
@@ -448,8 +448,8 @@ public sealed class DiskPreviewCacheSpecs
                     (_, _) => throw new InvalidOperationException("A buffered entry must remain owned."),
                     CancellationToken.None);
                 Assert.False(entryWaiter.IsCompleted);
-                pruningLease = activeFixture.Cache
-                    .AcquirePruningLeaseAsync(CancellationToken.None)
+                pruningLease = treeLock
+                    .AcquireExclusiveAsync(CancellationToken.None)
                     .AsTask();
                 Assert.False(pruningLease.IsCompleted);
             }
@@ -541,11 +541,11 @@ public sealed class DiskPreviewCacheSpecs
 
         public static TemporaryCacheFixture Create()
         {
-            return Create(static _ => { });
+            return Create(static (_, _) => { });
         }
 
         public static TemporaryCacheFixture Create(
-            Action<DiskPreviewCache.PreviewCacheCheckpoint> checkpointObserver)
+            Action<DiskPreviewCache.PreviewCacheCheckpoint, CacheTreeLock> checkpointObserver)
         {
             string temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),

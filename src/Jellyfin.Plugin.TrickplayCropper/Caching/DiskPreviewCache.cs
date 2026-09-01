@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Common.Configuration;
@@ -15,14 +16,14 @@ internal sealed class DiskPreviewCache : IPreviewCache
     private readonly CacheTreeLock cacheTreeLock = new();
     private readonly PreviewEntryLockRegistry entryLocks;
     private readonly StringComparison pathComparison;
-    private readonly Action<PreviewCacheCheckpoint> checkpointObserver;
+    private readonly Action<PreviewCacheCheckpoint, CacheTreeLock> checkpointObserver;
     private readonly TimeProvider timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiskPreviewCache"/> class.
     /// </summary>
     public DiskPreviewCache(IApplicationPaths applicationPaths, TimeProvider timeProvider)
-        : this(applicationPaths, timeProvider, static _ => { })
+        : this(applicationPaths, timeProvider, static (_, _) => { })
     {
     }
 
@@ -35,7 +36,7 @@ internal sealed class DiskPreviewCache : IPreviewCache
     internal DiskPreviewCache(
         IApplicationPaths applicationPaths,
         TimeProvider timeProvider,
-        Action<PreviewCacheCheckpoint> checkpointObserver)
+        Action<PreviewCacheCheckpoint, CacheTreeLock> checkpointObserver)
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
@@ -67,14 +68,14 @@ internal sealed class DiskPreviewCache : IPreviewCache
         using IDisposable treeLease = await cacheTreeLock
             .AcquireSharedAsync(cancellationToken)
             .ConfigureAwait(false);
-        checkpointObserver(PreviewCacheCheckpoint.TreeLeaseAcquired);
+        checkpointObserver(PreviewCacheCheckpoint.TreeLeaseAcquired, cacheTreeLock);
         using IDisposable entryLease = await entryLocks
             .AcquireAsync(finalPath, cancellationToken)
             .ConfigureAwait(false);
-        checkpointObserver(PreviewCacheCheckpoint.EntryLeaseAcquired);
+        checkpointObserver(PreviewCacheCheckpoint.EntryLeaseAcquired, cacheTreeLock);
         PreviewCacheResult result = await GetOrCreateOwnedAsync(finalPath, writer, cancellationToken)
             .ConfigureAwait(false);
-        checkpointObserver(PreviewCacheCheckpoint.ResponseBuffered);
+        checkpointObserver(PreviewCacheCheckpoint.ResponseBuffered, cacheTreeLock);
         return result;
     }
 
@@ -85,16 +86,6 @@ internal sealed class DiskPreviewCache : IPreviewCache
         _ = timeProvider.GetUtcNow();
         progress.Report(100);
         return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Acquires exclusive Cache Tree ownership for one directory-pruning critical section.
-    /// </summary>
-    /// <param name="cancellationToken">The cleanup cancellation token.</param>
-    /// <returns>A lease that releases exclusive ownership when disposed.</returns>
-    internal ValueTask<IDisposable> AcquirePruningLeaseAsync(CancellationToken cancellationToken)
-    {
-        return cacheTreeLock.AcquireExclusiveAsync(cancellationToken);
     }
 
     private async Task<PreviewCacheResult> GetOrCreateOwnedAsync(
@@ -127,7 +118,11 @@ internal sealed class DiskPreviewCache : IPreviewCache
                 cancellationToken).ConfigureAwait(false);
             ValidateCompletedOutput(temporaryPath);
             cancellationToken.ThrowIfCancellationRequested();
-            return await PublishAsync(finalPath, temporaryPath, telemetry, cancellationToken).ConfigureAwait(false);
+            (ReadOnlyMemory<byte> content, PreviewCacheDisposition disposition) = await PublishAsync(
+                finalPath,
+                temporaryPath,
+                cancellationToken).ConfigureAwait(false);
+            return new PreviewCacheResult(content, disposition, telemetry);
         }
         finally
         {
@@ -138,43 +133,50 @@ internal sealed class DiskPreviewCache : IPreviewCache
         }
     }
 
-    private async Task<PreviewCacheResult> PublishAsync(
+    private async Task<(ReadOnlyMemory<byte> Content, PreviewCacheDisposition Disposition)> PublishAsync(
         string finalPath,
         string temporaryPath,
-        PreviewEncodingTelemetry telemetry,
         CancellationToken cancellationToken)
     {
         byte[]? existingContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
         if (existingContent is not null)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return new PreviewCacheResult(existingContent, PreviewCacheDisposition.Hit, telemetry);
+            return (existingContent, PreviewCacheDisposition.Hit);
         }
 
-        checkpointObserver(PreviewCacheCheckpoint.BeforePublication);
+        checkpointObserver(PreviewCacheCheckpoint.BeforePublication, cacheTreeLock);
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
             File.Move(temporaryPath, finalPath, overwrite: false);
         }
-        catch (IOException)
+        catch (IOException exception)
         {
-            byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken)
-                .ConfigureAwait(false);
-            if (winningContent is null)
-            {
-                throw;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            return new PreviewCacheResult(winningContent, PreviewCacheDisposition.Hit, telemetry);
+            return await ReadWinningPublicationAsync(finalPath, exception, cancellationToken).ConfigureAwait(false);
         }
 
-        checkpointObserver(PreviewCacheCheckpoint.AfterPublication);
+        checkpointObserver(PreviewCacheCheckpoint.AfterPublication, cacheTreeLock);
         cancellationToken.ThrowIfCancellationRequested();
         byte[] content = await File.ReadAllBytesAsync(finalPath, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        return new PreviewCacheResult(content, PreviewCacheDisposition.Miss, telemetry);
+        return (content, PreviewCacheDisposition.Miss);
+    }
+
+    private static async Task<(ReadOnlyMemory<byte> Content, PreviewCacheDisposition Disposition)>
+        ReadWinningPublicationAsync(
+            string finalPath,
+            IOException publicationFailure,
+            CancellationToken cancellationToken)
+    {
+        byte[]? winningContent = await TryReadExistingAsync(finalPath, cancellationToken).ConfigureAwait(false);
+        if (winningContent is null)
+        {
+            ExceptionDispatchInfo.Throw(publicationFailure);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return (winningContent, PreviewCacheDisposition.Hit);
     }
 
     private static async Task<byte[]?> TryReadExistingAsync(
