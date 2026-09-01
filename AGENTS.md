@@ -7,15 +7,24 @@
 
    `Closes #<issue-number>`
 
-## Agent references
+## Agent skills
 
-- **Issue tracking**: Before reading or changing GitHub issues, follow
-  `docs/agents/issue-tracker.md`.
-- **Triage**: Before applying issue states or labels, follow
-  `docs/agents/triage-labels.md`.
-- **Domain work**: Before exploring or changing product behavior, follow
-  `docs/agents/domain.md` and use the vocabulary in `CONTEXT.md`.
-- **C# changes**: Before creating, modifying, or refactoring C# code, follow
-  `docs/agents/csharp-coding-standard.md`.
-- **C# review**: Before reviewing C# changes, follow
-  `docs/agents/csharp-code-review.md`.
+### Issue tracker
+
+Issues are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default canonical triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain docs layout. See `docs/agents/domain.md`.
+
+### C# coding standard
+
+For C# code changes, see `docs/agents/csharp-coding-standard.md`.
+
+### C# code review
+
+For C# code reviews, see `docs/agents/csharp-code-review.md`.
