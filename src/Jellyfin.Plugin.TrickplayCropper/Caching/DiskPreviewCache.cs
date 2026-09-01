@@ -1,27 +1,43 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using System.Security;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Common.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Caching;
 
 /// <summary>
 /// Stores Preview Cache Entries beneath Jellyfin temporary storage.
 /// </summary>
-internal sealed class DiskPreviewCache : IPreviewCache
+internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
 {
     private const string PluginDirectoryName = "Jellyfin.Plugin.TrickplayCropper";
+    private const string FinalExtension = ".jpg";
+    private const string TemporaryExtension = ".tmp";
+    private const int FrameDigits = 10;
+    private const int TemporaryTokenLength = 32;
 
     private readonly string cacheRoot;
+    private readonly SemaphoreSlim cleanupMutex = new(1, 1);
     private readonly PreviewCacheCoordination coordination;
+    private readonly ILogger<DiskPreviewCache> logger;
     private readonly StringComparison pathComparison;
     private readonly TimeProvider timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiskPreviewCache"/> class.
     /// </summary>
-    public DiskPreviewCache(IApplicationPaths applicationPaths, TimeProvider timeProvider)
-        : this(applicationPaths, timeProvider, new PreviewCacheCoordination())
+    public DiskPreviewCache(
+        IApplicationPaths applicationPaths,
+        TimeProvider timeProvider,
+        ILogger<DiskPreviewCache> logger)
+        : this(
+            applicationPaths,
+            timeProvider,
+            new PreviewCacheCoordination(),
+            logger)
     {
     }
 
@@ -34,11 +50,13 @@ internal sealed class DiskPreviewCache : IPreviewCache
     internal DiskPreviewCache(
         IApplicationPaths applicationPaths,
         TimeProvider timeProvider,
-        PreviewCacheCoordination coordination)
+        PreviewCacheCoordination coordination,
+        ILogger<DiskPreviewCache> logger)
     {
         cacheRoot = Path.GetFullPath(
             Path.Combine(applicationPaths.TempDirectory, PluginDirectoryName, PreviewIdentity.CacheNamespace));
         this.coordination = coordination;
+        this.logger = logger;
         pathComparison = coordination.PathComparison;
         this.timeProvider = timeProvider;
     }
@@ -58,13 +76,247 @@ internal sealed class DiskPreviewCache : IPreviewCache
     }
 
     /// <inheritdoc />
-    public Task ClearAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    public async Task ClearAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        _ = timeProvider.GetUtcNow();
-        progress.Report(100);
-        return Task.CompletedTask;
+        long cleanupStarted = 0;
+        var counters = new CleanupCounters();
+        bool ownsMutex = false;
+        bool runStarted = false;
+        try
+        {
+            await cleanupMutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+            ownsMutex = true;
+            cleanupStarted = Stopwatch.GetTimestamp();
+            DateTime cleanupStartedUtc = timeProvider.GetUtcNow().UtcDateTime;
+            runStarted = true;
+            coordination.ObserveCleanupStarted();
+            progress.Report(0);
+            await DeleteCandidatesAsync(cleanupStartedUtc, counters, cancellationToken).ConfigureAwait(false);
+            progress.Report(100);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            counters.Cancelled = true;
+            throw;
+        }
+        finally
+        {
+            if (ownsMutex)
+            {
+                cleanupMutex.Release();
+            }
+
+            if (runStarted)
+            {
+                WriteCleanupSummary(counters, Stopwatch.GetElapsedTime(cleanupStarted));
+            }
+        }
     }
+
+    private async Task DeleteCandidatesAsync(
+        DateTime cleanupStartedUtc,
+        CleanupCounters counters,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(cacheRoot))
+        {
+            return;
+        }
+
+        foreach (string filePath in Directory.EnumerateFiles(cacheRoot, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await TryDeleteCandidateAsync(filePath, cleanupStartedUtc, counters, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task TryDeleteCandidateAsync(
+        string filePath,
+        DateTime cleanupStartedUtc,
+        CleanupCounters counters,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            CleanupCandidate? candidate = CaptureCandidate(filePath, cleanupStartedUtc);
+            if (candidate is null)
+            {
+                return;
+            }
+
+            coordination.ObserveCleanupCandidateCaptured();
+            await coordination.ExecuteCleanupEntryAsync(
+                candidate.LockPath,
+                () => DeleteOwnedCandidate(candidate, counters),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (IOException exception)
+        {
+            RecordFileFailure(filePath, exception, counters);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            RecordFileFailure(filePath, exception, counters);
+        }
+        catch (SecurityException exception)
+        {
+            RecordFileFailure(filePath, exception, counters);
+        }
+    }
+
+    private static CleanupCandidate? CaptureCandidate(string filePath, DateTime cleanupStartedUtc)
+    {
+        string canonicalPath = Path.GetFullPath(filePath);
+        string fileName = Path.GetFileName(canonicalPath);
+        (CleanupFileKind Kind, string LockPath)? cleanupIdentity = GetCleanupIdentity(canonicalPath, fileName);
+        if (cleanupIdentity is null)
+        {
+            return null;
+        }
+
+        var file = new FileInfo(canonicalPath);
+        file.Refresh();
+        if (!file.Exists || file.LastWriteTimeUtc > cleanupStartedUtc)
+        {
+            return null;
+        }
+
+        return new CleanupCandidate(
+            canonicalPath,
+            cleanupIdentity.Value.LockPath,
+            cleanupIdentity.Value.Kind,
+            file.Length,
+            file.LastWriteTimeUtc.Ticks);
+    }
+
+    private static void DeleteOwnedCandidate(CleanupCandidate candidate, CleanupCounters counters)
+    {
+        var current = new FileInfo(candidate.Path);
+        current.Refresh();
+        if (!current.Exists)
+        {
+            return;
+        }
+
+        if (current.Length != candidate.Length || current.LastWriteTimeUtc.Ticks != candidate.LastWriteTimeUtcTicks)
+        {
+            counters.SkippedChangedFiles++;
+            return;
+        }
+
+        File.Delete(candidate.Path);
+        counters.DeletedFiles++;
+    }
+
+    private static (CleanupFileKind Kind, string LockPath)? GetCleanupIdentity(
+        string canonicalPath,
+        string fileName)
+    {
+        if (IsFinalEntryName(fileName))
+        {
+            return (CleanupFileKind.FinalJpeg, canonicalPath);
+        }
+
+        if (!TryGetTemporaryFinalName(fileName, out string? finalName))
+        {
+            return null;
+        }
+
+        string lockPath = Path.Combine(Path.GetDirectoryName(canonicalPath)!, finalName!);
+        return (CleanupFileKind.Temporary, lockPath);
+    }
+
+    private static bool IsFinalEntryName(string fileName)
+    {
+        if (fileName.Length != 1 + FrameDigits + FinalExtension.Length
+            || fileName[0] != 'f'
+            || !fileName.EndsWith(FinalExtension, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return fileName.AsSpan(1, FrameDigits).IndexOfAnyExceptInRange('0', '9') < 0;
+    }
+
+    private static bool TryGetTemporaryFinalName(string fileName, out string? finalName)
+    {
+        finalName = null;
+        if (!fileName.EndsWith(TemporaryExtension, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string withoutExtension = Path.GetFileNameWithoutExtension(fileName);
+        int separatorIndex = withoutExtension.LastIndexOf('.');
+        if (separatorIndex < 0)
+        {
+            return false;
+        }
+
+        string entryName = withoutExtension[..separatorIndex];
+        string token = withoutExtension[(separatorIndex + 1)..];
+        string candidateFinalName = string.Concat(entryName, FinalExtension);
+        if (!IsFinalEntryName(candidateFinalName)
+            || token.Length != TemporaryTokenLength
+            || !Guid.TryParseExact(token, "N", out _)
+            || !string.Equals(token, token.ToLowerInvariant(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        finalName = candidateFinalName;
+        return true;
+    }
+
+    private void RecordFileFailure(string filePath, Exception exception, CleanupCounters counters)
+    {
+        counters.FailedFiles++;
+        LogFileFailure(logger, filePath, exception);
+    }
+
+    private void WriteCleanupSummary(CleanupCounters counters, TimeSpan elapsed)
+    {
+        LogCleanupSummary(
+            logger,
+            counters.DeletedFiles,
+            0,
+            counters.FailedFiles,
+            0,
+            counters.SkippedChangedFiles,
+            checked((long)elapsed.TotalMilliseconds),
+            counters.Cancelled);
+    }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Warning,
+        Message = "Failed to delete Trickplay Cropper cache file {CachePath}.")]
+    private static partial void LogFileFailure(
+        ILogger logger,
+        string cachePath,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Information,
+        Message = "Trickplay Cropper cache cleanup completed. DeletedFiles={DeletedFiles} "
+            + "DeletedDirectories={DeletedDirectories} FailedFiles={FailedFiles} "
+            + "FailedDirectories={FailedDirectories} SkippedChangedFiles={SkippedChangedFiles} "
+            + "ElapsedMilliseconds={ElapsedMilliseconds} Cancelled={Cancelled}")]
+    private static partial void LogCleanupSummary(
+        ILogger logger,
+        int deletedFiles,
+        int deletedDirectories,
+        int failedFiles,
+        int failedDirectories,
+        int skippedChangedFiles,
+        long elapsedMilliseconds,
+        bool cancelled);
 
     private async Task<PreviewCacheResult> GetOrCreateOwnedAsync(
         string finalPath,
@@ -221,6 +473,38 @@ internal sealed class DiskPreviewCache : IPreviewCache
         string directoryPath = Path.GetDirectoryName(finalPath)!;
         string entryName = Path.GetFileNameWithoutExtension(finalPath);
         return Path.Combine(directoryPath, $"{entryName}.{Guid.NewGuid():N}.tmp");
+    }
+
+    /// <summary>
+    /// Releases the cleanup-run mutex owned by this process-wide cache instance.
+    /// </summary>
+    public void Dispose()
+    {
+        cleanupMutex.Dispose();
+    }
+
+    private sealed record CleanupCandidate(
+        string Path,
+        string LockPath,
+        CleanupFileKind Kind,
+        long Length,
+        long LastWriteTimeUtcTicks);
+
+    private enum CleanupFileKind
+    {
+        FinalJpeg,
+        Temporary,
+    }
+
+    private sealed class CleanupCounters
+    {
+        public int DeletedFiles { get; set; }
+
+        public int FailedFiles { get; set; }
+
+        public int SkippedChangedFiles { get; set; }
+
+        public bool Cancelled { get; set; }
     }
 
 }

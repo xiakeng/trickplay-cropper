@@ -81,6 +81,45 @@ internal sealed class PreviewCacheCoordination
     }
 
     /// <summary>
+    /// Executes one indivisible cleanup operation under shared Cache Tree and entry ownership.
+    /// </summary>
+    /// <param name="path">The canonical final Preview Cache Entry path used as the lock key.</param>
+    /// <param name="operation">The indivisible filesystem operation.</param>
+    /// <param name="cancellationToken">The cleanup cancellation token.</param>
+    /// <returns>A task representing cleanup ownership and execution.</returns>
+    public async Task ExecuteCleanupEntryAsync(
+        string path,
+        Action operation,
+        CancellationToken cancellationToken)
+    {
+        using IDisposable treeLease = await treeLock
+            .AcquireSharedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using IDisposable entryLease = await entryLocks
+            .AcquireAsync(path, cancellationToken)
+            .ConfigureAwait(false);
+        checkpointObserver(PreviewCacheCheckpoint.CleanupEntryLeaseAcquired);
+        cancellationToken.ThrowIfCancellationRequested();
+        operation();
+    }
+
+    /// <summary>
+    /// Reports that cleanup owns the single-run mutex and has captured its fixed boundary.
+    /// </summary>
+    public void ObserveCleanupStarted()
+    {
+        checkpointObserver(PreviewCacheCheckpoint.CleanupStarted);
+    }
+
+    /// <summary>
+    /// Reports that cleanup captured a candidate fingerprint before requesting entry ownership.
+    /// </summary>
+    public void ObserveCleanupCandidateCaptured()
+    {
+        checkpointObserver(PreviewCacheCheckpoint.CleanupCandidateCaptured);
+    }
+
+    /// <summary>
     /// Reports the final-path recheck boundary immediately before publication.
     /// </summary>
     public void ObserveBeforePublication()

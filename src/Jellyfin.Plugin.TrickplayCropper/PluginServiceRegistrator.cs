@@ -25,7 +25,11 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.TryAddSingleton(TimeProvider.System);
         serviceCollection.AddSingleton<ITrickplayPreview, TrickplayPreview>();
         serviceCollection.AddSingleton<IPreviewSourceResolver, JellyfinPreviewSourceResolver>();
-        serviceCollection.AddSingleton<IPreviewCache, DiskPreviewCache>();
+        serviceCollection.AddSingleton<DiskPreviewCache>();
+        serviceCollection.AddSingleton<IPreviewCache>(
+            static services => services.GetRequiredService<DiskPreviewCache>());
+        serviceCollection.AddSingleton<IPreviewCacheMaintenance>(
+            static services => services.GetRequiredService<DiskPreviewCache>());
         serviceCollection.AddSingleton<ITrickplayPreviewEncoder, TrickplayPreviewEncoder>();
     }
 }

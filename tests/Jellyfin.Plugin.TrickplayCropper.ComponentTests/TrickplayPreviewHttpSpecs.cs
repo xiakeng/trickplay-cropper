@@ -26,6 +26,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SkiaSharp;
 using Xunit;
@@ -88,6 +89,9 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Same(
             fixture.Services.GetRequiredService<IPreviewCache>(),
             fixture.Services.GetRequiredService<IPreviewCache>());
+        Assert.Same(
+            fixture.Services.GetRequiredService<IPreviewCache>(),
+            fixture.Services.GetRequiredService<IPreviewCacheMaintenance>());
         Assert.Same(
             fixture.Services.GetRequiredService<ITrickplayPreviewEncoder>(),
             fixture.Services.GetRequiredService<ITrickplayPreviewEncoder>());
@@ -941,10 +945,14 @@ public sealed class TrickplayPreviewHttpSpecs
                 ? $"component-secret SourceSpritePath={context.SourceSpritePath} CachePath={cacheRoot}"
                 : null;
             var cache = new RecordingPreviewCache(
-                new DiskPreviewCache(applicationPaths, TimeProvider.System),
+                new DiskPreviewCache(
+                    applicationPaths,
+                    TimeProvider.System,
+                    NullLogger<DiskPreviewCache>.Instance),
                 failureMessage);
             services.AddSingleton(cache);
             services.AddSingleton<IPreviewCache>(cache);
+            services.AddSingleton<IPreviewCacheMaintenance>(cache);
         }
 
         private static User CreateUser(PreviewScenario scenario)
@@ -1377,7 +1385,9 @@ public sealed class TrickplayPreviewHttpSpecs
             return await inner.GetOrCreateAsync(identity, writer, cancellationToken).ConfigureAwait(false);
         }
 
-        Task IPreviewCache.ClearAsync(IProgress<double> progress, CancellationToken cancellationToken)
+        Task IPreviewCacheMaintenance.ClearAsync(
+            IProgress<double> progress,
+            CancellationToken cancellationToken)
         {
             return inner.ClearAsync(progress, cancellationToken);
         }

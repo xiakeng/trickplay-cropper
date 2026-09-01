@@ -29,4 +29,19 @@ internal enum PreviewCacheCheckpoint
     /// Occurs after immutable response buffering and before entry and Cache Tree ownership are released.
     /// </summary>
     ResponseBuffered,
+
+    /// <summary>
+    /// Occurs after a cleanup run owns the single-run mutex and captures its fixed boundary.
+    /// </summary>
+    CleanupStarted,
+
+    /// <summary>
+    /// Occurs after cleanup captures a candidate fingerprint and before it requests entry ownership.
+    /// </summary>
+    CleanupCandidateCaptured,
+
+    /// <summary>
+    /// Occurs after cleanup acquires ownership of the candidate's Preview Cache Entry.
+    /// </summary>
+    CleanupEntryLeaseAcquired,
 }
