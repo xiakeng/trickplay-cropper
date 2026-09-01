@@ -71,6 +71,20 @@ jobs:
           dotnet-target: net9.0
           verbosity: info
 
+      - name: Verify unique package output
+        env:
+          PACKAGE_PATH: ${{ steps.package.outputs.artifact }}
+        run: |
+          mapfile -d '' packages < <(find artifacts/package -type f -name '*.zip' -print0)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "Expected exactly one plugin ZIP, found ${#packages[@]}." >&2
+            exit 1
+          fi
+          if [[ "$(realpath -- "${packages[0]}")" != "$(realpath -- "$PACKAGE_PATH")" ]]; then
+            echo "The sole plugin ZIP does not match the JPRM artifact output." >&2
+            exit 1
+          fi
+
       - name: Validate package
         run: >-
           dotnet run
@@ -83,7 +97,11 @@ jobs:
           src/Jellyfin.Plugin.TrickplayCropper/build.yaml
 
       - name: Create SHA-256 checksum
-        run: sha256sum "${{ steps.package.outputs.artifact }}" > "${{ steps.package.outputs.artifact }}.sha256"
+        env:
+          PACKAGE_PATH: ${{ steps.package.outputs.artifact }}
+        run: |
+          sha256sum "$PACKAGE_PATH" > "$PACKAGE_PATH.sha256"
+          sha256sum --check "$PACKAGE_PATH.sha256"
 
       - name: Upload installable package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0

@@ -496,6 +496,22 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(Assert.Single(baseline.Cache.Identities), Assert.Single(changed.Cache.Identities));
     }
 
+    [Fact]
+    public async Task PropagatesRequestCancellationWithoutPublishingOrLoggingAnInternalError()
+    {
+        var scenario = new PreviewScenario { BlocksCacheAccessUntilCancellation = true };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<HttpResponseMessage> response = fixture.GetAsync(cancellation.Token);
+        await scenario.CacheAccessStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => response);
+        Assert.Empty(fixture.EnumerateCacheFiles());
+        Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
     private static string GetDefaultEntryPath(PreviewHostFixture fixture)
     {
         return Path.Combine(
@@ -831,13 +847,18 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public Task<HttpResponseMessage> GetAsync()
         {
-            return SendAsync(null);
+            return GetAsync(CancellationToken.None);
+        }
+
+        public Task<HttpResponseMessage> GetAsync(CancellationToken cancellationToken)
+        {
+            return SendAsync(null, cancellationToken);
         }
 
         public Task<HttpResponseMessage> GetConditionalAsync(string ifNoneMatch)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(ifNoneMatch);
-            return SendAsync(ifNoneMatch);
+            return SendAsync(ifNoneMatch, CancellationToken.None);
         }
 
         public string[] EnumerateCacheFiles()
@@ -852,7 +873,9 @@ public sealed class TrickplayPreviewHttpSpecs
             SetPlaybackPermission(Services.GetRequiredService<User>(), hasPlaybackAccess);
         }
 
-        private async Task<HttpResponseMessage> SendAsync(string? ifNoneMatch)
+        private async Task<HttpResponseMessage> SendAsync(
+            string? ifNoneMatch,
+            CancellationToken cancellationToken)
         {
             PreviewScenario scenario = Services.GetRequiredService<PreviewScenario>();
             string mediaSourceQuery = scenario.UsesAlternateSource
@@ -868,7 +891,7 @@ public sealed class TrickplayPreviewHttpSpecs
                 request.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
             }
 
-            return await Client.SendAsync(request, CancellationToken.None);
+            return await Client.SendAsync(request, cancellationToken);
         }
 
         private static void ConfigureWebHost(IWebHostBuilder webHost, PreviewHostContext context)
@@ -949,7 +972,8 @@ public sealed class TrickplayPreviewHttpSpecs
                     applicationPaths,
                     TimeProvider.System,
                     NullLogger<DiskPreviewCache>.Instance),
-                failureMessage);
+                failureMessage,
+                context.Scenario);
             services.AddSingleton(cache);
             services.AddSingleton<IPreviewCache>(cache);
             services.AddSingleton<IPreviewCacheMaintenance>(cache);
@@ -1345,12 +1369,17 @@ public sealed class TrickplayPreviewHttpSpecs
         private readonly string? failureMessage;
         private readonly List<PreviewIdentity> identities = [];
         private readonly IPreviewCache inner;
+        private readonly PreviewScenario scenario;
         private int callCount;
 
-        public RecordingPreviewCache(IPreviewCache inner, string? failureMessage)
+        public RecordingPreviewCache(
+            IPreviewCache inner,
+            string? failureMessage,
+            PreviewScenario scenario)
         {
             this.inner = inner;
             this.failureMessage = failureMessage;
+            this.scenario = scenario;
         }
 
         public int CallCount => Volatile.Read(ref callCount);
@@ -1380,6 +1409,12 @@ public sealed class TrickplayPreviewHttpSpecs
             if (failureMessage is not null)
             {
                 throw new InvalidOperationException(failureMessage);
+            }
+
+            if (scenario.BlocksCacheAccessUntilCancellation)
+            {
+                scenario.CacheAccessStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             }
 
             return await inner.GetOrCreateAsync(identity, writer, cancellationToken).ConfigureAwait(false);
@@ -1507,6 +1542,11 @@ public sealed class TrickplayPreviewHttpSpecs
     private sealed class PreviewScenario
     {
         public AuthenticationState Authentication { get; init; } = AuthenticationState.UserSession;
+
+        public bool BlocksCacheAccessUntilCancellation { get; init; }
+
+        public TaskCompletionSource CacheAccessStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
 
         public bool DeniesDefaultAuthorizationPolicy { get; init; }
 
