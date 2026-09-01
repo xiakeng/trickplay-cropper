@@ -247,6 +247,8 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(InternalFailureCondition.TileHeightZero, "TileHeightPositive", 0)]
     [InlineData(InternalFailureCondition.CropXOverflow, "CropXInt32", 4_294_967_294L)]
     [InlineData(InternalFailureCondition.CropYOverflow, "CropYInt32", 4_294_967_294L)]
+    [InlineData(InternalFailureCondition.CropRightOverflow, "CropRightInt32", 4_294_967_294L)]
+    [InlineData(InternalFailureCondition.CropBottomOverflow, "CropBottomInt32", 4_294_967_294L)]
     public async Task ReportsInvalidMetadataAndCheckedArithmeticAsInternalErrors(
         InternalFailureCondition condition,
         string failedValidation,
@@ -497,6 +499,16 @@ public sealed class TrickplayPreviewHttpSpecs
                 Metadata = MetadataAvailability.CropYOverflow,
                 RequestPositionTicks = 2 * TimeSpan.TicksPerMillisecond,
             },
+            InternalFailureCondition.CropRightOverflow => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.CropRightOverflow,
+                RequestPositionTicks = TimeSpan.TicksPerMillisecond,
+            },
+            InternalFailureCondition.CropBottomOverflow => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.CropBottomOverflow,
+                RequestPositionTicks = TimeSpan.TicksPerMillisecond,
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown failure condition."),
         };
     }
@@ -527,6 +539,26 @@ public sealed class TrickplayPreviewHttpSpecs
                 Assert.Equal(320, log.Properties["CropWidth"]);
                 Assert.Equal(int.MaxValue, log.Properties["CropHeight"]);
                 break;
+            case InternalFailureCondition.CropRightOverflow:
+                Assert.Equal(1, log.Properties["FrameIndex"]);
+                Assert.Equal(0, log.Properties["SpriteIndex"]);
+                Assert.Equal(0, log.Properties["Row"]);
+                Assert.Equal(1, log.Properties["Column"]);
+                Assert.Equal((long)int.MaxValue, log.Properties["CropX"]);
+                Assert.Equal(0L, log.Properties["CropY"]);
+                Assert.Equal(int.MaxValue, log.Properties["CropWidth"]);
+                Assert.Equal(180, log.Properties["CropHeight"]);
+                break;
+            case InternalFailureCondition.CropBottomOverflow:
+                Assert.Equal(1, log.Properties["FrameIndex"]);
+                Assert.Equal(0, log.Properties["SpriteIndex"]);
+                Assert.Equal(1, log.Properties["Row"]);
+                Assert.Equal(0, log.Properties["Column"]);
+                Assert.Equal(0L, log.Properties["CropX"]);
+                Assert.Equal((long)int.MaxValue, log.Properties["CropY"]);
+                Assert.Equal(320, log.Properties["CropWidth"]);
+                Assert.Equal(int.MaxValue, log.Properties["CropHeight"]);
+                break;
         }
     }
 
@@ -554,6 +586,20 @@ public sealed class TrickplayPreviewHttpSpecs
                 1,
                 3,
                 3),
+            InternalFailureCondition.CropRightOverflow => new TrickplayMetadata(
+                int.MaxValue,
+                180,
+                1,
+                2,
+                1,
+                2),
+            InternalFailureCondition.CropBottomOverflow => new TrickplayMetadata(
+                320,
+                int.MaxValue,
+                1,
+                1,
+                2,
+                2),
             _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown failure condition."),
         };
     }
@@ -913,6 +959,26 @@ public sealed class TrickplayPreviewHttpSpecs
                         metadata.TileWidth = 1;
                         metadata.TileHeight = 3;
                         metadata.ThumbnailCount = 3;
+                        metadata.Interval = 1;
+                        break;
+                    }
+
+                case MetadataAvailability.CropRightOverflow:
+                    {
+                        metadata.Width = int.MaxValue;
+                        metadata.TileWidth = 2;
+                        metadata.TileHeight = 1;
+                        metadata.ThumbnailCount = 2;
+                        metadata.Interval = 1;
+                        break;
+                    }
+
+                case MetadataAvailability.CropBottomOverflow:
+                    {
+                        metadata.Height = int.MaxValue;
+                        metadata.TileWidth = 1;
+                        metadata.TileHeight = 2;
+                        metadata.ThumbnailCount = 2;
                         metadata.Interval = 1;
                         break;
                     }
@@ -1350,6 +1416,8 @@ public sealed class TrickplayPreviewHttpSpecs
     {
         Available,
         ContradictoryFrameWidth,
+        CropBottomOverflow,
+        CropRightOverflow,
         CropXOverflow,
         CropYOverflow,
         ExactWidthMissing,
@@ -1372,6 +1440,8 @@ public sealed class TrickplayPreviewHttpSpecs
         TileHeightZero,
         CropXOverflow,
         CropYOverflow,
+        CropRightOverflow,
+        CropBottomOverflow,
     }
 
     public enum NotFoundCondition
