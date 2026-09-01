@@ -10,6 +10,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.Imaging;
 /// </summary>
 internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder
 {
+    private const string DecodePath = "SUBSET";
+
     /// <inheritdoc />
     public Task<PreviewEncodingTelemetry> EncodeAsync(
         ResolvedPreviewSource source,
@@ -26,27 +28,70 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder
         CancellationToken cancellationToken)
     {
         long decodeStarted = Stopwatch.GetTimestamp();
-        using SKCodec codec = SKCodec.Create(source.SourceSpritePath)
-            ?? throw new InvalidDataException("The Source Sprite could not be opened as an image.");
-        using var bitmap = new SKBitmap(
-            source.Selection.CropWidth,
-            source.Selection.CropHeight,
-            SKColorType.Rgba8888,
-            SKAlphaType.Opaque);
-        StartSubsetDecode(codec, source);
-        SkipToCrop(codec, source.Selection.CropY);
-        ReadCrop(codec, bitmap);
-        TimeSpan decodeDuration = Stopwatch.GetElapsedTime(decodeStarted);
-
-        cancellationToken.ThrowIfCancellationRequested();
-        long encodeStarted = Stopwatch.GetTimestamp();
-        bool encoded = bitmap.Encode(destination, SKEncodedImageFormat.Jpeg, PreviewIdentity.JpegQuality);
-        if (!encoded)
+        using SKCodec codec = CreateCodec(source);
+        try
         {
-            throw new InvalidDataException("Skia could not encode the selected Trickplay Preview as JPEG.");
+            using var bitmap = new SKBitmap(
+                source.Selection.CropWidth,
+                source.Selection.CropHeight,
+                SKColorType.Rgba8888,
+                SKAlphaType.Opaque);
+            StartSubsetDecode(codec, source);
+            SkipToCrop(codec, source.Selection.CropY);
+            ReadCrop(codec, bitmap);
+            TimeSpan decodeDuration = Stopwatch.GetElapsedTime(decodeStarted);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            long encodeStarted = Stopwatch.GetTimestamp();
+            bool encoded = bitmap.Encode(destination, SKEncodedImageFormat.Jpeg, PreviewIdentity.JpegQuality);
+            if (!encoded)
+            {
+                throw new InvalidDataException("Skia could not encode the selected Trickplay Preview as JPEG.");
+            }
+
+            return new PreviewEncodingTelemetry(decodeDuration, Stopwatch.GetElapsedTime(encodeStarted));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (PreviewStageException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new PreviewStageException(exception, CreateFailureDetails(source, codec));
+        }
+    }
+
+    private static SKCodec CreateCodec(ResolvedPreviewSource source)
+    {
+        SKCodec? codec;
+        try
+        {
+            codec = SKCodec.Create(source.SourceSpritePath);
+        }
+        catch (Exception exception)
+        {
+            PreviewFailureDetails failureDetails = CreateFailureDetails(source, null) with
+            {
+                FailedValidation = "SourceSpriteCodecCreated",
+            };
+            throw new PreviewStageException(exception, failureDetails);
         }
 
-        return new PreviewEncodingTelemetry(decodeDuration, Stopwatch.GetElapsedTime(encodeStarted));
+        if (codec is null)
+        {
+            var cause = new InvalidDataException("The Source Sprite could not be opened as an image.");
+            PreviewFailureDetails details = CreateFailureDetails(source, null) with
+            {
+                FailedValidation = "SourceSpriteCodecCreated",
+            };
+            throw new PreviewStageException(cause, details);
+        }
+
+        return codec;
     }
 
     private static void StartSubsetDecode(SKCodec codec, ResolvedPreviewSource source)
@@ -66,7 +111,14 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder
         SKCodecResult result = codec.StartScanlineDecode(decodeInfo, new SKCodecOptions(subset));
         if (result != SKCodecResult.Success)
         {
-            throw new InvalidDataException($"Skia rejected the JPEG SUBSET scanline path with result {result}.");
+            var cause = new InvalidDataException(
+                $"Skia rejected the JPEG SUBSET scanline path with result {result}.");
+            PreviewFailureDetails details = CreateFailureDetails(source, codec) with
+            {
+                FailedValidation = "SubsetScanlineDecodeStarted",
+                SkiaResult = result.ToString(),
+            };
+            throw new PreviewStageException(cause, details);
         }
     }
 
@@ -86,5 +138,21 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder
             throw new InvalidDataException(
                 $"Skia returned {decodedRows} of {bitmap.Height} requested Source Sprite scanlines.");
         }
+    }
+
+    private static PreviewFailureDetails CreateFailureDetails(
+        ResolvedPreviewSource source,
+        SKCodec? codec)
+    {
+        return new PreviewFailureDetails
+        {
+            ActualHeight = codec?.Info.Height,
+            ActualWidth = codec?.Info.Width,
+            DecodePath = DecodePath,
+            Metadata = source.Metadata,
+            Selection = source.Selection,
+            SourceLength = source.SourceLength,
+            SourceLastWriteUtcTicks = source.SourceLastWriteUtcTicks,
+        };
     }
 }

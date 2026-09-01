@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Api;
 /// </summary>
 [ApiController]
 [Authorize]
-[Route("TrickplayCropper/Videos/{itemId:guid}/Preview")]
+[Route("TrickplayCropper/Videos/{itemId}/Preview")]
 public sealed class TrickplayPreviewController : ControllerBase
 {
     private readonly ITrickplayPreview trickplayPreview;
