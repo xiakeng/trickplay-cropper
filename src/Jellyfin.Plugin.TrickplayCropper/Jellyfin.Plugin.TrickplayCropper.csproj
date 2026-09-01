@@ -20,4 +20,9 @@
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.TrickplayCropper.ComponentTests" />
+    <InternalsVisibleTo Include="Jellyfin.Plugin.TrickplayCropper.UnitTests" />
+  </ItemGroup>
 </Project>
