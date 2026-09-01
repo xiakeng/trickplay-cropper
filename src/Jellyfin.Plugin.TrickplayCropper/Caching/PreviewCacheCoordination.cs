@@ -120,6 +120,14 @@ internal sealed class PreviewCacheCoordination
     }
 
     /// <summary>
+    /// Reports that cleanup discovered a filesystem entry before inspecting its attributes.
+    /// </summary>
+    public void ObserveCleanupEntryDiscovered()
+    {
+        checkpointObserver(PreviewCacheCheckpoint.CleanupEntryDiscovered);
+    }
+
+    /// <summary>
     /// Reports that cleanup captured a candidate fingerprint before requesting entry ownership.
     /// </summary>
     public void ObserveCleanupCandidateCaptured()
