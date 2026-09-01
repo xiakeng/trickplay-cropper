@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Security.Claims;
 using Jellyfin.Plugin.TrickplayCropper.Caching;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;

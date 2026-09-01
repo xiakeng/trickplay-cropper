@@ -1,9 +1,5 @@
 using System.Reflection;
 using Jellyfin.Plugin.TrickplayCropper.Api;
-using Jellyfin.Plugin.TrickplayCropper.Caching;
-using Jellyfin.Plugin.TrickplayCropper.Imaging;
-using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
-using Jellyfin.Plugin.TrickplayCropper.Preview;
 using Jellyfin.Plugin.TrickplayCropper.Tasks;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Controller.Plugins;
@@ -30,14 +26,19 @@ public sealed class PluginDiscoverySpecs
     }
 
     [Fact]
-    public void PreviewEndpointUsesTheApprovedBindingContract()
+    public void ControllerUsesTheApprovedRouteContract()
     {
         Type controller = typeof(TrickplayPreviewController);
         Assert.NotNull(controller.GetCustomAttribute<ApiControllerAttribute>());
         Assert.NotNull(controller.GetCustomAttribute<AuthorizeAttribute>());
         RouteAttribute route = Assert.IsType<RouteAttribute>(controller.GetCustomAttribute<RouteAttribute>());
         Assert.Equal("TrickplayCropper/Videos/{itemId}/Preview", route.Template);
+    }
 
+    [Fact]
+    public void PreviewActionUsesTheApprovedBindingContract()
+    {
+        Type controller = typeof(TrickplayPreviewController);
         MethodInfo action = Assert.IsAssignableFrom<MethodInfo>(
             controller.GetMethod(nameof(TrickplayPreviewController.GetAsync)));
         Assert.NotNull(action.GetCustomAttribute<HttpGetAttribute>());
@@ -51,7 +52,11 @@ public sealed class PluginDiscoverySpecs
         Assert.Equal(typeof(CancellationToken), cancellationToken.ParameterType);
         Assert.NotNull(itemId.GetCustomAttribute<FromRouteAttribute>());
         Assert.NotNull(parameters.GetCustomAttribute<FromQueryAttribute>());
+    }
 
+    [Fact]
+    public void QueryParametersUseTheApprovedShape()
+    {
         PropertyInfo[] queryProperties = typeof(PreviewQueryParameters)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .OrderBy(property => property.Name, StringComparer.Ordinal)
