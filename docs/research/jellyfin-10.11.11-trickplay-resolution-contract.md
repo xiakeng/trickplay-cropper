@@ -144,15 +144,18 @@ The plugin should keep the following outcomes distinct and fail closed:
 
 | Outcome | Meaning | Handling boundary |
 | --- | --- | --- |
-| Configuration unavailable or structurally unusable | `TrickplayOptions` or its target array cannot be read safely | Internal/configuration failure; do not substitute `320` |
+| Configuration unavailable | `TrickplayOptions` or its target array is null or cannot be read safely | Internal/configuration failure (`500`); do not substitute `320` |
+| Structurally invalid target configuration | Any target is non-positive, or normalization produces a non-positive Selected Trickplay Resolution; duplicate positive targets remain valid | Internal/configuration failure (`500`) |
 | No Trickplay Resolution Target | The array is empty | Jellyfin performs no generation and can retain old rows; the approved product policy independently maps the request to `404` |
 | Multiple Trickplay Resolution Targets | Jellyfin exposes several generation targets | Not an error by itself; the approved product policy selects the minimum target |
 | Selected Source Video is absent, remote, non-GUID, not a member of the logical item, or unauthorized | The request does not identify an allowed local Source Video | Preserve the API's authorization/not-found concealment policy |
 | No generated metadata for the effective Source Video | `GetTrickplayResolutions` is empty | Not found/not ready; do not inspect directories |
 | No exact Selected Trickplay Resolution entry | Generated metadata exists, but none matches the approved selection policy | Not found/configuration mismatch; log the targets and generated keys |
-| Invalid metadata for the Selected Trickplay Resolution | Key/`Width` disagreement, non-positive dimensions, interval, tile geometry, or thumbnail count | Invalid Jellyfin metadata; do not calculate a frame or guess another width |
-| Tile path empty, file absent, or file changes during GET | Metadata exists but the selected Source Sprite is unavailable | GET source-resolution failure; resolve through `ITrickplayManager`, never by path convention |
-| Jellyfin manager, database, or filesystem operation throws | Availability could not be determined | Operational failure, not a normal 404 |
+| No available frames | `ThumbnailCount` is non-positive | No preview is available (`404`, `NoThumbnails`) |
+| Invalid metadata for the Selected Trickplay Resolution | Key/`Width` disagreement, or non-positive height, interval, tile width, or tile height | Invalid Jellyfin metadata (`500`); do not calculate a frame or guess another width |
+| Tile path empty or file absent when GET validates it | Metadata exists but the selected Source Sprite is unavailable at the observable availability boundary | GET source-resolution failure (`404`); resolve through `ITrickplayManager`, never by path convention |
+| A later Source Sprite stat, filesystem, snapshot, decode, or encode operation throws | The file disappeared, changed incompatibly, or otherwise failed after availability validation | Operational failure (`500`), not a normal not-found outcome; an undetected replacement can still be served |
+| Jellyfin manager or database operation throws | Availability could not be determined | Operational failure (`500`), not a normal not-found outcome |
 
 A raw equality test between a Trickplay Resolution Target and a generated
 dictionary key is not universally valid: Jellyfin's even-width normalization and
