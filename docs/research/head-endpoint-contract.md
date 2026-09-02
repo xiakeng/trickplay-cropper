@@ -5,10 +5,10 @@
 The existing Preview URI can support a lightweight probe with a dedicated
 `[HttpHead]` action. ASP.NET Core 9 matches HTTP methods exactly: a HEAD request
 does not fall back to the `[HttpGet]` action. The HEAD action must invoke a
-separate probe service and stop after authorization, media-source membership,
-configured-resolution metadata lookup, and a calculation that produces only the
-Frame Index. It must never delegate to `GetAsync` or use the existing source
-resolver unchanged.
+separate probe service and stop after authorization, Media Source membership,
+Trickplay Resolution Target selection, Selected Trickplay Resolution metadata
+lookup, and a calculation that produces only the Frame Index. It must never
+delegate to `GetAsync` or use the existing source resolver unchanged.
 
 A successful response is `200 OK`, has no content, and has exactly these two
 plugin-owned headers:
@@ -170,7 +170,8 @@ seam must instead be:
 
 1. A dedicated `ITrickplayFrameProbe` dependency on the HEAD action.
 2. Shared authorization and Media Source selection below both GET and HEAD.
-3. Shared configured-resolution metadata lookup.
+3. Shared Trickplay Resolution Target selection and Selected Trickplay
+   Resolution metadata lookup.
 4. A HEAD-only Frame Index calculation that reads only `Interval` and
    `ThumbnailCount`, requires both to be positive, calculates
    `ticksPerFrame = Interval * TimeSpan.TicksPerMillisecond` with checked
