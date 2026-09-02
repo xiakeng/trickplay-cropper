@@ -6,8 +6,9 @@ The existing Preview URI can support a lightweight probe with a dedicated
 `[HttpHead]` action. ASP.NET Core 9 matches HTTP methods exactly: a HEAD request
 does not fall back to the `[HttpGet]` action. The HEAD action must invoke a
 separate probe service and stop after authorization, media-source membership,
-configured-resolution metadata lookup, and pure Frame Selection. It must never
-delegate to `GetAsync` or use the existing source resolver unchanged.
+configured-resolution metadata lookup, and a calculation that produces only the
+Frame Index. It must never delegate to `GetAsync` or use the existing source
+resolver unchanged.
 
 A successful response is `200 OK`, has no content, and has exactly these two
 plugin-owned headers:
@@ -71,12 +72,16 @@ HEAD response. `[ApiController]` turns invalid model state into an automatic
 error result before the action, and it also transforms `StatusCodeResult`
 client errors into descriptive results. The current `Guid` route parameter,
 nullable `Guid` query parameter, and `[BindRequired] long` can all create model
-state errors. The HEAD action should therefore accept raw string input (or a
-dedicated binder that never records conversion errors), parse all three values
-inside the action/probe boundary, and return an `EmptyResult` after setting
-`Response.StatusCode`. Missing, malformed, or negative `PositionTicks`, and
-malformed identifiers, map to an empty `400`. This avoids automatic
-`ProblemDetails` generation without changing Jellyfin's global API behavior.
+state errors. The HEAD action should therefore accept nullable raw strings,
+without `[BindRequired]`, for all three values (for example, `string? itemId`,
+`string? mediaSourceId`, and `string? positionTicks`) or use a dedicated binder
+that never records required or conversion errors. A non-nullable string is
+insufficient unless it has an explicit default, because MVC otherwise infers
+`[Required]`. The action must parse all three values inside the action/probe
+boundary and return an `EmptyResult` after setting `Response.StatusCode`.
+Missing, malformed, or negative `PositionTicks`, and malformed identifiers, map
+to an empty `400`. This avoids automatic `ProblemDetails` generation without
+changing Jellyfin's global API behavior.
 
 Sources: Jellyfin 10.11.11
 [`Startup.Configure`](https://github.com/jellyfin/jellyfin/blob/v10.11.11/Jellyfin.Server/Startup.cs#L149-L234),
@@ -87,6 +92,7 @@ and
 ASP.NET Core 9
 [`ModelStateInvalidFilter`](https://github.com/dotnet/aspnetcore/blob/v9.0.11/src/Mvc/Mvc.Core/src/Infrastructure/ModelStateInvalidFilter.cs#L71-L80),
 [`ClientErrorResultFilter`](https://github.com/dotnet/aspnetcore/blob/v9.0.11/src/Mvc/Mvc.Core/src/Infrastructure/ClientErrorResultFilter.cs#L32-L55),
+[`DataAnnotationsMetadataProvider`](https://github.com/dotnet/aspnetcore/blob/v9.0.11/src/Mvc/Mvc.DataAnnotations/src/DataAnnotationsMetadataProvider.cs#L320-L375),
 and
 [`StatusCodeResult`](https://github.com/dotnet/aspnetcore/blob/v9.0.11/src/Mvc/Mvc.Core/src/StatusCodeResult.cs#L10-L44);
 current plugin
@@ -164,10 +170,15 @@ seam must instead be:
 
 1. A dedicated `ITrickplayFrameProbe` dependency on the HEAD action.
 2. Shared authorization and Media Source selection below both GET and HEAD.
-3. Shared configured-resolution metadata lookup and pure `FrameSelection.Create`.
-4. An immediate HEAD return of `FrameSelection.FrameIndex`.
-5. A GET-only continuation for tile path, file snapshot, Preview Identity,
-   conditional ETag, Preview Cache, decoder, and encoder work.
+3. Shared configured-resolution metadata lookup.
+4. A HEAD-only Frame Index calculation that reads only `Interval` and
+   `ThumbnailCount`, requires both to be positive, calculates
+   `ticksPerFrame = Interval * TimeSpan.TicksPerMillisecond` with checked
+   arithmetic, and returns
+   `min(PositionTicks / ticksPerFrame, ThumbnailCount - 1)`.
+5. A GET-only continuation through `FrameSelection.Create` for Source Sprite,
+   cell, and crop geometry, followed by tile path, file snapshot, Preview
+   Identity, conditional ETag, Preview Cache, decoder, and encoder work.
 
 Tests should make this boundary executable: a HEAD routing test must fail if the
 GET action/service is called; probe tests must allow `GetTrickplayResolutions`
@@ -176,7 +187,8 @@ remain at zero; the Cache Tree must remain unchanged; and real-Kestrel HTTP test
 must assert an empty content stream for success, malformed input, authorization
 failure, and mapped domain failures. The success test must also assert invariant
 decimal Frame Index formatting, the two plugin headers, and absence of ETag and
-all GET-only headers.
+all GET-only headers. A probe test with valid `Interval` and `ThumbnailCount`
+but invalid frame, tile, or crop geometry must still succeed with a Frame Index.
 
 Sources: current plugin
 [`JellyfinPreviewSourceResolver`](https://github.com/xiakeng/trickplay-cropper/blob/e7a2c45/src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinPreviewSourceResolver.cs#L125-L193),
