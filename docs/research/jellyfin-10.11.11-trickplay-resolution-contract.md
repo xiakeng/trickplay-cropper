@@ -18,8 +18,10 @@ Source Video. It exposes two different kinds of state:
    [Trickplay options][trickplay-options]
 2. `ITrickplayManager.GetTrickplayResolutions(sourceVideoId)` returns the
    generated metadata currently recorded for one Source Video, keyed by its
-   recorded `TrickplayInfo.Width`. This dictionary, not the configuration array, is the
-   authority for what that Source Video can currently serve.
+   recorded `TrickplayInfo.Width`. This dictionary, not the configuration
+   array, is the authority for recorded resolution metadata. It does not prove
+   that a tile file currently exists; GET establishes servability by resolving
+   and validating the selected tile.
    [Manager interface][manager-interface] [Manager implementation][resolution-query]
 
 Per-library options only control whether generation is enabled, whether it runs
@@ -92,10 +94,12 @@ back between versions.
 The generation target array and the generated dictionary are intentionally not
 kept in lockstep:
 
-- When library Trickplay extraction is disabled and a refresh reaches an
-  otherwise eligible video, Jellyfin deletes that video's Trickplay directory
-  and database rows, then returns. Until such a refresh runs, previously
-  generated metadata can still exist. [Disabled refresh][disabled-refresh]
+- When library Trickplay extraction is disabled and a `replace: false` refresh
+  reaches an otherwise eligible video, Jellyfin deletes that video's Trickplay
+  directory and database rows, then returns. Until such a refresh runs,
+  previously generated metadata can still exist. With `replace: true`, the same
+  branch deletes the old data but continues and regenerates from the current
+  global options despite the disabled flag. [Disabled refresh][disabled-refresh]
 - The scheduled generation task calls refresh with `replace: false` for library
   videos. [Scheduled refresh][scheduled-refresh]
 - With `replace: false`, an already recorded actual width is reused. Removing a
