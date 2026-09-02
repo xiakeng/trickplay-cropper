@@ -29,7 +29,7 @@ The zero-based ordinal of the preview frame a playback position selects from the
 _Avoid_: Frame number, thumbnail index, frame position
 
 **Preview Cache Entry**:
-The cached representation of one Trickplay Preview for a specific media source, source version, sprite, and frame.
+The cached representation of one Trickplay Preview for a specific media source, source version, Source Sprite, and Frame Index.
 _Avoid_: Cache slot, cached file, preview file
 
 **Cache Tree**:
