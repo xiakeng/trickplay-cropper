@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — Release Publication State Machine</title>
+<style>
+  :root {
+    --accent: #3b5bdb;
+    --accent-soft: #edf2ff;
+    --ink: #1b1d21;
+    --muted: #5c6370;
+    --line: #dfe3e8;
+    --bg: #fbfbfc;
+    --bad: #a52a2a;
+    --bad-soft: #fdeeee;
+    --good: #1f6b45;
+    --good-soft: #ecf7f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 80px;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; }
+  .proto-flag {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #fff; background: var(--bad); padding: 3px 8px; border-radius: 3px;
+  }
+  .lede { color: var(--muted); margin: 10px 0 0; max-width: 82ch; }
+  section { margin-top: 32px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
+  .panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0 0 10px; }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+  dt { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  dd { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .empty { color: var(--muted); font-size: 13px; font-style: italic; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 8px 6px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 8px 6px 0; border-bottom: 1px solid #f1f3f5; vertical-align: top; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--line); background: #fff; }
+  .pill.state { background: var(--accent-soft); border-color: #c7d2fe; color: var(--accent); }
+  .pill.done { background: var(--good-soft); border-color: #b7dcc6; color: var(--good); }
+  .pill.stop { background: var(--bad-soft); border-color: #f0c4c4; color: var(--bad); }
+  .pill.wait { background: #fff8e6; border-color: #f0dca8; color: #8a6d1a; }
+  button {
+    font: inherit; font-size: 13.5px; color: var(--ink); background: #fff;
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; text-align: left;
+  }
+  button:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .btn-group { margin-bottom: 18px; }
+  .btn-group:last-child { margin-bottom: 0; }
+  .btn-group h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); margin: 0 0 8px; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select { font: inherit; font-size: 13.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  #note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 16px; }
+  #note.illegal { border-left-color: var(--bad); background: var(--bad-soft); }
+  #note .k { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  #note.illegal .k { color: var(--bad); }
+  #note p { margin: 4px 0 0; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .tabs button { padding: 6px 10px; font-size: 12.5px; }
+  .tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .scenario p { margin: 0 0 10px; max-width: 88ch; }
+  .scenario .watch { color: var(--muted); font-size: 13.5px; }
+  ol.steps { list-style: none; counter-reset: s; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  ol.steps li { counter-increment: s; display: flex; gap: 10px; align-items: flex-start; }
+  ol.steps li::before { content: counter(s); flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 5px; }
+  ol.steps li.done::before { background: var(--good-soft); color: var(--good); }
+  ol.steps button { flex: 1 1 auto; }
+  ol.steps li.done button { opacity: 0.5; }
+  #log { max-height: 220px; overflow-y: auto; font-size: 12.5px; }
+  #log div { padding: 4px 0; border-bottom: 1px solid #f1f3f5; }
+  #log div.illegal { color: var(--bad); }
+  .forks li { margin-bottom: 8px; }
+  .forks { margin: 12px 0 0; padding-left: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="proto-flag">Throwaway prototype — not production code</span>
+    <h1>Release Publication State Machine</h1>
+    <p class="lede">
+      <strong>The question.</strong> What concrete version and publication state machine turns each qualifying
+      production-business push to <code>main</code> into <em>exactly one</em> retry-safe stable GitHub Release, keeps tag,
+      assembly, package metadata, ZIP, checksum, Release, and root <code>manifest.json</code> consistent, avoids recursive
+      releases from manifest maintenance, retains supported history, and handles concurrent runs, partial failure, rerun,
+      withdrawal, and rollback?
+    </p>
+    <p class="lede">
+      Press buttons and watch the state. Every button is always available; the machine refuses whatever is not legal right
+      now and says why. The refusals are the interesting part.
+    </p>
+    <div class="card" style="margin-top:18px">
+      <h2>Proposed decisions baked into this model — react to these</h2>
+      <ol class="forks">
+        <li><strong>Version authority.</strong> The next version is computed <em>only after entering the release queue</em>, as the highest of (<code>main</code>'s committed version files, every Release tag ever published, every manifest entry, every withdrawn version) plus a patch bump. So failed CI, docs pushes, and withdrawn versions never consume or reuse a number.</li>
+        <li><strong>Version files are committed.</strong> One additive maintenance commit carries <em>both</em> the manifest entry and the bumped <code>build.yaml</code>/<code>csproj</code> version, pushed after publication. The alternative derives versions at build time and leaves <code>main</code> permanently at 1.0.0.0.</li>
+        <li><strong>Pin the triggering push.</strong> A transaction ships the head SHA of <em>its own</em> push, not whatever <code>main</code> looks like at dequeue; the maintenance commit merges additively onto the newer head.</li>
+        <li><strong>Lost evidence adopts, not stalls.</strong> On retry with no recorded digest but a complete attached asset whose embedded identities match the pinned version, the publisher <em>adopts</em> that asset's digest as authoritative. The alternative fails closed forever, which strands a published Release.</li>
+        <li><strong>Withdrawal needs a ledger.</strong> A committed withdrawal ledger beside <code>manifest.json</code> is the only durable "do not resurrect" record, so a retry can tell "manifest commit failed, repair it" from "deliberately withdrawn, leave it out".</li>
+        <li><strong>Retries jump the queue.</strong> A failed transaction returns to the <em>front</em> of the serialized queue and reconciles from published evidence; it never starts a second Release.</li>
+        <li><strong>First release is 1.0.1.0.</strong> The committed-but-unpublished 1.0.0.0 is a floor, not a release. The alternative publishes 1.0.0.0 first.</li>
+      </ol>
+    </div>
+  </header>
+
+  <section>
+    <div id="note"><span class="k">What just happened</span><p>Choose a change reaching main, or start a guided walkthrough below.</p></div>
+  </section>
+
+  <section>
+    <h2>Current state</h2>
+    <div class="grid">
+      <div class="panel">
+        <h3>Release queue (one fixed concurrency group, no cancellation)</h3>
+        <dl>
+          <dt>Holding the slot</dt><dd id="s-active"></dd>
+          <dt>Waiting</dt><dd id="s-queue"></dd>
+          <dt>Main head</dt><dd id="s-head" class="mono"></dd>
+          <dt>Version files on main</dt><dd id="s-vfiles" class="mono"></dd>
+        </dl>
+      </div>
+      <div class="panel">
+        <h3>Transaction in the slot</h3>
+        <dl id="s-txn"></dl>
+      </div>
+      <div class="panel">
+        <h3>GitHub Releases</h3>
+        <div id="s-releases"></div>
+      </div>
+      <div class="panel">
+        <h3>Root manifest.json (descending history)</h3>
+        <div id="s-manifest"></div>
+      </div>
+      <div class="panel">
+        <h3>Withdrawal ledger</h3>
+        <dl>
+          <dt>Withdrawn</dt><dd id="s-withdrawn"></dd>
+          <dt>Revoked assets</dt><dd id="s-revoked"></dd>
+        </dl>
+      </div>
+      <div class="panel">
+        <h3>Jellyfin server 10.11.11</h3>
+        <dl>
+          <dt>Installed plugin</dt><dd id="s-installed"></dd>
+          <dt>Newest compatible</dt><dd id="s-compatible"></dd>
+        </dl>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h3>Every transaction</h3>
+      <div id="s-txns"></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h3>Event log</h3>
+      <div id="log"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Free play</h2>
+    <div class="card">
+      <div class="btn-row" style="margin-bottom:18px">
+        <label for="pick" style="color:var(--muted);font-size:13px">Version for withdrawal, revocation, and rollback:</label>
+        <select id="pick"></select>
+      </div>
+      <div id="freeplay"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Guided walkthroughs</h2>
+    <div class="card">
+      <div class="tabs" id="tabs"></div>
+      <div class="scenario" id="scenario"></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* =========================================================================
+   PURE MODULE — the liftable bit. No DOM, no handlers. (state, action) => state
+   ========================================================================= */
+const ReleasePublication = (function () {
+  const TARGET_ABI = '10.11.0.0';
+  const SERVER_VERSION = '10.11.11';
+
+  function clone(w) { return JSON.parse(JSON.stringify(w)); }
+  function digest(seed, len) {
+    let a = 0x811c9dc5, b = 0x1000193, out = '';
+    for (const ch of String(seed)) { a = ((a ^ ch.charCodeAt(0)) * 16777619) >>> 0; b = ((b + ch.charCodeAt(0) * 31) * 2654435761) >>> 0; }
+    let x = a, y = b;
+    while (out.length < len) { x = ((x * 1103515245) + 12345) >>> 0; y = ((y * 214013) + 2531011) >>> 0; out += ((x ^ y) >>> 0).toString(16).padStart(8, '0'); }
+    return out.slice(0, len);
+  }
+  function parts(v) { return String(v).split('.').map(Number); }
+  function cmp(a, b) { const pa = parts(a), pb = parts(b); for (let i = 0; i < 4; i++) { if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1; } return 0; }
+  function bumpPatch(v) { const p = parts(v); p[2] += 1; p[3] = 0; return p.join('.'); }
+  function shaFor(w, label) { w.counter.pushes += 1; return 'sha-' + String(w.counter.pushes).padStart(2, '0') + '-' + digest(label + w.counter.pushes, 5); }
+  function find(w, id) { return w.transactions.filter(t => t.id === id)[0] || null; }
+  function releaseForVersion(w, v) { return w.releases.filter(r => r.version === v)[0] || null; }
+  function releaseForCommit(w, sha) { return w.releases.filter(r => r.commit === sha)[0] || null; }
+  function manifestEntry(w, v) { return w.manifest.filter(e => e.version === v)[0] || null; }
+  function sourceUrl(v) { return 'https://github.com/xiakeng/trickplay-cropper/releases/download/v' + v + '/trickplay-cropper_' + v + '.zip'; }
+  function descending(list) {
+    const seen = {};
+    for (let i = 0; i < list.length; i++) {
+      if (seen[list[i].version]) return false;
+      seen[list[i].version] = true;
+      if (i > 0 && cmp(list[i - 1].version, list[i].version) <= 0) return false;
+    }
+    return true;
+  }
+  function highestKnown(w) {
+    let top = w.main.versionFiles;
+    w.releases.forEach(r => { if (cmp(r.version, top) > 0) top = r.version; });
+    w.manifest.forEach(e => { if (cmp(e.version, top) > 0) top = e.version; });
+    w.ledger.withdrawn.forEach(v => { if (cmp(v, top) > 0) top = v; });
+    return top;
+  }
+  function newestCompatible(w) {
+    const okList = w.manifest.filter(e => cmp(e.targetAbi, SERVER_VERSION) <= 0).map(e => e.version);
+    if (!okList.length) return null;
+    okList.sort(cmp);
+    return okList[okList.length - 1];
+  }
+  function log(w, text, kind) { w.log.unshift({ text: text, kind: kind }); w.log = w.log.slice(0, 60); }
+  function ok(w, text) { w.lastNote = { text: text, kind: 'ok' }; log(w, text, 'ok'); return w; }
+  function no(w, text) { w.lastNote = { text: text, kind: 'refused' }; log(w, 'REFUSED — ' + text, 'refused'); return w; }
+  function fail(w, txn, text) { txn.crashAt = txn.state; txn.zip = null; txn.state = 'Failed'; w.activeId = null; w.queue.unshift(txn.id); w.lastNote = { text: text, kind: 'failure' }; log(w, 'FAILED CLOSED — ' + text, 'failure'); return w; }
+  function active(w) { return w.activeId ? find(w, w.activeId) : null; }
+  function requireActive(w, states) {
+    const t = active(w);
+    if (!t) return { error: 'No transaction holds the release queue slot. Let one in from the queue first.' };
+    if (states && states.indexOf(t.state) < 0) return { error: t.id + ' is in state ' + t.state + ', where this step is not legal. Legal from: ' + states.join(', ') + '.' };
+    return { txn: t };
+  }
+
+  function createWorld() {
+    return {
+      counter: { pushes: 0, builds: 0, txns: 0 },
+      main: { head: 'sha-00-initial', versionFiles: '1.0.0.0' },
+      manifest: [],
+      ledger: { withdrawn: [], revoked: [] },
+      releases: [],
+      transactions: [],
+      queue: [],
+      activeId: null,
+      evidence: {},
+      jellyfin: { serverVersion: SERVER_VERSION, installed: null },
+      log: [],
+      lastNote: null
+    };
+  }
+
+  function push(w, kind, declaredVersion) {
+    w.counter.txns += 1;
+    const sha = shaFor(w, kind);
+    const qualifying = kind === 'production-business';
+    const txn = {
+      id: 'T' + w.counter.txns, pushSha: sha, kind: kind, qualifying: qualifying,
+      declaredVersion: declaredVersion || null, gates: qualifying ? 'pending' : 'not required',
+      state: qualifying ? 'Triggered' : 'Skipped', version: null, recordedDigest: null,
+      timestamp: null, zip: null, crashAt: null
+    };
+    w.transactions.push(txn);
+    w.main.head = sha;
+    if (kind === 'publisher-maintenance') {
+      txn.state = 'No run started';
+      return ok(w, txn.id + ': a publisher maintenance commit (manifest entry plus version bump) reached main, pushed with GITHUB_TOKEN. GitHub starts no workflow run from that token at all, so there is nothing to classify and no release can recurse.');
+    }
+    if (!qualifying) return ok(w, txn.id + ': a ' + kind + ' change reached main at ' + sha + '. Path classification says it does not release on its own, so it is Skipped and consumes no version number.');
+    return ok(w, txn.id + ': a production-business change reached main at ' + sha + (declaredVersion ? ', declaring explicit version ' + declaredVersion : '') + '. CI gates must pass before it may join the release queue.');
+  }
+
+  function pinVersion(w, txn) {
+    if (txn.declaredVersion) {
+      const floor = highestKnown(w);
+      if (cmp(txn.declaredVersion, floor) <= 0) return { error: 'Fail closed: the declared version ' + txn.declaredVersion + ' does not exceed the highest known version ' + floor + '. History must descend, so an explicit major or minor has to be larger than everything already published.' };
+      return { value: txn.declaredVersion };
+    }
+    return { value: bumpPatch(highestKnown(w)) };
+  }
+  function reconcile(w, txn) {
+    const rel = releaseForCommit(w, txn.pushSha);
+    const ev = w.evidence[txn.id] || null;
+
+    if (!txn.version) {
+      const recovered = rel ? { value: rel.version } : (ev && ev.version ? { value: ev.version } : pinVersion(w, txn));
+      if (recovered.error) { txn.state = 'Refused'; w.activeId = null; return no(w, recovered.error); }
+      txn.version = recovered.value;
+    }
+
+    const collision = w.releases.filter(r => r.version === txn.version && r.commit !== txn.pushSha)[0];
+    if (collision) {
+      txn.state = 'Refused'; w.activeId = null;
+      return no(w, 'Fail closed: tag v' + txn.version + ' already exists but points at ' + collision.commit + ', not the pinned ' + txn.pushSha + '. A published version may never be re-pointed at different source, so a human must resolve this.');
+    }
+
+    if (rel && !rel.draft) {
+      if (manifestEntry(w, txn.version)) {
+        txn.state = 'Manifested';
+        return ok(w, txn.id + ' reconciles: Release v' + txn.version + ' is already published and its manifest entry is present. Nothing to repair — the retry only re-runs the public attestation gate.');
+      }
+      if (w.ledger.withdrawn.indexOf(txn.version) >= 0) {
+        txn.state = 'Refused'; w.activeId = null;
+        return no(w, 'Fail closed: v' + txn.version + ' is published but recorded as deliberately withdrawn in the ledger. A retry must not resurrect a withdrawn version by re-adding its manifest entry.');
+      }
+      txn.state = 'Published';
+      return ok(w, txn.id + ' reconciles: Release v' + txn.version + ' is published but the manifest entry never landed. Resume at the additive manifest commit — no second Release, no rebuild, no re-upload.');
+    }
+
+    if (rel && rel.draft) {
+      const starter = rel.assets.filter(a => a.status === 'starter')[0];
+      const complete = rel.assets.filter(a => a.status === 'complete')[0];
+      if (starter) {
+        rel.assets = rel.assets.filter(a => a.status !== 'starter');
+        txn.state = 'Identified';
+        return ok(w, txn.id + ' reconciles: the draft Release for v' + txn.version + ' holds an incomplete "starter" asset left by the dead upload. Removing only that asset is safe. The workspace ZIP is gone, so rebuild and re-record, then attach.');
+      }
+      if (complete && ev && ev.digest && complete.md5 === ev.digest) {
+        txn.recordedDigest = ev.digest; txn.timestamp = complete.timestamp; txn.state = 'Attached';
+        return ok(w, txn.id + ' reconciles: the draft Release already holds a complete asset whose bytes match the recorded digest ' + ev.digest.slice(0, 12) + '…. Reuse it. Rebuilding would only produce different bytes, because JPRM stamps a fresh build timestamp.');
+      }
+      if (complete && ev && ev.digest && complete.md5 !== ev.digest) {
+        txn.state = 'Refused'; w.activeId = null;
+        return no(w, 'Fail closed: the attached asset for v' + txn.version + ' has digest ' + complete.md5.slice(0, 12) + '… but this version was recorded as ' + ev.digest.slice(0, 12) + '…. Two different ZIPs claim one version, so a human must decide which is authoritative.');
+      }
+      if (complete) {
+        txn.recordedDigest = complete.md5; txn.timestamp = complete.timestamp; txn.state = 'Attached';
+        return ok(w, txn.id + ' reconciles with no recorded digest left: the attached asset is complete and its embedded identities (GUID, plugin name, targetAbi ' + TARGET_ABI + ', DLL and meta.json version ' + txn.version + ') match the pinned version, so the publisher ADOPTS its digest ' + complete.md5.slice(0, 12) + '… as authoritative. Proposed decision 4 — react to this.');
+      }
+      txn.state = 'Identified';
+      return ok(w, txn.id + ' reconciles: the draft Release for v' + txn.version + ' exists and points at the pinned commit, but holds no asset. Rebuild, re-record identity, then attach.');
+    }
+
+    txn.state = 'Pinned';
+    return ok(w, txn.id + ' reconciles: no Release exists for the pinned commit ' + txn.pushSha + '. Version ' + txn.version + ' is recovered from evidence rather than recomputed, so no number is burned. Resume at the build step.');
+  }
+
+  function buildZip(w, isRebuild) {
+    const r = requireActive(w, isRebuild ? ['Built', 'Identified', 'Attached'] : ['Pinned', 'Identified']);
+    if (r.error) return no(w, r.error);
+    const t = r.txn;
+    if (!isRebuild && t.zip) return no(w, t.id + ' already holds a built ZIP (build #' + t.zip.build + '). Rebuilding is a separate, deliberate move.');
+    w.counter.builds += 1;
+    const name = 'trickplay-cropper_' + t.version + '.zip';
+    const timestamp = '2026-09-0' + ((w.counter.builds % 8) + 1) + 'T0' + (w.counter.builds % 9) + ':1' + (w.counter.builds % 6) + ':00Z';
+    t.zip = {
+      name: name, build: w.counter.builds, timestamp: timestamp,
+      md5: digest(name + '#build' + w.counter.builds, 32),
+      sha256: digest('sha256:' + name + '#build' + w.counter.builds, 64)
+    };
+    const keptState = t.state === 'Attached' ? 'Attached' : 'Built';
+    t.state = keptState;
+    const stamped = 'stamped ' + t.version + ' into build.yaml, the project Version/FileVersion/AssemblyVersion, and the JPRM version override — one value everywhere';
+    if (isRebuild) {
+      const stale = t.recordedDigest && t.recordedDigest !== t.zip.md5;
+      return ok(w, t.id + ' rebuilt (build #' + w.counter.builds + '): ' + stamped + '. JPRM wrote a fresh build timestamp, so the ZIP bytes differ — new MD5 ' + t.zip.md5.slice(0, 12) + '…, manifest timestamp now ' + timestamp + '.' + (stale ? ' The digest recorded for v' + t.version + ' (' + t.recordedDigest.slice(0, 12) + '…) is now stale: the workspace ZIP is no longer the ZIP this version was verified against.' : ''));
+    }
+    return ok(w, t.id + ' built the sole ZIP from JPRM\'s artifact output (build #' + w.counter.builds + '): ' + stamped + '. ZIP name ' + name + ', embedded meta.json version ' + t.version + ', build timestamp ' + timestamp + '.');
+  }
+
+  const ACTIONS = {
+    'push-business': { group: 'Changes reaching main', label: 'A production-business change reaches main', apply: w => push(w, 'production-business') },
+    'push-minor': { group: 'Changes reaching main', label: 'A production-business change reaches main declaring 1.1.0.0', apply: w => push(w, 'production-business', '1.1.0.0') },
+    'push-docs': { group: 'Changes reaching main', label: 'A documentation-only change reaches main', apply: w => push(w, 'documentation-only') },
+    'push-tests': { group: 'Changes reaching main', label: 'A test-only change reaches main', apply: w => push(w, 'tests-only') },
+    'push-actions': { group: 'Changes reaching main', label: 'An Actions-only change reaches main', apply: w => push(w, 'Actions-only') },
+    'push-tools': { group: 'Changes reaching main', label: 'A tools-only change reaches main', apply: w => push(w, 'tools-only') },
+    'push-maintenance': { group: 'Changes reaching main', label: 'A publisher maintenance commit reaches main (GITHUB_TOKEN)', apply: w => push(w, 'publisher-maintenance') },
+
+    'gates-pass': {
+      group: 'CI gates', label: 'CI build, tests, and package gates pass',
+      apply: w => {
+        const t = w.transactions.filter(x => x.gates === 'pending')[0];
+        if (!t) return no(w, 'No transaction is waiting on CI gates.');
+        t.gates = 'passed'; t.state = 'Queued'; w.queue.push(t.id);
+        return ok(w, t.id + ' passed the format, build, unit, component, and package-validation gates at ' + t.pushSha + ' and joins the release queue behind ' + (w.queue.length - 1) + ' other transaction(s). The queue is one fixed concurrency group with queue: max and no cancellation, so nothing is dropped and two releases never run at once.');
+      }
+    },
+    'gates-fail': {
+      group: 'CI gates', label: 'CI build or tests fail',
+      apply: w => {
+        const t = w.transactions.filter(x => x.gates === 'pending')[0];
+        if (!t) return no(w, 'No transaction is waiting on CI gates.');
+        t.gates = 'failed'; t.state = 'Abandoned';
+        return ok(w, t.id + ' failed its gates, so it never reaches the release queue and is Abandoned. It consumes no version number: the next qualifying push still takes the next patch.');
+      }
+    },
+
+    'dequeue': {
+      group: 'Release queue', label: 'Let the next transaction into the release queue',
+      apply: w => {
+        if (w.activeId) return no(w, 'The release queue is serialized: ' + w.activeId + ' holds the single slot. A second release job cannot start until it finishes, fails, or is refused.');
+        if (!w.queue.length) return no(w, 'The release queue is empty. Nothing to pin.');
+        const id = w.queue.shift(); const t = find(w, id); w.activeId = id;
+        if (t.state === 'Failed') { t.state = 'Reconciling'; return reconcile(w, t); }
+        const v = pinVersion(w, t);
+        if (v.error) { t.state = 'Refused'; w.activeId = null; return no(w, v.error); }
+        t.version = v.value; t.state = 'Pinned';
+        w.evidence[id] = { version: t.version, digest: null };
+        return ok(w, t.id + ' takes the slot: source SHA pinned to ' + t.pushSha + ' and version computed as ' + t.version + ' from the highest known version ' + highestKnown(w) + '. Nothing is pinned before entering the queue, so a concurrent run cannot steal the number.');
+      }
+    },
+
+    'build': { group: 'Publication steps', label: 'Stamp the version and build the sole ZIP with JPRM', apply: w => buildZip(w, false) },
+    'rebuild': { group: 'Publication steps', label: 'Rebuild the ZIP (JPRM stamps a fresh build timestamp)', apply: w => buildZip(w, true) },
+    'identify': {
+      group: 'Publication steps', label: 'Verify package identity and record MD5 and SHA-256',
+      apply: w => {
+        const r = requireActive(w, ['Built']);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        t.recordedDigest = t.zip.md5; t.timestamp = t.zip.timestamp;
+        w.evidence[t.id] = { version: t.version, digest: t.zip.md5 };
+        t.state = 'Identified';
+        return ok(w, t.id + ' validated the sole JPRM ZIP: exactly one artifact, GUID and name from build.yaml, targetAbi ' + TARGET_ABI + ', DLL and meta.json version ' + t.version + '. Recorded MD5 ' + t.zip.md5.slice(0, 12) + '… for Jellyfin and SHA-256 ' + t.zip.sha256.slice(0, 12) + '… for diagnostics. The manifest timestamp ' + t.timestamp + ' comes from this ZIP\'s own meta.json and is never regenerated later.');
+      }
+    },
+    'draft': {
+      group: 'Publication steps', label: 'Create or reconcile the draft Release for the tag',
+      apply: w => {
+        const r = requireActive(w, ['Identified']);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        const existing = releaseForVersion(w, t.version);
+        if (existing) {
+          if (existing.commit !== t.pushSha) return fail(w, t, 'Fail closed: tag v' + t.version + ' exists but points at ' + existing.commit + ', not the pinned ' + t.pushSha + '.');
+          t.state = 'Drafted';
+          return ok(w, t.id + ' reconciles the existing Release for v' + t.version + ' instead of creating a second one, and confirms the tag targets the pinned commit ' + t.pushSha + '.');
+        }
+        w.releases.push({ tag: 'v' + t.version, version: t.version, commit: t.pushSha, draft: true, immutable: false, revoked: false, assets: [] });
+        t.state = 'Drafted';
+        return ok(w, t.id + ' created a draft Release for tag v' + t.version + ' at commit ' + t.pushSha + '. While it is a draft it is invisible to Jellyfin and cannot enter the manifest. Only the publishing job holds contents: write; every other job stays read-only.');
+      }
+    },
+    'attach': {
+      group: 'Publication steps', label: 'Attach the ZIP and verify its name, size, and digest',
+      apply: w => {
+        const r = requireActive(w, ['Drafted', 'Attached']);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        if (!t.zip) return no(w, t.id + ' has no ZIP in its workspace — the runner that built it is gone. Rebuild and re-record identity before attaching.');
+        const rel = releaseForVersion(w, t.version);
+        const sameName = rel.assets.filter(a => a.name === t.zip.name)[0];
+        if (sameName && sameName.status === 'complete') return no(w, 'GitHub rejects duplicate asset names. ' + sameName.name + ' is already attached and complete, so the only legal moves are to reuse it or to fail closed — never to overwrite a published identity.');
+        if (sameName) rel.assets = rel.assets.filter(a => a.status !== 'starter');
+        rel.assets.push({ name: t.zip.name, md5: t.zip.md5, sha256: t.zip.sha256, size: '482 KB', status: 'complete', timestamp: t.zip.timestamp });
+        t.state = 'Attached';
+        return ok(w, t.id + ' attached ' + t.zip.name + ' (482 KB) to the draft Release, then verified its name, size, and digest ' + t.zip.md5.slice(0, 12) + '… after upload.');
+      }
+    },
+    'publish': {
+      group: 'Publication steps', label: 'Publish the Release and freeze the tag',
+      apply: w => {
+        const r = requireActive(w, ['Attached']);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        const rel = releaseForVersion(w, t.version);
+        const asset = rel.assets.filter(a => a.status === 'complete')[0];
+        if (!asset) return no(w, t.id + ' has no complete attached asset. Publishing now would expose a manifest URL that resolves to nothing.');
+        if (!t.recordedDigest) return no(w, 'Fail closed: no digest was ever recorded for v' + t.version + ', so nothing proves the attached asset is the ZIP this transaction built. Verify and record identity before publishing.');
+        if (asset.md5 !== t.recordedDigest) return fail(w, t, 'Fail closed: the attached asset digest ' + asset.md5.slice(0, 12) + '… is not the digest recorded for v' + t.version + ' (' + t.recordedDigest.slice(0, 12) + '…). Publishing would ship a ZIP nobody verified.');
+        if (rel.commit !== t.pushSha) return fail(w, t, 'Fail closed: the Release for v' + t.version + ' targets ' + rel.commit + ', not the pinned ' + t.pushSha + '.');
+        rel.draft = false; rel.immutable = true; t.state = 'Published';
+        return ok(w, t.id + ' published Release v' + t.version + ' and the tag is frozen. Immutable releases are on, so neither the tag nor the asset can move again. There is still no manifest entry: a retry can repair the manifest, but a manifest URL may never point at a draft.');
+      }
+    },
+    'manifest': {
+      group: 'Publication steps', label: 'Commit the additive manifest entry to latest main',
+      apply: w => {
+        const r = requireActive(w, ['Published']);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        if (w.ledger.withdrawn.indexOf(t.version) >= 0) { t.state = 'Refused'; w.activeId = null; return no(w, 'Fail closed: v' + t.version + ' is in the withdrawal ledger. Re-adding its manifest entry would resurrect a deliberately withdrawn release.'); }
+        if (manifestEntry(w, t.version)) {
+          t.state = 'Manifested';
+          return ok(w, t.id + ' found the manifest entry for v' + t.version + ' already committed. The additive merge is a no-op and history is unchanged.');
+        }
+        const before = w.manifest.map(e => e.version + ':' + e.checksum + ':' + e.timestamp).join('|');
+        const asset = releaseForVersion(w, t.version).assets.filter(a => a.status === 'complete')[0];
+        w.manifest.push({ version: t.version, targetAbi: TARGET_ABI, sourceUrl: sourceUrl(t.version), checksum: asset.md5, timestamp: t.timestamp });
+        w.manifest.sort((a, b) => cmp(b.version, a.version));
+        const after = w.manifest.filter(e => e.version !== t.version).map(e => e.version + ':' + e.checksum + ':' + e.timestamp).join('|');
+        const movedHead = w.main.head !== t.pushSha;
+        w.main.versionFiles = t.version;
+        w.main.head = shaFor(w, 'manifest-' + t.version);
+        t.state = 'Manifested';
+        return ok(w, t.id + ' committed one additive maintenance commit: the manifest entry for v' + t.version + ' (checksum ' + asset.md5.slice(0, 12) + '…, timestamp ' + t.timestamp + ', targetAbi ' + TARGET_ABI + ') plus the bumped version files, merged onto the latest main head' + (movedHead ? ' — main had moved on, and the merge stayed additive instead of clobbering it' : '') + '. Older history ' + (after === before ? 'is byte-identical' : 'CHANGED, which attestation will reject') + '. Pushed with GITHUB_TOKEN, so GitHub starts no workflow run from it and no release recurses.');
+      }
+    },
+    'attest': {
+      group: 'Publication steps', label: 'Attest the public download',
+      apply: w => {
+        const r = requireActive(w, ['Manifested']);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        const rel = releaseForVersion(w, t.version);
+        const entry = manifestEntry(w, t.version);
+        const asset = rel ? rel.assets.filter(a => a.status === 'complete')[0] : null;
+        const checks = [
+          ['public sourceUrl resolves', !!asset && !!rel && !rel.revoked],
+          ['tag and Release version agree with the manifest entry', !!rel && rel.version === t.version && !!entry && entry.version === t.version],
+          ['Release targets the pinned commit', !!rel && rel.commit === t.pushSha],
+          ['Release is published, not draft', !!rel && !rel.draft],
+          ['exactly one complete asset, named for the version', !!rel && !!asset && rel.assets.filter(a => a.status === 'complete').length === 1 && asset.name === 'trickplay-cropper_' + t.version + '.zip'],
+          ['asset MD5 equals the manifest checksum', !!asset && !!entry && asset.md5 === entry.checksum],
+          ['asset MD5 equals the recorded digest', !!asset && asset.md5 === t.recordedDigest],
+          ['targetAbi is the approved Jellyfin ABI', !!entry && entry.targetAbi === TARGET_ABI],
+          ['exactly one manifest entry for this version', w.manifest.filter(e => e.version === t.version).length === 1],
+          ['history still descends with no duplicates', descending(w.manifest)],
+          ['committed version files equal the released version', w.main.versionFiles === t.version]
+        ];
+        const failedChecks = checks.filter(c => !c[1]);
+        if (failedChecks.length) return fail(w, t, 'Attestation failed: ' + failedChecks.map(c => c[0]).join('; ') + '. The Release is already public, so this is an incident for a human; the transaction returns to the front of the queue.');
+        t.state = 'Attested'; w.activeId = null;
+        return ok(w, t.id + ' downloaded ' + sourceUrl(t.version) + ' and proved all ' + checks.length + ' invariants: identity, pinned commit, a single verified asset, digest agreement across asset, manifest, and recorded value, the approved ABI, one entry, descending history, and committed version files. v' + t.version + ' is released and discoverable, and the queue slot is free.');
+      }
+    },
+
+    'crash': {
+      group: 'Failure and retry', label: 'The runner dies right now',
+      apply: w => {
+        const r = requireActive(w, null);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        if (['Pinned', 'Built', 'Identified', 'Drafted', 'Attached', 'Published', 'Manifested'].indexOf(t.state) < 0) return no(w, t.id + ' is in state ' + t.state + ', which has nothing in flight to lose.');
+        return fail(w, t, 'The runner died while ' + t.id + ' was in state ' + t.state + '. Its workspace ZIP is gone, but every published fact survives on GitHub: the tag, the draft or published Release, any attached asset, the manifest, and the run\'s recorded evidence. The transaction goes back to the FRONT of the queue and the slot is freed.');
+      }
+    },
+    'crash-upload': {
+      group: 'Failure and retry', label: 'The runner dies mid-upload (leaves an incomplete starter asset)',
+      apply: w => {
+        const r = requireActive(w, ['Drafted']);
+        if (r.error) return no(w, r.error);
+        const t = r.txn;
+        if (!t.zip) return no(w, t.id + ' has no ZIP to upload.');
+        releaseForVersion(w, t.version).assets.push({ name: t.zip.name, md5: digest('partial' + t.version + w.counter.builds, 32), size: '119 KB', status: 'starter', timestamp: t.zip.timestamp });
+        return fail(w, t, 'The runner died mid-upload, leaving an incomplete "starter" asset on the draft Release — the exact residue GitHub documents. Only an incomplete starter may be removed; a complete asset may never be deleted and replaced.');
+      }
+    },
+    'lose-evidence': {
+      group: 'Failure and retry', label: "The failed run's recorded evidence expires",
+      apply: w => {
+        const id = w.activeId || w.queue[0];
+        if (!id) return no(w, 'Nothing is in flight or waiting.');
+        if (!w.evidence[id]) return no(w, id + ' has no recorded evidence left to lose.');
+        delete w.evidence[id];
+        return ok(w, id + '\'s workflow artifact expired, so its recorded version and digest are gone. A retry must now recover identity from published evidence alone — the tag, the Release, the attached asset, and the manifest.');
+      }
+    },
+    'rerun': {
+      group: 'Failure and retry', label: 'Rerun a finished transaction from the start',
+      apply: w => {
+        const finished = w.transactions.filter(x => x.state === 'Attested');
+        const t = finished[finished.length - 1];
+        if (!t) return no(w, 'No transaction has finished. Rerun applies to a completed release.');
+        if (w.activeId) return no(w, 'The queue slot is held by ' + w.activeId + '. A rerun cannot start beside a live release.');
+        if (w.ledger.withdrawn.indexOf(t.version) >= 0 && !manifestEntry(w, t.version)) return no(w, 'Fail closed: rerunning ' + t.id + ' would re-add the withdrawn v' + t.version + ' to the manifest. The ledger is what makes withdrawal survive retries.');
+        const rel = releaseForVersion(w, t.version);
+        const entry = manifestEntry(w, t.version);
+        if (!rel || rel.draft || !entry) return no(w, 'Rerunning ' + t.id + ' finds v' + t.version + ' inconsistent (Release published: ' + (!!rel && !rel.draft) + ', manifest entry: ' + !!entry + '). That is a repair, not a no-op, and needs a human.');
+        return ok(w, 'Rerunning ' + t.id + ' re-verifies every invariant for v' + t.version + ' — tag, commit, single complete asset, digest against the manifest checksum, targetAbi, single entry, descending history — finds them all true, and changes nothing. A completed retry is a no-op.');
+      }
+    },
+
+    'withdraw': {
+      group: 'History, withdrawal, rollback', label: 'Withdraw the chosen published version', needsVersion: true,
+      apply: (w, p) => {
+        const v = p.version;
+        if (!v) return no(w, 'Choose a version first.');
+        if (!manifestEntry(w, v)) return no(w, 'v' + v + ' has no manifest entry to remove.');
+        w.manifest = w.manifest.filter(e => e.version !== v);
+        if (w.ledger.withdrawn.indexOf(v) < 0) w.ledger.withdrawn.push(v);
+        return ok(w, 'Withdrew v' + v + ': only its manifest entry is removed and the version is recorded in the ledger. The Release, tag, and ZIP stay exactly where they are, so anyone holding that URL still resolves it, and every other version\'s history is untouched. Jellyfin stops offering it for new installs and for rollback.');
+      }
+    },
+    'revoke': {
+      group: 'History, withdrawal, rollback', label: "Revoke the chosen version's asset for security", needsVersion: true,
+      apply: (w, p) => {
+        const v = p.version;
+        const rel = releaseForVersion(w, v);
+        if (!rel) return no(w, 'No Release exists for v' + v + '.');
+        if (rel.revoked) return no(w, 'v' + v + ' is already revoked.');
+        rel.assets = []; rel.revoked = true;
+        w.manifest = w.manifest.filter(e => e.version !== v);
+        if (w.ledger.withdrawn.indexOf(v) < 0) w.ledger.withdrawn.push(v);
+        if (w.ledger.revoked.indexOf(v) < 0) w.ledger.revoked.push(v);
+        if (w.jellyfin.installed === v) w.jellyfin.installed = null;
+        return ok(w, 'Security revocation of v' + v + ': the asset is deleted and its manifest entry removed. This is the only reason to delete an asset, because every sourceUrl that pointed at it now 404s and rollback to v' + v + ' becomes impossible.');
+      }
+    },
+    'jellyfin-update': {
+      group: 'History, withdrawal, rollback', label: 'Jellyfin looks for a compatible update',
+      apply: w => {
+        const dropped = w.manifest.filter(e => cmp(e.targetAbi, SERVER_VERSION) > 0).map(e => e.version);
+        const best = newestCompatible(w);
+        if (!best) return ok(w, 'Jellyfin server ' + SERVER_VERSION + ' finds no compatible version in the manifest' + (dropped.length ? ' (dropped for targetAbi above the server: ' + dropped.join(', ') + ')' : '') + '. The installed plugin stays at ' + (w.jellyfin.installed || 'none') + '.');
+        if (w.jellyfin.installed === best) return ok(w, 'Jellyfin server ' + SERVER_VERSION + ' selects the newest compatible entry v' + best + ', which is already installed. No update offered.');
+        w.jellyfin.installed = best;
+        return ok(w, 'Jellyfin server ' + SERVER_VERSION + ' walks the manifest in descending numeric order, drops entries whose targetAbi exceeds the server' + (dropped.length ? ' (' + dropped.join(', ') + ')' : ' (none here)') + ', and installs the newest compatible entry v' + best + ' after comparing the downloaded ZIP\'s MD5 with the entry checksum.');
+      }
+    },
+    'jellyfin-rollback': {
+      group: 'History, withdrawal, rollback', label: 'An administrator rolls back to the chosen exact version', needsVersion: true,
+      apply: (w, p) => {
+        const v = p.version;
+        const rel = releaseForVersion(w, v);
+        if (!rel || !rel.assets.length || rel.revoked) return no(w, 'Rollback to v' + v + ' is impossible: its ZIP URL no longer resolves' + (rel && rel.revoked ? ' (the asset was revoked)' : '') + '. Retained history is what makes rollback work, and revocation deliberately breaks it.');
+        if (!manifestEntry(w, v)) return no(w, 'Rollback to v' + v + ' is not discoverable: withdrawal removed its manifest entry, so Jellyfin cannot select it even though the ZIP still exists. Roll back to a retained version instead.');
+        w.jellyfin.installed = v;
+        return ok(w, 'Rolled back to the exact version v' + v + ': Jellyfin requested that version by number, found its retained manifest entry, verified the ZIP MD5, and installed it. No publisher action was needed — retained history did the work.');
+      }
+    },
+
+    'main-moves': {
+      group: 'Meanwhile, elsewhere', label: 'An unrelated documentation push lands on main',
+      apply: w => {
+        const sha = shaFor(w, 'docs-while-in-flight');
+        w.main.head = sha;
+        return ok(w, 'main moved to ' + sha + ' with a documentation-only change. It is Skipped, consumes no version, and does not disturb the transaction in the slot — which still ships its own pinned SHA. The maintenance commit will merge additively onto this newer head.');
+      }
+    }
+  };
+
+  const ORDER = [
+    'push-business', 'push-minor', 'push-docs', 'push-tests', 'push-actions', 'push-tools', 'push-maintenance',
+    'gates-pass', 'gates-fail',
+    'dequeue',
+    'build', 'rebuild', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest',
+    'crash', 'crash-upload', 'lose-evidence', 'rerun',
+    'withdraw', 'revoke', 'jellyfin-update', 'jellyfin-rollback',
+    'main-moves'
+  ];
+
+  function step(world, actionId, payload) {
+    const w = clone(world);
+    const action = ACTIONS[actionId];
+    if (!action) return no(w, 'Unknown action ' + actionId + '.');
+    return action.apply(w, payload || {});
+  }
+
+  return { createWorld: createWorld, step: step, ACTIONS: ACTIONS, ORDER: ORDER, newestCompatible: newestCompatible };
+})();
+</script>
+
+<script>
+/* ===================== THROWAWAY SHELL — page wiring only ===================== */
+(function () {
+  const SCENARIOS = [
+    {
+      id: 'happy', title: '1. Happy path',
+      situation: 'One production-business change reaches main and every step succeeds first time.',
+      watch: 'Watch the version get computed only at the queue slot, one ZIP identity flow unchanged through tag, asset, manifest checksum, and attestation, and the queue slot free up only at the very end.',
+      steps: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest']
+    },
+    {
+      id: 'nonqualifying', title: '2. Docs, tests, Actions, tools',
+      situation: 'A documentation-only push lands first, then a real production-business push follows it.',
+      watch: 'The docs push is Skipped and consumes no version, so the release that follows is still 1.0.1.0 rather than 1.0.2.0.',
+      steps: ['push-docs', 'push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest']
+    },
+    {
+      id: 'concurrent', title: '3. Two pushes at once',
+      situation: 'Two qualifying pushes arrive before either releases. Both pass their gates and join one serialized queue.',
+      watch: 'Step 6 is refused on purpose: the second transaction cannot take the slot while the first holds it. After the first attests, the second pins 1.0.2.0 — computed after queueing, never guessed in parallel.',
+      steps: ['push-business', 'gates-pass', 'push-business', 'gates-pass', 'dequeue', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest', 'dequeue', 'build', 'identify']
+    },
+    {
+      id: 'starter', title: '4. Runner dies mid-upload',
+      situation: 'The upload breaks halfway, leaving GitHub\'s documented incomplete "starter" asset on the draft Release.',
+      watch: 'The retry removes only the starter asset, then rebuilds — and the rebuilt ZIP has different bytes, because JPRM stamps a fresh timestamp. Nothing was published yet, so re-recording the digest is safe.',
+      steps: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'crash-upload', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest']
+    },
+    {
+      id: 'reuse', title: '5. Retry reuses the uploaded asset',
+      situation: 'The runner dies after a verified asset is attached but before publication.',
+      watch: 'The retry reuses the attached asset because its bytes match the recorded digest, and never rebuilds. Rebuilding here would create two different ZIPs claiming one version.',
+      steps: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'crash', 'dequeue', 'publish', 'manifest', 'attest']
+    },
+    {
+      id: 'manifest-gap', title: '6. Published, manifest never landed',
+      situation: 'Publication succeeded, then the runner died before committing the manifest entry.',
+      watch: 'The retry resumes at the manifest commit only: no second Release, no rebuild, no re-upload. Until the entry lands, Jellyfin cannot see the release at all.',
+      steps: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'crash', 'dequeue', 'manifest', 'attest']
+    },
+    {
+      id: 'rerun', title: '7. Rerun a finished release',
+      situation: 'A completed release is rerun from the start, by mistake or by hand.',
+      seed: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest'],
+      watch: 'Every invariant is re-verified against published evidence and nothing changes. A completed retry is a no-op, and Jellyfin then picks the release up.',
+      steps: ['rerun', 'jellyfin-update']
+    },
+    {
+      id: 'withdraw', title: '8. Withdraw, then roll back',
+      situation: 'Two releases are out. The newest turns out to be bad and is withdrawn.',
+      seed: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest',
+             'push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'publish', 'manifest', 'attest'],
+      watch: 'Withdrawal removes only the manifest entry, so the asset URL still resolves. Jellyfin then offers 1.0.1.0. Rolling back to the withdrawn 1.0.2.0 is refused as not discoverable, rolling back to 1.0.1.0 works, and a rerun must not resurrect the withdrawn version.',
+      steps: [{ a: 'withdraw', v: '1.0.2.0' }, 'jellyfin-update', { a: 'jellyfin-rollback', v: '1.0.2.0' }, { a: 'jellyfin-rollback', v: '1.0.1.0' }, 'rerun']
+    },
+    {
+      id: 'lost-evidence', title: '9. Retry with no recorded digest',
+      situation: 'The runner died after attaching a verified asset, and the run\'s recorded evidence expired before the retry.',
+      seed: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'draft', 'attach', 'crash'],
+      watch: 'With no recorded digest, the retry can only inspect published evidence. It adopts the complete asset whose embedded identities match the pinned version. This is proposed decision 4: adopt, rather than fail closed and strand a published Release.',
+      steps: ['lose-evidence', 'dequeue', 'publish', 'manifest', 'attest']
+    },
+    {
+      id: 'main-moves', title: '10. Main moves mid-release',
+      situation: 'A documentation push lands on main while a release transaction sits between build and publication.',
+      watch: 'The transaction keeps shipping its own pinned SHA, while the maintenance commit merges additively onto the newer head instead of clobbering it. The docs push consumes no version.',
+      steps: ['push-business', 'gates-pass', 'dequeue', 'build', 'identify', 'main-moves', 'draft', 'attach', 'publish', 'manifest', 'attest']
+    },
+    {
+      id: 'illegal', title: '11. Moves that must be refused',
+      situation: 'Deliberately skip steps and try to shortcut the machine: publish before building, commit a manifest before publishing, draft before verifying identity, then rebuild after a verified asset is already attached.',
+      watch: 'Every shortcut is refused with a reason: publish before anything is built, commit a manifest for an unpublished Release, attest too early, draft before identity is verified, publish with no asset, and dequeue beside a live release. The last two steps are the trap — once a verified asset is attached, rebuilding produces different bytes and that asset can never be replaced.',
+      steps: ['push-business', 'gates-pass', 'dequeue', 'publish', 'manifest', 'attest', 'build', 'draft', 'identify', 'draft', 'publish', 'dequeue', 'attach', 'rebuild', 'attach']
+    }
+  ];
+
+  let world = ReleasePublication.createWorld();
+  let scenarioIndex = 0;
+  let scenarioStep = 0;
+  let selectedVersion = '';
+
+  const $ = id => document.getElementById(id);
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function pill(text, cls) { return '<span class="pill ' + (cls || '') + '">' + esc(text) + '</span>'; }
+  function statePill(s) {
+    if (!s) return '<span class="empty">none</span>';
+    if (s === 'Attested') return pill(s, 'done');
+    if (['Failed', 'Refused', 'Abandoned'].indexOf(s) >= 0) return pill(s, 'stop');
+    if (['Queued', 'Triggered', 'Reconciling'].indexOf(s) >= 0) return pill(s, 'wait');
+    if (['Skipped', 'No run started'].indexOf(s) >= 0) return pill(s, '');
+    return pill(s, 'state');
+  }
+  function stepAction(step) { return typeof step === 'string' ? step : step.a; }
+  function stepPayload(step) {
+    if (typeof step === 'object' && step.v) return { version: step.v };
+    return ReleasePublication.ACTIONS[stepAction(step)].needsVersion ? { version: selectedVersion } : {};
+  }
+  function dispatch(step) {
+    world = ReleasePublication.step(world, stepAction(step), stepPayload(step));
+    render();
+  }
+
+  function render() {
+    const w = world;
+    const note = w.lastNote;
+    const noteEl = $('note');
+    const kind = note ? note.kind : 'ok';
+    noteEl.className = kind === 'ok' ? '' : 'illegal';
+    noteEl.innerHTML = '<span class="k">' + (kind === 'refused' ? 'Refused' : kind === 'failure' ? 'Failed closed' : 'What just happened') + '</span><p>' +
+      esc(note ? note.text : 'Choose a change reaching main, or start a guided walkthrough below.') + '</p>';
+
+    const act = w.activeId ? w.transactions.filter(t => t.id === w.activeId)[0] : null;
+    $('s-active').innerHTML = act ? '<span class="mono">' + act.id + '</span> ' + statePill(act.state) : '<span class="empty">free</span>';
+    $('s-queue').innerHTML = w.queue.length
+      ? w.queue.map((id, i) => '<span class="mono">' + id + '</span>' + (i === 0 ? ' <span class="empty">(next, front)</span>' : '')).join(', ')
+      : '<span class="empty">empty</span>';
+    $('s-head').textContent = w.main.head;
+    $('s-vfiles').textContent = w.main.versionFiles;
+
+    $('s-txn').innerHTML = act
+      ? '<dt>Id</dt><dd class="mono">' + act.id + '</dd>' +
+        '<dt>State</dt><dd>' + statePill(act.state) + '</dd>' +
+        '<dt>Classification</dt><dd>' + esc(act.kind) + '</dd>' +
+        '<dt>Gates</dt><dd>' + esc(act.gates) + '</dd>' +
+        '<dt>Pinned source SHA</dt><dd class="mono">' + act.pushSha + '</dd>' +
+        '<dt>Version</dt><dd class="mono">' + (act.version || '— not computed yet —') + '</dd>' +
+        '<dt>Recorded digest</dt><dd class="mono">' + (act.recordedDigest ? act.recordedDigest.slice(0, 16) + '…' : '— none —') + '</dd>' +
+        '<dt>Workspace ZIP</dt><dd class="mono">' + (act.zip ? act.zip.name + ' (build #' + act.zip.build + ')' : '— gone —') + '</dd>' +
+        '<dt>Manifest timestamp</dt><dd class="mono">' + (act.timestamp || '—') + '</dd>' +
+        '<dt>Run evidence</dt><dd>' + (w.evidence[act.id] ? 'version ' + w.evidence[act.id].version + ', digest ' + (w.evidence[act.id].digest ? w.evidence[act.id].digest.slice(0, 12) + '…' : 'not recorded yet') : '<span class="empty">expired</span>') + '</dd>' +
+        (act.crashAt ? '<dt>Died in state</dt><dd>' + statePill(act.crashAt) + '</dd>' : '')
+      : '<dt>Slot</dt><dd><span class="empty">No transaction holds the release queue slot.</span></dd>';
+
+    $('s-releases').innerHTML = w.releases.length
+      ? '<table><thead><tr><th>Tag</th><th>Commit</th><th>Status</th><th>Asset</th><th>MD5</th></tr></thead><tbody>' +
+        w.releases.map(r => {
+          const a = r.assets[0];
+          const status = r.revoked ? pill('revoked', 'stop') : (r.draft ? pill('draft', 'wait') : pill('published · immutable', 'done'));
+          return '<tr><td class="mono">' + r.tag + '</td><td class="mono">' + r.commit + '</td><td>' + status + '</td>' +
+            '<td class="mono">' + (a ? esc(a.name) + '<br>' + a.size + ' · ' + (a.status === 'starter' ? '<span style="color:var(--bad)">incomplete starter</span>' : 'complete') : '<span class="empty">none</span>') + '</td>' +
+            '<td class="mono">' + (a ? a.md5.slice(0, 16) + '…' : '—') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<p class="empty">No Releases yet. This repository has no tag, no Release, and no root manifest.json today.</p>';
+
+    $('s-manifest').innerHTML = w.manifest.length
+      ? '<table><thead><tr><th>Version</th><th>targetAbi</th><th>Checksum (MD5)</th><th>Timestamp</th></tr></thead><tbody>' +
+        w.manifest.map(e => '<tr><td class="mono">' + e.version + '</td><td class="mono">' + e.targetAbi + '</td><td class="mono">' + e.checksum.slice(0, 16) + '…</td><td class="mono">' + e.timestamp + '</td></tr>').join('') +
+        '</tbody></table>'
+      : '<p class="empty">Empty. Nothing is discoverable by Jellyfin yet.</p>';
+
+    $('s-withdrawn').innerHTML = w.ledger.withdrawn.length ? w.ledger.withdrawn.map(v => '<span class="mono">' + v + '</span>').join(', ') : '<span class="empty">none</span>';
+    $('s-revoked').innerHTML = w.ledger.revoked.length ? w.ledger.revoked.map(v => '<span class="mono">' + v + '</span>').join(', ') : '<span class="empty">none</span>';
+    $('s-installed').innerHTML = w.jellyfin.installed ? '<span class="mono">' + w.jellyfin.installed + '</span>' : '<span class="empty">plugin not installed</span>';
+    const best = ReleasePublication.newestCompatible(w);
+    $('s-compatible').innerHTML = best ? '<span class="mono">' + best + '</span>' : '<span class="empty">no compatible entry</span>';
+
+    $('s-txns').innerHTML = w.transactions.length
+      ? '<table><thead><tr><th>Id</th><th>Push</th><th>Classification</th><th>Gates</th><th>Version</th><th>State</th></tr></thead><tbody>' +
+        w.transactions.map(t => '<tr' + (w.activeId === t.id ? ' style="background:var(--accent-soft)"' : '') + '><td class="mono">' + t.id + '</td><td class="mono">' + t.pushSha + '</td><td>' + esc(t.kind) + (t.declaredVersion ? '<br><span class="empty">declares ' + t.declaredVersion + '</span>' : '') + '</td><td>' + esc(t.gates) + '</td><td class="mono">' + (t.version || '—') + '</td><td>' + statePill(t.state) + '</td></tr>').join('') +
+        '</tbody></table>'
+      : '<p class="empty">Nothing has reached main yet.</p>';
+
+    $('log').innerHTML = w.log.length
+      ? w.log.map(e => '<div' + (e.kind && e.kind !== 'ok' ? ' class="illegal"' : '') + '>' + esc(e.text) + '</div>').join('')
+      : '<div class="empty">No events yet.</div>';
+
+    renderVersionPicker();
+    renderScenario();
+  }
+
+  function knownVersions() {
+    const set = {};
+    world.releases.forEach(r => { set[r.version] = true; });
+    world.manifest.forEach(e => { set[e.version] = true; });
+    return Object.keys(set).sort((a, b) => {
+      const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+      for (let i = 0; i < 4; i++) { if (pa[i] !== pb[i]) return pb[i] - pa[i]; }
+      return 0;
+    });
+  }
+
+  function renderVersionPicker() {
+    const pick = $('pick');
+    const versions = knownVersions();
+    if (versions.indexOf(selectedVersion) < 0) selectedVersion = versions[0] || '';
+    pick.innerHTML = versions.length
+      ? versions.map(v => '<option value="' + v + '"' + (v === selectedVersion ? ' selected' : '') + '>v' + v + (world.manifest.filter(e => e.version === v).length ? '' : ' (not in manifest)') + '</option>').join('')
+      : '<option value="">no published versions yet</option>';
+  }
+
+  function buildFreePlay() {
+    const groups = [];
+    ReleasePublication.ORDER.forEach(id => {
+      const a = ReleasePublication.ACTIONS[id];
+      let g = groups.filter(x => x.name === a.group)[0];
+      if (!g) { g = { name: a.group, ids: [] }; groups.push(g); }
+      g.ids.push(id);
+    });
+    $('freeplay').innerHTML = groups.map(g =>
+      '<div class="btn-group"><h4>' + esc(g.name) + '</h4><div class="btn-row">' +
+      g.ids.map(id => '<button data-action="' + id + '">' + esc(ReleasePublication.ACTIONS[id].label) + '</button>').join('') +
+      '</div></div>').join('');
+    Array.prototype.forEach.call(document.querySelectorAll('#freeplay button'), btn => {
+      btn.addEventListener('click', () => dispatch(btn.getAttribute('data-action')));
+    });
+  }
+
+  function buildTabs() {
+    $('tabs').innerHTML = SCENARIOS.map((s, i) =>
+      '<button data-index="' + i + '" aria-selected="' + (i === scenarioIndex) + '">' + esc(s.title) + '</button>').join('') +
+      '<button data-index="-1" style="margin-left:auto">Reset everything</button>';
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), btn => {
+      btn.addEventListener('click', () => {
+        const i = Number(btn.getAttribute('data-index'));
+        if (i < 0) { world = ReleasePublication.createWorld(); scenarioStep = 0; render(); return; }
+        startScenario(i);
+      });
+    });
+  }
+
+  function startScenario(i) {
+    scenarioIndex = i;
+    scenarioStep = 0;
+    world = ReleasePublication.createWorld();
+    const s = SCENARIOS[i];
+    if (s.seed && s.seed.length) {
+      s.seed.forEach(id => { world = ReleasePublication.step(world, id, {}); });
+      world.lastNote = { text: 'Scenario setup applied: ' + s.seed.length + ' earlier steps ran silently to reach this starting point. Everything below starts from here, the same way every time.', kind: 'ok' };
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), b => {
+      b.setAttribute('aria-selected', String(Number(b.getAttribute('data-index')) === i));
+    });
+    render();
+  }
+
+  function renderScenario() {
+    const s = SCENARIOS[scenarioIndex];
+    $('scenario').innerHTML = '<h3 style="margin:0 0 8px;font-size:16px">' + esc(s.title) + '</h3>' +
+      '<p>' + esc(s.situation) + '</p>' +
+      '<p class="watch"><strong>What to watch for.</strong> ' + esc(s.watch) + '</p>' +
+      '<ol class="steps">' + s.steps.map((step, i) => {
+        const id = stepAction(step);
+        const label = ReleasePublication.ACTIONS[id].label + (typeof step === 'object' && step.v ? ' — v' + step.v : '');
+        const done = i < scenarioStep;
+        return '<li class="' + (done ? 'done' : '') + '"><button data-step="' + i + '"' + (done ? ' disabled' : '') + '>' + esc(label) + '</button></li>';
+      }).join('') + '</ol>' +
+      '<div class="btn-row" style="margin-top:14px"><button data-restart="1">Restart this walkthrough</button></div>';
+    Array.prototype.forEach.call(document.querySelectorAll('#scenario button[data-step]'), btn => {
+      btn.addEventListener('click', () => {
+        const i = Number(btn.getAttribute('data-step'));
+        dispatch(s.steps[i]);
+        scenarioStep = i + 1;
+        render();
+      });
+    });
+    const restart = document.querySelector('#scenario button[data-restart]');
+    if (restart) restart.addEventListener('click', () => startScenario(scenarioIndex));
+  }
+
+  $('pick').addEventListener('change', e => { selectedVersion = e.target.value; render(); });
+  buildFreePlay();
+  buildTabs();
+  startScenario(0);
+})();
+</script>
+</body>
+</html>
