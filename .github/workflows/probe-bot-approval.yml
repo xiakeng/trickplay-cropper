@@ -1,0 +1,28 @@
+name: Probe bot approval
+
+# Throwaway probe. This workflow exists only to answer one question for issue #51:
+# does an APPROVE review submitted with GITHUB_TOKEN (author github-actions[bot])
+# satisfy required_approving_review_count under the active main ruleset?
+# It is opened as a pull request, observed, then closed without merging.
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  approve-as-bot:
+    name: Approve as the Actions bot
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Submit an approving review with GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh pr review "${{ github.event.pull_request.number }}"
+          --repo "${{ github.repository }}"
+          --approve
+          --body "Throwaway probe for #51: this review is submitted by GITHUB_TOKEN,
+          so its author is github-actions[bot] rather than a human. It exists only to
+          show whether a bot approval satisfies the required approving review count."
