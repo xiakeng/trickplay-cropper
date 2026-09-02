@@ -119,7 +119,13 @@ intentionally not kept in lockstep:
   directory for the current width, tile grid, and storage location exists,
   contains at least one file, and the database contains that Source Video/width
   row. If the directory is absent or empty, Jellyfin regenerates. If files exist
-  but the row is absent, it imports metadata from those files and returns.
+  but the row is absent, it imports metadata from those files and returns. That
+  10.11.11 import path locates the directory with the normalized `actualWidth`
+  but writes the raw Trickplay Resolution Target into `TrickplayInfo.Width`. An
+  odd or oversized target can therefore create a dictionary key that differs
+  from the Selected Trickplay Resolution even though the tiles exist; the
+  approved exact-match/no-fallback policy returns `404` for that mismatch.
+  [Existing-tile import][existing-tile-import] [Selection policy][selection-policy]
   Removing a target from `WidthResolutions` does not delete its database row,
   and cleanup treats every existing row as expected. Adding a target can generate
   a new row. Changes such as interval or JPEG quality therefore leave existing
@@ -141,6 +147,12 @@ still be valid recorded data.
 ## Failure distinctions required in the plugin
 
 The plugin should keep the following outcomes distinct and fail closed:
+
+The HTTP mappings below come from the approved selection policy. The Source
+Sprite availability boundary reflects the current resolver and encoder behavior
+and the repository's source-trust ADR. [Selection policy][selection-policy]
+[Source resolver][source-resolver] [Source encoder][source-encoder]
+[Source Sprite ADR][source-sprite-adr]
 
 | Outcome | Meaning | Handling boundary |
 | --- | --- | --- |
@@ -192,8 +204,12 @@ this note. [HEAD contract][head-contract]
 [disabled-refresh]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/Jellyfin.Server.Implementations/Trickplay/TrickplayManager.cs#L138-L175
 [scheduled-refresh]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/MediaBrowser.Providers/Trickplay/TrickplayImagesTask.cs#L80-L111
 [existing-width-reuse]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/Jellyfin.Server.Implementations/Trickplay/TrickplayManager.cs#L278-L317
+[existing-tile-import]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/Jellyfin.Server.Implementations/Trickplay/TrickplayManager.cs#L264-L315
 [refresh-cleanup]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/Jellyfin.Server.Implementations/Trickplay/TrickplayManager.cs#L198-L220
 [regeneration-provider]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/MediaBrowser.Providers/Trickplay/TrickplayProvider.cs#L96-L116
 [eligibility-check]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/Jellyfin.Server.Implementations/Trickplay/TrickplayManager.cs#L463-L491
 [selection-policy]: https://github.com/xiakeng/trickplay-cropper/issues/49#issuecomment-5507410034
 [head-contract]: ./head-endpoint-contract.md
+[source-resolver]: ../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinPreviewSourceResolver.cs
+[source-encoder]: ../../src/Jellyfin.Plugin.TrickplayCropper/Imaging/TrickplayPreviewEncoder.cs
+[source-sprite-adr]: ../adr/0002-trust-jellyfin-source-sprites-without-plugin-caps.md
