@@ -24,6 +24,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         ArgumentNullException.ThrowIfNull(applicationHost);
         serviceCollection.TryAddSingleton(TimeProvider.System);
         serviceCollection.AddSingleton<ITrickplayPreview, TrickplayPreview>();
+        serviceCollection.AddSingleton<ITrickplayFrameProbe, TrickplayFrameProbe>();
         serviceCollection.AddSingleton<IPreviewContextResolver, JellyfinPreviewContextResolver>();
         serviceCollection.AddSingleton<IPreviewSourceResolver, JellyfinPreviewSourceResolver>();
         serviceCollection.AddSingleton<DiskPreviewCache>();
