@@ -25,8 +25,6 @@ public sealed class ReleasePlannerSpecs
         }
         """;
 
-    private static readonly string repositoryRoot = FindRepositoryRoot();
-
     [Fact]
     public void ParseReadsEveryFourComponentValue()
     {
@@ -62,12 +60,9 @@ public sealed class ReleasePlannerSpecs
     }
 
     [Fact]
-    public void TheCommittedFloorProducesTheFirstAutomaticRelease()
+    public void TheFloorVersionProducesTheFirstAutomaticRelease()
     {
-        string committedFloor = ReadCommittedManifestVersion();
-
-        Assert.Equal("1.0.0.0", committedFloor);
-        Assert.Equal("1.0.1.0", ReleaseVersion.Parse(committedFloor).NextRoutine().ToString());
+        Assert.Equal("1.0.1.0", ReleaseVersion.Parse("1.0.0.0").NextRoutine().ToString());
     }
 
     [Fact]
@@ -119,6 +114,19 @@ public sealed class ReleasePlannerSpecs
 
             Assert.Equal(before[key]!.ToJsonString(), after[key]!.ToJsonString());
         }
+    }
+
+    [Fact]
+    public void PlanKeepsAnExplicitlyProposedVersionInsteadOfTheRoutineBump()
+    {
+        ReleasePlan plan = ReleaseManifestPlanner.Plan(
+            SyntheticManifest,
+            "- entry",
+            ReleaseVersion.Parse("2.0.0.0"));
+
+        Assert.Equal("2.0.0.0", plan.NextVersion.ToString());
+        Assert.Equal("2.0.0.0", JsonNode.Parse(plan.UpdatedManifest)!["version"]!.GetValue<string>());
+        Assert.Equal("- entry", JsonNode.Parse(plan.UpdatedManifest)!["changelog"]!.GetValue<string>());
     }
 
     [Fact]
@@ -174,29 +182,5 @@ public sealed class ReleasePlannerSpecs
             """;
 
         Assert.Throws<ReleasePlanningException>(() => ReleaseManifestPlanner.Plan(Manifest, "- entry"));
-    }
-
-    private static string ReadCommittedManifestVersion()
-    {
-        JsonObject manifest = JsonNode.Parse(
-            File.ReadAllText(GetPath("src/Jellyfin.Plugin.TrickplayCropper/build.yaml")))!.AsObject();
-        return manifest["version"]!.GetValue<string>();
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TrickplayCropper.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName
-            ?? throw new DirectoryNotFoundException("Could not locate the Trickplay Cropper repository root.");
-    }
-
-    private static string GetPath(string relativePath)
-    {
-        return Path.Combine(repositoryRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 }

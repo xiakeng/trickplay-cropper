@@ -11,13 +11,13 @@ public static class ReleaseManifestPlanner
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    public static ReleasePlan Plan(string manifest, string changelog)
+    public static ReleasePlan Plan(string manifest, string changelog, ReleaseVersion? proposedVersion = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manifest);
         ArgumentNullException.ThrowIfNull(changelog);
 
         string currentText = ReadCurrentVersion(manifest);
-        ReleaseVersion next = ReleaseVersion.Parse(currentText).NextRoutine();
+        ReleaseVersion next = proposedVersion ?? ReleaseVersion.Parse(currentText).NextRoutine();
         string updated = ReplaceJsonStringField(manifest, "version", next.ToString());
         updated = ReplaceJsonStringField(updated, "changelog", changelog.TrimEnd());
 

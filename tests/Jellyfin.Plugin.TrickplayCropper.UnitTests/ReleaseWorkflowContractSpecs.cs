@@ -7,9 +7,7 @@ public sealed partial class ReleaseWorkflowContractSpecs
 {
     private const string WorkflowRelativePath = ".github/workflows/auto-release.yml";
 
-    private static readonly string repositoryRoot = FindRepositoryRoot();
-
-    private static readonly string workflow = ReadWorkflow();
+    private static readonly string workflow = RepositoryFiles.Read(WorkflowRelativePath);
 
     [Fact]
     public void TheWorkflowTriggersOnEveryPushToMain()
@@ -20,11 +18,16 @@ public sealed partial class ReleaseWorkflowContractSpecs
     }
 
     [Fact]
-    public void TheWorkflowGrantsOnlyTheTokenScopesItNeeds()
+    public void TheWorkflowGrantsExactlyTheTokenScopesItNeeds()
     {
-        Assert.Contains("contents: write", workflow, StringComparison.Ordinal);
-        Assert.Contains("pull-requests: write", workflow, StringComparison.Ordinal);
-        Assert.Contains("administration: read", workflow, StringComparison.Ordinal);
+        string[] scopes = ReadTopLevelPermissions()
+            .Select(scope => $"{scope.Key}: {scope.Value}")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            ["administration: read", "contents: write", "pull-requests: write"],
+            scopes);
     }
 
     [Fact]
@@ -49,15 +52,27 @@ public sealed partial class ReleaseWorkflowContractSpecs
     }
 
     [Fact]
-    public void TheWorkflowFailsClosedOnIncompatiblePrerequisites()
+    public void TheWorkflowFailsClosedOnIncompatiblePrerequisitesBeforeAnyMutation()
     {
-        Assert.Contains("set -euo pipefail", workflow, StringComparison.Ordinal);
-        Assert.Contains("RELEASE_BOT_PAT", workflow, StringComparison.Ordinal);
-        Assert.Contains("permissions.push", workflow, StringComparison.Ordinal);
-        Assert.Contains("can_approve_pull_request_reviews", workflow, StringComparison.Ordinal);
-        Assert.Contains("rules/branches/main", workflow, StringComparison.Ordinal);
-        Assert.Contains("required_pull_request_review", workflow, StringComparison.Ordinal);
-        Assert.Contains("required_status_checks", workflow, StringComparison.Ordinal);
+        int guardStart = workflow.IndexOf("Verify release prerequisites", StringComparison.Ordinal);
+        int guardEnd = workflow.IndexOf("Set up .NET", StringComparison.Ordinal);
+        Assert.True(guardStart >= 0 && guardEnd > guardStart, "The prerequisites guard step is missing.");
+
+        string guard = workflow[guardStart..guardEnd];
+        Assert.Contains("RELEASE_BOT_PAT", guard, StringComparison.Ordinal);
+        Assert.Contains("permissions.push", guard, StringComparison.Ordinal);
+        Assert.Contains("can_approve_pull_request_reviews", guard, StringComparison.Ordinal);
+        Assert.Contains("rules/branches/main", guard, StringComparison.Ordinal);
+        Assert.Contains("required_pull_request_review", guard, StringComparison.Ordinal);
+        Assert.Contains("required_status_checks", guard, StringComparison.Ordinal);
+        Assert.Contains("exit 1", guard, StringComparison.Ordinal);
+
+        Assert.True(
+            workflow.IndexOf("git checkout -B", StringComparison.Ordinal) > guardEnd,
+            "Branch mutation must follow the prerequisites guard.");
+        Assert.True(
+            workflow.IndexOf("gh pr create", StringComparison.Ordinal) > guardEnd,
+            "Pull request creation must follow the prerequisites guard.");
     }
 
     [Fact]
@@ -75,6 +90,14 @@ public sealed partial class ReleaseWorkflowContractSpecs
         Assert.Contains("git tag --list", workflow, StringComparison.Ordinal);
         Assert.Contains("git log", workflow, StringComparison.Ordinal);
         Assert.Contains("..HEAD", workflow, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheWorkflowPreservesAnOpenPullRequestVersionWhileRefreshingTheChangelog()
+    {
+        Assert.Contains("--state open", workflow, StringComparison.Ordinal);
+        Assert.Contains("FETCH_HEAD:${BUILD_MANIFEST}", workflow, StringComparison.Ordinal);
+        Assert.Contains("--version", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -98,29 +121,38 @@ public sealed partial class ReleaseWorkflowContractSpecs
         Assert.Contains("${RUNNER_TEMP}/changelog.md", workflow, StringComparison.Ordinal);
     }
 
+    private static Dictionary<string, string> ReadTopLevelPermissions()
+    {
+        string[] lines = workflow.Split('\n');
+        int start = Array.FindIndex(lines, line => line.TrimEnd('\r') == "permissions:");
+        Assert.True(start >= 0, "The workflow must declare a top-level permissions block.");
+
+        Dictionary<string, string> scopes = new(StringComparer.Ordinal);
+        for (int index = start + 1; index < lines.Length; index++)
+        {
+            string line = lines[index].TrimEnd('\r');
+            if (line.Length > 0 && !char.IsWhiteSpace(line[0]))
+            {
+                break;
+            }
+
+            string entry = line.Trim();
+            if (entry.Length == 0)
+            {
+                continue;
+            }
+
+            int colon = entry.IndexOf(':');
+            Assert.True(colon > 0, $"Unexpected permissions entry: '{line}'.");
+            scopes[entry[..colon].Trim()] = entry[(colon + 1)..].Trim();
+        }
+
+        return scopes;
+    }
+
     [GeneratedRegex(@"uses:\s*(\S+)")]
     private static partial Regex UsesActionRegex();
 
     [GeneratedRegex(@"git tag(?:\s+--list)?")]
     private static partial Regex GitTagRegex();
-
-    private static string ReadWorkflow()
-    {
-        string path = Path.Combine(
-            repositoryRoot,
-            WorkflowRelativePath.Replace('/', Path.DirectorySeparatorChar));
-        return File.ReadAllText(path);
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TrickplayCropper.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName
-            ?? throw new DirectoryNotFoundException("Could not locate the Trickplay Cropper repository root.");
-    }
 }

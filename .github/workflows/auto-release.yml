@@ -92,15 +92,29 @@ jobs:
           git log --no-merges --pretty=format:'- %s' "${changelog_range}" > "${RUNNER_TEMP}/changelog.md"
           echo >> "${RUNNER_TEMP}/changelog.md"
 
+          existing_pr="$(gh pr list --base main --head "${RELEASE_BRANCH}" --state open \
+            --json number --jq '.[0].number // empty')"
+
+          # Preserve a version a maintainer already proposed in the open pull request so a
+          # routine main push refreshes the changelog without clobbering a major/minor edit.
+          version_args=()
+          if [[ -n "${existing_pr}" ]] && git fetch --quiet origin "${RELEASE_BRANCH}" 2>/dev/null; then
+            proposed_version="$(git show "FETCH_HEAD:${BUILD_MANIFEST}" 2>/dev/null | jq -r '.version // empty' || true)"
+            if [[ -n "${proposed_version}" ]]; then
+              version_args=(--version "${proposed_version}")
+            fi
+          fi
+
           dotnet build tools/TrickplayCropper.ReleasePlanner/TrickplayCropper.ReleasePlanner.csproj \
             --configuration Release \
             --output "${RUNNER_TEMP}/release-planner" >/dev/null
 
           next_version="$(dotnet "${RUNNER_TEMP}/release-planner/TrickplayCropper.ReleasePlanner.dll" \
-            "${BUILD_MANIFEST}" "${RUNNER_TEMP}/changelog.md")"
+            "${BUILD_MANIFEST}" "${RUNNER_TEMP}/changelog.md" ${version_args[@]+"${version_args[@]}"})"
 
           echo "next_version=${next_version}" >> "${GITHUB_OUTPUT}"
           echo "base_label=${base_label}" >> "${GITHUB_OUTPUT}"
+          echo "existing_pr=${existing_pr}" >> "${GITHUB_OUTPUT}"
           echo "Proposing release ${next_version} from ${base_label}."
 
       - name: Update the release branch
@@ -128,6 +142,7 @@ jobs:
         env:
           NEXT_VERSION: ${{ steps.plan.outputs.next_version }}
           BASE_LABEL: ${{ steps.plan.outputs.base_label }}
+          EXISTING_PR: ${{ steps.plan.outputs.existing_pr }}
           CHANGED: ${{ steps.branch.outputs.changed }}
         run: |
           set -euo pipefail
@@ -150,14 +165,13 @@ jobs:
             echo "This pull request is opened and updated automatically on every push to \`main\`."
             echo "It never publishes a release on its own. The proposed version increments the third"
             echo "component of the build manifest; a maintainer may edit the major or minor components"
-            echo "here before merging. Merging publishes the stable GitHub Release and manifest update."
+            echo "here, and that edit is preserved while this pull request stays open. Merging publishes"
+            echo "the stable GitHub Release and manifest update."
           } > "${RUNNER_TEMP}/pull-request-body.md"
 
-          existing_pr="$(gh pr list --base main --head "${RELEASE_BRANCH}" --state open \
-            --json number --jq '.[0].number // empty')"
-          if [[ -n "${existing_pr}" ]]; then
-            gh pr edit "${existing_pr}" --body-file "${RUNNER_TEMP}/pull-request-body.md"
-            echo "Updated release pull request #${existing_pr}."
+          if [[ -n "${EXISTING_PR}" ]]; then
+            gh pr edit "${EXISTING_PR}" --body-file "${RUNNER_TEMP}/pull-request-body.md"
+            echo "Updated release pull request #${EXISTING_PR}."
           else
             gh pr create --base main --head "${RELEASE_BRANCH}" \
               --title "${RELEASE_TITLE}" --body-file "${RUNNER_TEMP}/pull-request-body.md"
