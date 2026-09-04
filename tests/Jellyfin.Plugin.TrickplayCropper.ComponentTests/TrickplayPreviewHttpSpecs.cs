@@ -405,14 +405,7 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Theory]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview")]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=not-a-number")]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=9223372036854775808")]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=-1")]
-    [InlineData(
-        "/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview"
-        + "?MediaSourceId=not-a-guid&PositionTicks=0")]
-    [InlineData("/TrickplayCropper/Videos/not-a-guid/Preview?PositionTicks=0")]
+    [MemberData(nameof(MalformedPreviewRequestPaths))]
     public async Task RejectsMissingMalformedAndNegativeRequestValues(string requestPath)
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
@@ -635,13 +628,13 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Fact]
-    public async Task ServesBodylessFrameProbeSuccessWithExactlyTwoPluginHeaders()
+    public async Task ServesBodylessTrickplayFrameProbeSuccessWithExactlyTwoPluginHeaders()
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertFrameProbeSuccessAsync(response, 0);
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
     [Theory]
@@ -652,7 +645,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(39_999L, 3)]
     [InlineData(40_000L, 3)]
     [InlineData(100_000L, 3)]
-    public async Task ClampsTheFrameProbeIndexToTheGeneratedFrameSequence(
+    public async Task ClampsTheTrickplayFrameProbeIndexToTheGeneratedFrameSequence(
         long positionMilliseconds,
         int expectedFrameIndex)
     {
@@ -664,28 +657,28 @@ public sealed class TrickplayPreviewHttpSpecs
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertFrameProbeSuccessAsync(response, expectedFrameIndex);
+        await AssertTrickplayFrameProbeSuccessAsync(response, expectedFrameIndex);
     }
 
     [Fact]
-    public async Task ServesFrameProbeForTheAlternateMediaSource()
+    public async Task ServesTrickplayFrameProbeForTheAlternateMediaSource()
     {
         var scenario = new PreviewScenario { UsesAlternateSource = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertFrameProbeSuccessAsync(response, 0);
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
     [Fact]
-    public async Task SucceedsFrameProbeWithoutAResolvableSourceSprite()
+    public async Task SucceedsTrickplayFrameProbeWithoutAResolvableSourceSprite()
     {
         var scenario = new PreviewScenario { SourceSprite = SourceSpriteAvailability.FileMissing };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage probeResponse = await fixture.HeadAsync();
-        await AssertFrameProbeSuccessAsync(probeResponse, 0);
+        await AssertTrickplayFrameProbeSuccessAsync(probeResponse, 0);
 
         using HttpResponseMessage getResponse = await fixture.GetAsync();
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -696,7 +689,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(InternalFailureCondition.CropYOverflow, 2)]
     [InlineData(InternalFailureCondition.CropRightOverflow, 6_710_886)]
     [InlineData(InternalFailureCondition.CropBottomOverflow, 1)]
-    public async Task SucceedsFrameProbeWhenGetOnlyCropGeometryWouldOverflow(
+    public async Task SucceedsTrickplayFrameProbeWhenGetOnlyCropGeometryWouldOverflow(
         InternalFailureCondition condition,
         int expectedFrameIndex)
     {
@@ -705,55 +698,47 @@ public sealed class TrickplayPreviewHttpSpecs
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertFrameProbeSuccessAsync(response, expectedFrameIndex);
+        await AssertTrickplayFrameProbeSuccessAsync(response, expectedFrameIndex);
     }
 
     [Theory]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview")]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=not-a-number")]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=9223372036854775808")]
-    [InlineData("/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview?PositionTicks=-1")]
-    [InlineData(
-        "/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview"
-        + "?MediaSourceId=not-a-guid&PositionTicks=0")]
-    [InlineData("/TrickplayCropper/Videos/not-a-guid/Preview?PositionTicks=0")]
-    public async Task RejectsMissingMalformedAndNegativeFrameProbeValues(string requestPath)
+    [MemberData(nameof(MalformedPreviewRequestPaths))]
+    public async Task RejectsMissingMalformedAndNegativeTrickplayFrameProbeValues(string requestPath)
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
 
         using HttpResponseMessage response = await fixture.HeadRawAsync(requestPath);
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.BadRequest);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.BadRequest);
     }
 
     [Fact]
-    public async Task TreatsAnEmptyFrameProbeMediaSourceAsUnspecified()
+    public async Task TreatsAnEmptyTrickplayFrameProbeMediaSourceAsUnspecified()
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
 
         using HttpResponseMessage response = await fixture.HeadRawAsync(
-            "/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview"
-            + "?MediaSourceId=&PositionTicks=0");
+            $"{PreviewPath}?MediaSourceId=&PositionTicks=0");
 
-        await AssertFrameProbeSuccessAsync(response, 0);
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
     [Theory]
     [InlineData(AuthenticationState.Missing)]
     [InlineData(AuthenticationState.Invalid)]
     [InlineData(AuthenticationState.UnusableUserSession)]
-    public async Task RejectsUnusableFrameProbeSession(AuthenticationState authentication)
+    public async Task RejectsUnusableTrickplayFrameProbeSession(AuthenticationState authentication)
     {
         var scenario = new PreviewScenario { Authentication = authentication };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.Unauthorized);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Unauthorized);
     }
 
     [Fact]
-    public async Task ForbidsFrameProbeApiKeyWithoutCurrentUser()
+    public async Task ForbidsTrickplayFrameProbeApiKeyWithoutCurrentUser()
     {
         var scenario = new PreviewScenario
         {
@@ -763,29 +748,29 @@ public sealed class TrickplayPreviewHttpSpecs
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
     }
 
     [Fact]
-    public async Task ForbidsFrameProbeDefaultAuthorizationPolicyDenial()
+    public async Task ForbidsTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
     {
         var scenario = new PreviewScenario { DeniesDefaultAuthorizationPolicy = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
     }
 
     [Fact]
-    public async Task ForbidsFrameProbeLogicalVideoPlaybackDenial()
+    public async Task ForbidsTrickplayFrameProbeLogicalVideoPlaybackDenial()
     {
         var scenario = new PreviewScenario { DeniesLogicalVideoPlayback = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
     }
 
     [Theory]
@@ -801,14 +786,14 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(NotFoundCondition.ExactMetadataMissing)]
     [InlineData(NotFoundCondition.ThumbnailsMissing)]
     [InlineData(NotFoundCondition.ThumbnailsNegative)]
-    public async Task ConcealsUnavailableResourceFromTheFrameProbe(NotFoundCondition condition)
+    public async Task ConcealsUnavailableResourceFromTheTrickplayFrameProbe(NotFoundCondition condition)
     {
         PreviewScenario scenario = CreateNotFoundScenario(condition);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.NotFound);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.NotFound);
     }
 
     [Theory]
@@ -818,46 +803,46 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(InternalFailureCondition.IntervalZero)]
     [InlineData(InternalFailureCondition.TileWidthZero)]
     [InlineData(InternalFailureCondition.TileHeightZero)]
-    public async Task ReportsInvalidFrameProbeMetadataAsBodylessInternalError(InternalFailureCondition condition)
+    public async Task ReportsInvalidTrickplayFrameProbeMetadataAsBodylessInternalError(InternalFailureCondition condition)
     {
         PreviewScenario scenario = CreateInternalFailureScenario(condition);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.InternalServerError);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.InternalServerError);
     }
 
     [Theory]
     [InlineData(ConfigurationFailureKind.UnreadableSnapshot)]
     [InlineData(ConfigurationFailureKind.NonPositiveConfiguredTarget)]
     [InlineData(ConfigurationFailureKind.NonPositiveSelectedResolution)]
-    public async Task ReportsInvalidFrameProbeConfigurationAsBodylessInternalError(ConfigurationFailureKind kind)
+    public async Task ReportsInvalidTrickplayFrameProbeConfigurationAsBodylessInternalError(ConfigurationFailureKind kind)
     {
         var scenario = new PreviewScenario { ConfiguredWidthResolutions = CreateInvalidConfiguration(kind) };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessFrameProbeFailureAsync(response, HttpStatusCode.InternalServerError);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.InternalServerError);
     }
 
     [Fact]
-    public async Task IgnoresFrameProbeConditionalEntityTags()
+    public async Task IgnoresTrickplayFrameProbeConditionalEntityTags()
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
         using HttpResponseMessage generatedResponse = await fixture.GetAsync();
         string entityTag = Assert.IsType<string>(generatedResponse.Headers.ETag?.Tag);
 
         using HttpResponseMessage exactResponse = await fixture.HeadConditionalAsync(entityTag);
-        await AssertFrameProbeSuccessAsync(exactResponse, 0);
+        await AssertTrickplayFrameProbeSuccessAsync(exactResponse, 0);
 
         using HttpResponseMessage wildcardResponse = await fixture.HeadConditionalAsync("*");
-        await AssertFrameProbeSuccessAsync(wildcardResponse, 0);
+        await AssertTrickplayFrameProbeSuccessAsync(wildcardResponse, 0);
 
         fixture.SetPlaybackAccess(false);
         using HttpResponseMessage deniedResponse = await fixture.HeadConditionalAsync(entityTag);
-        await AssertBodylessFrameProbeFailureAsync(deniedResponse, HttpStatusCode.Forbidden);
+        await AssertBodylessTrickplayFrameProbeFailureAsync(deniedResponse, HttpStatusCode.Forbidden);
     }
 
     [Theory]
@@ -879,48 +864,60 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Theory]
-    [InlineData(FrameProbeKestrelCondition.Success, HttpStatusCode.OK)]
-    [InlineData(FrameProbeKestrelCondition.MalformedInput, HttpStatusCode.BadRequest)]
-    [InlineData(FrameProbeKestrelCondition.UnauthenticatedSession, HttpStatusCode.Unauthorized)]
-    [InlineData(FrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.Forbidden)]
-    [InlineData(FrameProbeKestrelCondition.ConcealedResource, HttpStatusCode.NotFound)]
-    [InlineData(FrameProbeKestrelCondition.InvalidMetadata, HttpStatusCode.InternalServerError)]
-    public async Task ProvesBodylessFrameProbeOutcomesOverRealKestrel(
-        FrameProbeKestrelCondition condition,
+    [InlineData(TrickplayFrameProbeKestrelCondition.Success, HttpStatusCode.OK)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.MalformedInput, HttpStatusCode.BadRequest)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.UnauthenticatedSession, HttpStatusCode.Unauthorized)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.Forbidden)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.ConcealedResource, HttpStatusCode.NotFound)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.InvalidMetadata, HttpStatusCode.InternalServerError)]
+    public async Task ProvesBodylessTrickplayFrameProbeOutcomesOverRealKestrel(
+        TrickplayFrameProbeKestrelCondition condition,
         HttpStatusCode expectedStatus)
     {
-        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(
-            CreateKestrelScenario(condition),
-            useKestrel: true);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(
+            CreateKestrelScenario(condition));
 
-        using HttpResponseMessage response = condition == FrameProbeKestrelCondition.MalformedInput
-            ? await fixture.HeadRawAsync(
-                "/TrickplayCropper/Videos/3f728b7b-4aa5-4f65-b488-a6029edb6725/Preview")
+        using HttpResponseMessage response = condition == TrickplayFrameProbeKestrelCondition.MalformedInput
+            ? await fixture.HeadRawAsync(PreviewPath)
             : await fixture.HeadAsync();
 
         Assert.Equal(expectedStatus, response.StatusCode);
         await AssertBodylessAsync(response);
     }
 
-    private static PreviewScenario CreateKestrelScenario(FrameProbeKestrelCondition condition)
+    public static TheoryData<string> MalformedPreviewRequestPaths => new()
+    {
+        { PreviewPath },
+        { $"{PreviewPath}?PositionTicks=not-a-number" },
+        { $"{PreviewPath}?PositionTicks=9223372036854775808" },
+        { $"{PreviewPath}?PositionTicks=-1" },
+        { $"{PreviewPath}?MediaSourceId=not-a-guid&PositionTicks=0" },
+        { "/TrickplayCropper/Videos/not-a-guid/Preview?PositionTicks=0" },
+    };
+
+    private static string PreviewPath => string.Create(
+        CultureInfo.InvariantCulture,
+        $"/TrickplayCropper/Videos/{itemId:D}/Preview");
+
+    private static PreviewScenario CreateKestrelScenario(TrickplayFrameProbeKestrelCondition condition)
     {
         return condition switch
         {
-            FrameProbeKestrelCondition.Success => new PreviewScenario(),
-            FrameProbeKestrelCondition.MalformedInput => new PreviewScenario(),
-            FrameProbeKestrelCondition.UnauthenticatedSession => new PreviewScenario
+            TrickplayFrameProbeKestrelCondition.Success => new PreviewScenario(),
+            TrickplayFrameProbeKestrelCondition.MalformedInput => new PreviewScenario(),
+            TrickplayFrameProbeKestrelCondition.UnauthenticatedSession => new PreviewScenario
             {
                 Authentication = AuthenticationState.Missing,
             },
-            FrameProbeKestrelCondition.ApiKeyWithoutCurrentUser => new PreviewScenario
+            TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser => new PreviewScenario
             {
                 Authentication = AuthenticationState.ApiKeyWithoutCurrentUser,
             },
-            FrameProbeKestrelCondition.ConcealedResource => new PreviewScenario
+            TrickplayFrameProbeKestrelCondition.ConcealedResource => new PreviewScenario
             {
                 LogicalVideo = ItemAvailability.Missing,
             },
-            FrameProbeKestrelCondition.InvalidMetadata => new PreviewScenario
+            TrickplayFrameProbeKestrelCondition.InvalidMetadata => new PreviewScenario
             {
                 Metadata = MetadataAvailability.ContradictoryFrameWidth,
             },
@@ -1187,7 +1184,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
     }
 
-    private static async Task AssertFrameProbeSuccessAsync(HttpResponseMessage response, int expectedFrameIndex)
+    private static async Task AssertTrickplayFrameProbeSuccessAsync(HttpResponseMessage response, int expectedFrameIndex)
     {
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await AssertBodylessWithoutGetOnlyHeadersAsync(response);
@@ -1198,7 +1195,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.True(response.Headers.CacheControl?.NoCache);
     }
 
-    private static async Task AssertBodylessFrameProbeFailureAsync(
+    private static async Task AssertBodylessTrickplayFrameProbeFailureAsync(
         HttpResponseMessage response,
         HttpStatusCode expectedStatus)
     {
@@ -1277,7 +1274,12 @@ public sealed class TrickplayPreviewHttpSpecs
             return CreateAsync(scenario, useKestrel: false);
         }
 
-        public static async Task<PreviewHostFixture> CreateAsync(PreviewScenario scenario, bool useKestrel)
+        public static Task<PreviewHostFixture> CreateWithKestrelAsync(PreviewScenario scenario)
+        {
+            return CreateAsync(scenario, useKestrel: true);
+        }
+
+        private static async Task<PreviewHostFixture> CreateAsync(PreviewScenario scenario, bool useKestrel)
         {
             string temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -2145,7 +2147,7 @@ public sealed class TrickplayPreviewHttpSpecs
         NonPositiveSelectedResolution,
     }
 
-    public enum FrameProbeKestrelCondition
+    public enum TrickplayFrameProbeKestrelCondition
     {
         Success,
         MalformedInput,

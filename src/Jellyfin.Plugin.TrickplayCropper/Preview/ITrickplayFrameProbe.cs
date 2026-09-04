@@ -15,7 +15,7 @@ public interface ITrickplayFrameProbe
     /// <param name="user">The current request principal.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <returns>The closed probe outcome.</returns>
-    Task<FrameProbeOutcome> ProbeAsync(
+    Task<TrickplayFrameProbeOutcome> ProbeAsync(
         PreviewQuery query,
         ClaimsPrincipal user,
         CancellationToken cancellationToken);

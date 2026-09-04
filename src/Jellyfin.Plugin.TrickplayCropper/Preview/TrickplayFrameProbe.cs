@@ -20,7 +20,7 @@ internal sealed class TrickplayFrameProbe : ITrickplayFrameProbe
     }
 
     /// <inheritdoc />
-    public async Task<FrameProbeOutcome> ProbeAsync(
+    public async Task<TrickplayFrameProbeOutcome> ProbeAsync(
         PreviewQuery query,
         ClaimsPrincipal user,
         CancellationToken cancellationToken)
@@ -33,11 +33,11 @@ internal sealed class TrickplayFrameProbe : ITrickplayFrameProbe
             return contextResolution switch
             {
                 PreviewContextResolution.Resolved resolved =>
-                    new FrameProbeOutcome.Success(resolved.Context.FrameIndex),
-                PreviewContextResolution.BadRequest => new FrameProbeOutcome.BadRequest(),
-                PreviewContextResolution.Unauthorized => new FrameProbeOutcome.Unauthorized(),
-                PreviewContextResolution.Forbidden => new FrameProbeOutcome.Forbidden(),
-                PreviewContextResolution.NotFound => new FrameProbeOutcome.NotFound(),
+                    new TrickplayFrameProbeOutcome.Success(resolved.Context.FrameIndex),
+                PreviewContextResolution.BadRequest => new TrickplayFrameProbeOutcome.BadRequest(),
+                PreviewContextResolution.Unauthorized => new TrickplayFrameProbeOutcome.Unauthorized(),
+                PreviewContextResolution.Forbidden => new TrickplayFrameProbeOutcome.Forbidden(),
+                PreviewContextResolution.NotFound => new TrickplayFrameProbeOutcome.NotFound(),
                 _ => throw new InvalidOperationException(
                     $"Unknown preview context resolution {contextResolution.GetType().Name}."),
             };
@@ -48,7 +48,7 @@ internal sealed class TrickplayFrameProbe : ITrickplayFrameProbe
         }
         catch (Exception)
         {
-            return new FrameProbeOutcome.InternalError();
+            return new TrickplayFrameProbeOutcome.InternalError();
         }
     }
 }

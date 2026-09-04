@@ -19,17 +19,17 @@ public sealed class TrickplayPreviewController : ControllerBase
     private const string CacheControlHeaderValue = "private, no-cache";
     private const string FrameIndexHeaderName = "X-Trickplay-Frame-Index";
 
-    private readonly ITrickplayFrameProbe frameProbe;
+    private readonly ITrickplayFrameProbe trickplayFrameProbe;
     private readonly ITrickplayPreview trickplayPreview;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayPreviewController"/> class.
     /// </summary>
-    /// <param name="frameProbe">The Trickplay Frame Probe module.</param>
+    /// <param name="trickplayFrameProbe">The Trickplay Frame Probe module.</param>
     /// <param name="trickplayPreview">The Trickplay Preview request module.</param>
-    public TrickplayPreviewController(ITrickplayFrameProbe frameProbe, ITrickplayPreview trickplayPreview)
+    public TrickplayPreviewController(ITrickplayFrameProbe trickplayFrameProbe, ITrickplayPreview trickplayPreview)
     {
-        this.frameProbe = frameProbe;
+        this.trickplayFrameProbe = trickplayFrameProbe;
         this.trickplayPreview = trickplayPreview;
     }
 
@@ -77,7 +77,7 @@ public sealed class TrickplayPreviewController : ControllerBase
             return CreateBodylessResult(StatusCodes.Status400BadRequest);
         }
 
-        FrameProbeOutcome outcome = await frameProbe.ProbeAsync(query, User, cancellationToken)
+        TrickplayFrameProbeOutcome outcome = await trickplayFrameProbe.ProbeAsync(query, User, cancellationToken)
             .ConfigureAwait(false);
         return MapProbeOutcome(outcome);
     }
@@ -118,16 +118,16 @@ public sealed class TrickplayPreviewController : ControllerBase
         return true;
     }
 
-    private EmptyResult MapProbeOutcome(FrameProbeOutcome outcome)
+    private EmptyResult MapProbeOutcome(TrickplayFrameProbeOutcome outcome)
     {
         return outcome switch
         {
-            FrameProbeOutcome.Success success => CreateFrameIndexResult(success.FrameIndex),
-            FrameProbeOutcome.BadRequest => CreateBodylessResult(StatusCodes.Status400BadRequest),
-            FrameProbeOutcome.Unauthorized => CreateBodylessResult(StatusCodes.Status401Unauthorized),
-            FrameProbeOutcome.Forbidden => CreateBodylessResult(StatusCodes.Status403Forbidden),
-            FrameProbeOutcome.NotFound => CreateBodylessResult(StatusCodes.Status404NotFound),
-            FrameProbeOutcome.InternalError => CreateBodylessResult(StatusCodes.Status500InternalServerError),
+            TrickplayFrameProbeOutcome.Success success => CreateFrameIndexResult(success.FrameIndex),
+            TrickplayFrameProbeOutcome.BadRequest => CreateBodylessResult(StatusCodes.Status400BadRequest),
+            TrickplayFrameProbeOutcome.Unauthorized => CreateBodylessResult(StatusCodes.Status401Unauthorized),
+            TrickplayFrameProbeOutcome.Forbidden => CreateBodylessResult(StatusCodes.Status403Forbidden),
+            TrickplayFrameProbeOutcome.NotFound => CreateBodylessResult(StatusCodes.Status404NotFound),
+            TrickplayFrameProbeOutcome.InternalError => CreateBodylessResult(StatusCodes.Status500InternalServerError),
             _ => throw new InvalidOperationException($"Unknown frame probe outcome {outcome.GetType().Name}."),
         };
     }

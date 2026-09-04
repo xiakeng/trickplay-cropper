@@ -61,12 +61,12 @@ public sealed class PreviewContextBoundarySpecs
     }
 
     [Fact]
-    public void PublicFrameProbeContractExposesNoGetOnlyFacility()
+    public void PublicTrickplayFrameProbeContractExposesNoGetOnlyFacility()
     {
         Type[] probeContract =
         [
             typeof(ITrickplayFrameProbe),
-            typeof(FrameProbeOutcome),
+            typeof(TrickplayFrameProbeOutcome),
         ];
 
         Type[] exposedTypes = CollectExposedTypes(probeContract);
@@ -76,7 +76,7 @@ public sealed class PreviewContextBoundarySpecs
     }
 
     [Fact]
-    public void FrameProbeDependsOnNoGetOnlyFacility()
+    public void TrickplayFrameProbeDependsOnNoGetOnlyFacility()
     {
         Type implementation = Assert.Single(CollectImplementations<ITrickplayFrameProbe>());
 

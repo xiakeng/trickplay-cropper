@@ -3,6 +3,7 @@ using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Controller.Entities;
 using Xunit;
+using static Jellyfin.Plugin.TrickplayCropper.UnitTests.PreviewContextMother;
 
 namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
 
@@ -13,7 +14,7 @@ public sealed class TrickplayFrameProbeSpecs
     [Fact]
     public void ProductionOutcomeTypesMatchTheClosedContract()
     {
-        Type outcomeType = typeof(FrameProbeOutcome);
+        Type outcomeType = typeof(TrickplayFrameProbeOutcome);
         string[] outcomeNames = outcomeType.Assembly
             .GetTypes()
             .Where(type => type != outcomeType && outcomeType.IsAssignableFrom(type))
@@ -23,12 +24,12 @@ public sealed class TrickplayFrameProbeSpecs
 
         Assert.Equal(
             [
-                nameof(FrameProbeOutcome.BadRequest),
-                nameof(FrameProbeOutcome.Forbidden),
-                nameof(FrameProbeOutcome.InternalError),
-                nameof(FrameProbeOutcome.NotFound),
-                nameof(FrameProbeOutcome.Success),
-                nameof(FrameProbeOutcome.Unauthorized),
+                nameof(TrickplayFrameProbeOutcome.BadRequest),
+                nameof(TrickplayFrameProbeOutcome.Forbidden),
+                nameof(TrickplayFrameProbeOutcome.InternalError),
+                nameof(TrickplayFrameProbeOutcome.NotFound),
+                nameof(TrickplayFrameProbeOutcome.Success),
+                nameof(TrickplayFrameProbeOutcome.Unauthorized),
             ],
             outcomeNames);
     }
@@ -41,16 +42,16 @@ public sealed class TrickplayFrameProbeSpecs
         var query = new PreviewQuery(itemId, null, positionTicks);
         var principal = new ClaimsPrincipal(new ClaimsIdentity("ProbeUnitTest"));
         using var cancellation = new CancellationTokenSource();
-        var contextResolver = new StubContextResolver(new PreviewContextResolution.Resolved(
+        var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(
             new PreviewContext(itemId, new Video { Id = itemId }, metadata, metadata.SelectFrameIndex(positionTicks))));
         TrickplayFrameProbe probe = new(contextResolver);
 
-        FrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
+        TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
             query,
             principal,
             cancellation.Token);
 
-        FrameProbeOutcome.Success success = Assert.IsType<FrameProbeOutcome.Success>(outcome);
+        TrickplayFrameProbeOutcome.Success success = Assert.IsType<TrickplayFrameProbeOutcome.Success>(outcome);
         Assert.Equal(3, success.FrameIndex);
         Assert.Equal(1, contextResolver.CallCount);
         Assert.Equal(query, contextResolver.Query);
@@ -64,10 +65,10 @@ public sealed class TrickplayFrameProbeSpecs
         ContextFailureKind failureKind,
         Type expectedOutcomeType)
     {
-        var contextResolver = new StubContextResolver(CreateContextResolution(failureKind));
+        var contextResolver = new StubResolver(CreateResolution(failureKind));
         TrickplayFrameProbe probe = new(contextResolver);
 
-        FrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
+        TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
             new PreviewQuery(itemId, null, 0),
             new ClaimsPrincipal(),
             CancellationToken.None);
@@ -85,12 +86,12 @@ public sealed class TrickplayFrameProbeSpecs
         var contextResolver = new ThrowingContextResolver(CreateFailureException(kind));
         TrickplayFrameProbe probe = new(contextResolver);
 
-        FrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
+        TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
             new PreviewQuery(itemId, null, 0),
             new ClaimsPrincipal(),
             CancellationToken.None);
 
-        Assert.IsType<FrameProbeOutcome.InternalError>(outcome);
+        Assert.IsType<TrickplayFrameProbeOutcome.InternalError>(outcome);
     }
 
     [Fact]
@@ -98,7 +99,7 @@ public sealed class TrickplayFrameProbeSpecs
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var contextResolver = new CancellingContextResolver();
+        var contextResolver = new CancellingResolver();
         TrickplayFrameProbe probe = new(contextResolver);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
@@ -110,26 +111,11 @@ public sealed class TrickplayFrameProbeSpecs
 
     public static TheoryData<ContextFailureKind, Type> ExpectedContextOutcomes => new()
     {
-        { ContextFailureKind.BadRequest, typeof(FrameProbeOutcome.BadRequest) },
-        { ContextFailureKind.Unauthorized, typeof(FrameProbeOutcome.Unauthorized) },
-        { ContextFailureKind.Forbidden, typeof(FrameProbeOutcome.Forbidden) },
-        { ContextFailureKind.NotFound, typeof(FrameProbeOutcome.NotFound) },
+        { ContextFailureKind.BadRequest, typeof(TrickplayFrameProbeOutcome.BadRequest) },
+        { ContextFailureKind.Unauthorized, typeof(TrickplayFrameProbeOutcome.Unauthorized) },
+        { ContextFailureKind.Forbidden, typeof(TrickplayFrameProbeOutcome.Forbidden) },
+        { ContextFailureKind.NotFound, typeof(TrickplayFrameProbeOutcome.NotFound) },
     };
-
-    private static PreviewContextResolution CreateContextResolution(ContextFailureKind failureKind)
-    {
-        return failureKind switch
-        {
-            ContextFailureKind.BadRequest => new PreviewContextResolution.BadRequest(),
-            ContextFailureKind.Unauthorized => new PreviewContextResolution.Unauthorized(),
-            ContextFailureKind.Forbidden => new PreviewContextResolution.Forbidden(),
-            ContextFailureKind.NotFound => new PreviewContextResolution.NotFound(),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(failureKind),
-                failureKind,
-                "Unknown shared context failure kind."),
-        };
-    }
 
     private static Exception CreateFailureException(SharedContextFailureKind kind)
     {
@@ -145,37 +131,6 @@ public sealed class TrickplayFrameProbeSpecs
             SharedContextFailureKind.Unexpected => new IOException("The unit-test shared context failed."),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown failure exception kind."),
         };
-    }
-
-    private sealed class StubContextResolver : IPreviewContextResolver
-    {
-        private readonly PreviewContextResolution resolution;
-        private int callCount;
-
-        public StubContextResolver(PreviewContextResolution resolution)
-        {
-            this.resolution = resolution;
-        }
-
-        public int CallCount => Volatile.Read(ref callCount);
-
-        public CancellationToken CancellationToken { get; private set; }
-
-        public ClaimsPrincipal? Principal { get; private set; }
-
-        public PreviewQuery? Query { get; private set; }
-
-        public Task<PreviewContextResolution> ResolveAsync(
-            PreviewQuery query,
-            ClaimsPrincipal principal,
-            CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref callCount);
-            Query = query;
-            Principal = principal;
-            CancellationToken = cancellationToken;
-            return Task.FromResult(resolution);
-        }
     }
 
     private sealed class ThrowingContextResolver : IPreviewContextResolver
@@ -194,25 +149,6 @@ public sealed class TrickplayFrameProbeSpecs
         {
             return Task.FromException<PreviewContextResolution>(failure);
         }
-    }
-
-    private sealed class CancellingContextResolver : IPreviewContextResolver
-    {
-        public Task<PreviewContextResolution> ResolveAsync(
-            PreviewQuery query,
-            ClaimsPrincipal principal,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromCanceled<PreviewContextResolution>(cancellationToken);
-        }
-    }
-
-    public enum ContextFailureKind
-    {
-        BadRequest,
-        Unauthorized,
-        Forbidden,
-        NotFound,
     }
 
     public enum SharedContextFailureKind
