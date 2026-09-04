@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.TrickplayCr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrickplayCropper.PackageValidator", "tools/TrickplayCropper.PackageValidator/TrickplayCropper.PackageValidator.csproj", "{D620157D-85F5-40A8-8B4F-075BB1AA9ACB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrickplayCropper.ReleasePlanner", "tools/TrickplayCropper.ReleasePlanner/TrickplayCropper.ReleasePlanner.csproj", "{3E00B9C0-2820-4773-A2D2-853E4B286418}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -32,5 +34,9 @@ Global
 		{D620157D-85F5-40A8-8B4F-075BB1AA9ACB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D620157D-85F5-40A8-8B4F-075BB1AA9ACB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D620157D-85F5-40A8-8B4F-075BB1AA9ACB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3E00B9C0-2820-4773-A2D2-853E4B286418}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3E00B9C0-2820-4773-A2D2-853E4B286418}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3E00B9C0-2820-4773-A2D2-853E4B286418}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3E00B9C0-2820-4773-A2D2-853E4B286418}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
