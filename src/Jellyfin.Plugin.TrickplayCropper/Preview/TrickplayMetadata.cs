@@ -47,7 +47,7 @@ internal sealed record TrickplayMetadata(
 
         long ticksPerFrame = checked((long)IntervalMilliseconds * TimeSpan.TicksPerMillisecond);
         long selectedFrameIndex = Math.Min(positionTicks / ticksPerFrame, ThumbnailCount - 1L);
-        return (int)selectedFrameIndex;
+        return checked((int)selectedFrameIndex);
     }
 
     private void ValidatePositive(int value, string validation)

@@ -44,7 +44,8 @@ public sealed class PreviewContextBoundarySpecs
 
         Type[] exposedTypes = CollectExposedTypes(sharedContract);
 
-        Assert.Contains(typeof(PreviewContext), exposedTypes);
+        Assert.Contains(typeof(PreviewQuery), exposedTypes);
+        Assert.Contains(typeof(TrickplayMetadata), exposedTypes);
         Assert.All(exposedTypes, AssertSharedType);
     }
 
@@ -67,6 +68,8 @@ public sealed class PreviewContextBoundarySpecs
             .ToArray();
     }
 
+    // Reflection reaches signatures, fields, and constructor parameters. A thrown exception's
+    // diagnostics never appear there, so review owns that part of the boundary.
     private static Type[] CollectExposedTypes(Type[] roots)
     {
         var exposed = new HashSet<Type>();

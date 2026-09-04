@@ -24,7 +24,7 @@ internal sealed record FrameSelection(
     /// <summary>
     /// Locates the Source Sprite cell and crop rectangle of an already selected frame.
     /// </summary>
-    /// <param name="metadata">The trusted Jellyfin trickplay metadata.</param>
+    /// <param name="metadata">The validated Jellyfin trickplay metadata.</param>
     /// <param name="frameIndex">The clamped Frame Index from the shared Preview context.</param>
     /// <returns>The selected Source Sprite cell and crop.</returns>
     public static FrameSelection Create(TrickplayMetadata metadata, int frameIndex)
