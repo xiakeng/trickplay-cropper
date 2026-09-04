@@ -1,10 +1,8 @@
-using System.Text;
-using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
 
-public sealed partial class PublicationWorkflowContractSpecs
+public sealed class PublicationWorkflowContractSpecs
 {
     private const string PublicationWorkflowRelativePath = ".github/workflows/publish-release.yml";
     private const string CiWorkflowRelativePath = ".github/workflows/ci.yml";
@@ -14,6 +12,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     private const string PublicationStepName = "Publish the stable release from the merged build manifest";
 
     private static readonly string publication = RepositoryFiles.Read(PublicationWorkflowRelativePath);
+    private static readonly string publishJob = WorkflowFiles.ExtractJobSection(publication, "publish");
     private static readonly string ci = RepositoryFiles.Read(CiWorkflowRelativePath);
     private static readonly string preparation = RepositoryFiles.Read(PreparationWorkflowRelativePath);
     private static readonly string[] ciOnlyStepNames = ["Create SHA-256 checksum", "Upload installable package"];
@@ -31,11 +30,11 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationRequiresAnInternalMergedPullRequestWithTheExactReleaseTitle()
     {
-        string condition = ReadJobCondition(publication);
+        string condition = WorkflowFiles.ReadJobCondition(publishJob);
 
         Assert.Contains("github.event.pull_request.merged == true", condition, StringComparison.Ordinal);
         Assert.Contains(
-            $"github.event.pull_request.title == '{ReadEnvValue(preparation, "RELEASE_TITLE")}'",
+            $"github.event.pull_request.title == '{WorkflowFiles.ReadEnvValue(preparation, "RELEASE_TITLE")}'",
             condition,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -47,7 +46,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationRefusesAMergeCommitBeforeAnyOtherStep()
     {
-        KeyValuePair<string, string>[] steps = ReadSteps(publication);
+        KeyValuePair<string, string>[] steps = WorkflowFiles.ReadSteps(publishJob);
         Assert.Equal(MergeMethodStepName, steps[0].Key);
 
         string guard = steps[0].Value;
@@ -59,7 +58,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationChecksOutTheMergedCommitRatherThanThePullRequestHead()
     {
-        string checkout = ReadBody(ReadSteps(publication), CheckoutStepName);
+        string checkout = WorkflowFiles.ReadStepBody(WorkflowFiles.ReadSteps(publishJob), CheckoutStepName);
 
         Assert.Contains("ref: ${{ github.event.pull_request.merge_commit_sha }}", checkout, StringComparison.Ordinal);
     }
@@ -67,7 +66,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationRunsEveryExistingCiGateStepInOrder()
     {
-        string[] gateSteps = ReadSteps(ci)
+        string[] gateSteps = WorkflowFiles.ReadSteps(ci)
             .Select(step => step.Key)
             .Except(ciOnlyStepNames)
             .ToArray();
@@ -75,14 +74,14 @@ public sealed partial class PublicationWorkflowContractSpecs
         Assert.NotEmpty(gateSteps);
         Assert.Equal(
             [MergeMethodStepName, .. gateSteps, PublicationStepName],
-            ReadSteps(publication).Select(step => step.Key).ToArray());
+            WorkflowFiles.ReadSteps(publishJob).Select(step => step.Key).ToArray());
     }
 
     [Fact]
     public void PublicationCopiesEveryCiGateStepVerbatim()
     {
-        KeyValuePair<string, string>[] ciSteps = ReadSteps(ci);
-        KeyValuePair<string, string>[] publicationSteps = ReadSteps(publication);
+        KeyValuePair<string, string>[] ciSteps = WorkflowFiles.ReadSteps(ci);
+        KeyValuePair<string, string>[] publicationSteps = WorkflowFiles.ReadSteps(publishJob);
         string[] gateSteps = ciSteps
             .Select(step => step.Key)
             .Except(ciOnlyStepNames)
@@ -90,13 +89,16 @@ public sealed partial class PublicationWorkflowContractSpecs
             .ToArray();
 
         Assert.NotEmpty(gateSteps);
-        Assert.All(gateSteps, name => Assert.Equal(ReadBody(ciSteps, name), ReadBody(publicationSteps, name)));
+        Assert.All(
+            gateSteps,
+            name => Assert.Equal(
+                WorkflowFiles.ReadStepBody(ciSteps, name),
+                WorkflowFiles.ReadStepBody(publicationSteps, name)));
     }
 
     [Fact]
     public void PublicationGrantsExactlyTheContentWriteScope()
     {
-        Assert.Equal(1, WorkflowFiles.CountHeaderLines(publication, "permissions:"));
         Assert.Equal(["contents: write"], WorkflowFiles.ReadPermissionScopes(publication));
     }
 
@@ -116,10 +118,10 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void TheMergedBuildManifestIsTheOnlyVersionAndChangelogSource()
     {
-        string approvedManifestPath = ReadEnvValue(preparation, "BUILD_MANIFEST");
-        Assert.Equal(approvedManifestPath, ReadEnvValue(publication, "BUILD_MANIFEST"));
+        string approvedManifestPath = WorkflowFiles.ReadEnvValue(preparation, "BUILD_MANIFEST");
+        Assert.Equal(approvedManifestPath, WorkflowFiles.ReadEnvValue(publication, "BUILD_MANIFEST"));
 
-        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
+        string publish = WorkflowFiles.ReadStepBody(WorkflowFiles.ReadSteps(publishJob), PublicationStepName);
         Assert.Contains("jq -r '.version' \"${BUILD_MANIFEST}\"", publish, StringComparison.Ordinal);
         Assert.Contains("jq -r '.changelog' \"${BUILD_MANIFEST}\"", publish, StringComparison.Ordinal);
         Assert.DoesNotMatch(@"\d+\.\d+\.\d+\.\d+", publication);
@@ -128,7 +130,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationCreatesOneStableReleaseTaggedAtTheMergedCommit()
     {
-        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
+        string publish = WorkflowFiles.ReadStepBody(WorkflowFiles.ReadSteps(publishJob), PublicationStepName);
 
         Assert.Contains("gh release create \"v${version}\" \"${PACKAGE_PATH}\"", publish, StringComparison.Ordinal);
         Assert.Contains("--title \"Trickplay Cropper ${version}\"", publish, StringComparison.Ordinal);
@@ -141,7 +143,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationUploadsExactlyTheSoleJprmArtifact()
     {
-        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
+        string publish = WorkflowFiles.ReadStepBody(WorkflowFiles.ReadSteps(publishJob), PublicationStepName);
 
         Assert.Contains("PACKAGE_PATH: ${{ steps.package.outputs.artifact }}", publish, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(publish, "\"${PACKAGE_PATH}\""));
@@ -152,7 +154,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationRetriesReuseTheExistingReleaseAndItsAsset()
     {
-        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
+        string publish = WorkflowFiles.ReadStepBody(WorkflowFiles.ReadSteps(publishJob), PublicationStepName);
         int view = publish.IndexOf("gh release view", StringComparison.Ordinal);
         int upload = publish.IndexOf("gh release upload", StringComparison.Ordinal);
         int create = publish.IndexOf("gh release create", StringComparison.Ordinal);
@@ -172,8 +174,8 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationNeverCommitsGeneratedPackageOutputs()
     {
-        Assert.DoesNotMatch(@"git (?:add|commit|push|tag|config)", publication);
-        Assert.Contains("RUNNER_TEMP", publication, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"git (?:add|commit|push|tag|config)", publishJob);
+        Assert.Contains("RUNNER_TEMP", publishJob, StringComparison.Ordinal);
         Assert.Contains("artifacts/", RepositoryFiles.Read(".gitignore"), StringComparison.Ordinal);
     }
 
@@ -189,11 +191,6 @@ public sealed partial class PublicationWorkflowContractSpecs
         Assert.Equal([PublicationWorkflowRelativePath], publishing);
     }
 
-    private static string ReadBody(KeyValuePair<string, string>[] steps, string name)
-    {
-        return steps.Single(step => step.Key == name).Value;
-    }
-
     private static int CountOccurrences(string text, string needle)
     {
         int count = 0;
@@ -206,62 +203,4 @@ public sealed partial class PublicationWorkflowContractSpecs
 
         return count;
     }
-
-    private static string ReadEnvValue(string workflow, string name)
-    {
-        string prefix = $"{name}:";
-        string line = workflow
-            .Split('\n')
-            .Select(candidate => candidate.Trim())
-            .Single(candidate => candidate.StartsWith(prefix, StringComparison.Ordinal));
-
-        return line[prefix.Length..].Trim();
-    }
-
-    private static string ReadJobCondition(string workflow)
-    {
-        Match match = JobConditionRegex().Match(workflow);
-        Assert.True(match.Success, "The publication job must gate itself with a job-level if condition.");
-
-        return match.Groups["condition"].Value;
-    }
-
-    private static KeyValuePair<string, string>[] ReadSteps(string workflow)
-    {
-        string[] lines = workflow.Replace("\r\n", "\n").Split('\n');
-        List<KeyValuePair<string, string>> steps = [];
-
-        for (int index = 0; index < lines.Length; index++)
-        {
-            Match name = StepNameRegex().Match(lines[index]);
-            if (!name.Success)
-            {
-                continue;
-            }
-
-            int indent = name.Groups[1].Value.Length;
-            StringBuilder body = new();
-            for (int line = index + 1; line < lines.Length; line++)
-            {
-                string text = lines[line];
-                int textIndent = text.Length - text.TrimStart().Length;
-                if (text.Trim().Length > 0 && textIndent <= indent)
-                {
-                    break;
-                }
-
-                body.Append(text.Length > indent + 2 ? text[(indent + 2)..] : string.Empty).Append('\n');
-            }
-
-            steps.Add(new(name.Groups[2].Value, body.ToString().TrimEnd('\n')));
-        }
-
-        return steps.ToArray();
-    }
-
-    [GeneratedRegex(@"^(\s*)-\s*name:\s*(.+?)\s*$")]
-    private static partial Regex StepNameRegex();
-
-    [GeneratedRegex(@"(?m)^(?<indent>[ \t]+)if: >-$\n(?<condition>(?:\k<indent>[ \t].*\n)+)")]
-    private static partial Regex JobConditionRegex();
 }

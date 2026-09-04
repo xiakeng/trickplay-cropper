@@ -12,6 +12,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrickplayCropper.PackageVal
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrickplayCropper.ReleasePlanner", "tools/TrickplayCropper.ReleasePlanner/TrickplayCropper.ReleasePlanner.csproj", "{3E00B9C0-2820-4773-A2D2-853E4B286418}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrickplayCropper.ManifestBuilder", "tools/TrickplayCropper.ManifestBuilder/TrickplayCropper.ManifestBuilder.csproj", "{F4A7B2C9-3D8E-4F1A-B6C5-9E2D7A4F8B3C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,5 +40,9 @@ Global
 		{3E00B9C0-2820-4773-A2D2-853E4B286418}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3E00B9C0-2820-4773-A2D2-853E4B286418}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3E00B9C0-2820-4773-A2D2-853E4B286418}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4A7B2C9-3D8E-4F1A-B6C5-9E2D7A4F8B3C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4A7B2C9-3D8E-4F1A-B6C5-9E2D7A4F8B3C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4A7B2C9-3D8E-4F1A-B6C5-9E2D7A4F8B3C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4A7B2C9-3D8E-4F1A-B6C5-9E2D7A4F8B3C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
