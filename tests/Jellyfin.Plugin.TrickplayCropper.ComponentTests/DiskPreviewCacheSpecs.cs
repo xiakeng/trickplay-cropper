@@ -1467,7 +1467,7 @@ public sealed class DiskPreviewCacheSpecs
                 $"trickplay-cache-{Guid.NewGuid():N}");
             Directory.CreateDirectory(temporaryDirectory);
             PreviewIdentity identity = CreateIdentity();
-            var coordination = new PreviewCacheCoordination(checkpointObserver);
+            var coordination = new PreviewCacheCoordination(logger, checkpointObserver);
             return new TemporaryCacheFixture(
                 temporaryDirectory,
                 identity,

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
+using Microsoft.Extensions.Logging;
 using SkiaSharp;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Imaging;
@@ -15,25 +16,30 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
     private const int ScanlineBatchSize = 64;
     private readonly SemaphoreSlim decodePermits = new(DecodePermitCount, DecodePermitCount);
     private readonly Action<PreviewEncodingCheckpoint> checkpointObserver;
+    private readonly ILogger logger;
     private readonly Func<SKCodec, IntPtr, int, int, int> scanlineReader;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayPreviewEncoder"/> class.
     /// </summary>
-    public TrickplayPreviewEncoder()
-        : this(static _ => { })
+    /// <param name="logger">The category logger that reports decode-permit waits.</param>
+    public TrickplayPreviewEncoder(ILogger<TrickplayPreviewEncoder> logger)
+        : this(logger, static _ => { })
     {
     }
 
     /// <summary>
     /// Initializes an encoder whose native boundaries can be observed by component tests.
     /// </summary>
+    /// <param name="logger">The category logger that reports decode-permit waits.</param>
     /// <param name="checkpointObserver">Observes deterministic cancellation boundaries.</param>
     /// <param name="scanlineReader">Reads scanlines through the native codec boundary.</param>
     internal TrickplayPreviewEncoder(
+        ILogger logger,
         Action<PreviewEncodingCheckpoint> checkpointObserver,
         Func<SKCodec, IntPtr, int, int, int>? scanlineReader = null)
     {
+        this.logger = logger;
         this.checkpointObserver = checkpointObserver;
         this.scanlineReader = scanlineReader ?? ReadScanlines;
     }
@@ -45,7 +51,13 @@ internal sealed class TrickplayPreviewEncoder : ITrickplayPreviewEncoder, IDispo
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await decodePermits.WaitAsync(cancellationToken).ConfigureAwait(false);
+        Task decodePermit = decodePermits.WaitAsync(cancellationToken);
+        if (!decodePermit.IsCompleted)
+        {
+            PreviewDebugProtocol.LogDecodePermitWaiting(logger);
+        }
+
+        await decodePermit.ConfigureAwait(false);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();

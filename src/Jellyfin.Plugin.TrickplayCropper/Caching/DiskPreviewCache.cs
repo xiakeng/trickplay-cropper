@@ -37,7 +37,7 @@ internal sealed partial class DiskPreviewCache : IPreviewCache, IDisposable
         : this(
             applicationPaths,
             timeProvider,
-            new PreviewCacheCoordination(),
+            new PreviewCacheCoordination(logger),
             logger)
     {
     }
