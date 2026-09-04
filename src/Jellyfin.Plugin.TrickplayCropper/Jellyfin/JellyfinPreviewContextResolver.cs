@@ -136,16 +136,16 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             return new PreviewContextResolution.NotFound();
         }
 
-        return await SelectMetadataAsync(query, sourceVideo, mediaSourceId, selectedResolution.Value)
+        return await SelectMetadataAsync(query, sourceVideo, selectedResolution.Value)
             .ConfigureAwait(false);
     }
 
     private async Task<PreviewContextResolution> SelectMetadataAsync(
         PreviewQuery query,
         Video sourceVideo,
-        Guid mediaSourceId,
         int selectedResolution)
     {
+        Guid mediaSourceId = query.ResolvedMediaSourceId;
         Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
             .GetTrickplayResolutions(mediaSourceId)
             .ConfigureAwait(false);

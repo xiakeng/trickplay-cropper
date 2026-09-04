@@ -465,10 +465,13 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Theory]
-    [InlineData(ConfigurationFailureKind.UnreadableSnapshot)]
-    [InlineData(ConfigurationFailureKind.NonPositiveConfiguredTarget)]
-    [InlineData(ConfigurationFailureKind.NonPositiveSelectedResolution)]
-    public async Task ReportsInvalidConfigurationAsInternalError(ConfigurationFailureKind kind)
+    [InlineData(ConfigurationFailureKind.UnreadableSnapshot, "ConfigurationReadable", null)]
+    [InlineData(ConfigurationFailureKind.NonPositiveConfiguredTarget, "ConfiguredTargetPositive", 0L)]
+    [InlineData(ConfigurationFailureKind.NonPositiveSelectedResolution, "SelectedResolutionPositive", 0L)]
+    public async Task ReportsInvalidConfigurationAsInternalError(
+        ConfigurationFailureKind kind,
+        string failedValidation,
+        long? failedValue)
     {
         var scenario = new PreviewScenario { ConfiguredWidthResolutions = CreateInvalidConfiguration(kind) };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
@@ -481,6 +484,8 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(0, fixture.Cache.CallCount);
         RecordedLog log = Assert.Single(fixture.ErrorLogs);
         Assert.Equal(nameof(InvalidTrickplayConfigurationException), log.Properties["ExceptionType"]);
+        Assert.Equal(failedValidation, log.Properties["FailedValidation"]);
+        Assert.Equal(failedValue, log.Properties["FailedValue"]);
         Assert.DoesNotContain(fixture.SourceSpritePath, log.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(fixture.CacheRoot, log.Message, StringComparison.Ordinal);
         Assert.Empty(fixture.EnumerateCacheFiles());

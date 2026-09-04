@@ -17,7 +17,7 @@ internal static class TrickplayResolutionSelector
     {
         if (configuredTargets is null)
         {
-            throw new InvalidTrickplayConfigurationException("ConfigurationReadable", 0);
+            throw new InvalidTrickplayConfigurationException("ConfigurationReadable", failedValue: null);
         }
 
         if (configuredTargets.Length == 0)

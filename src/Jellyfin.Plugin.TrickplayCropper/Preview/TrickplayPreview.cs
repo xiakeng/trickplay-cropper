@@ -242,6 +242,10 @@ internal sealed class TrickplayPreview : ITrickplayPreview
                     FailedValidation = invalidMetadata.FailedValidation;
                     FailedValue = invalidMetadata.FailedValue;
                     break;
+                case InvalidTrickplayConfigurationException invalidConfiguration:
+                    FailedValidation = invalidConfiguration.FailedValidation;
+                    FailedValue = invalidConfiguration.FailedValue;
+                    break;
                 case PreviewStageException stageException:
                     ExceptionType = stageException.CauseType;
                     Capture(stageException.Details);

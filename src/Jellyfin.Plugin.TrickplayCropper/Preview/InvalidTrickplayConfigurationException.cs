@@ -11,11 +11,9 @@ internal sealed class InvalidTrickplayConfigurationException : InvalidOperationE
     /// Initializes a new instance of the <see cref="InvalidTrickplayConfigurationException"/> class.
     /// </summary>
     /// <param name="failedValidation">The stable name of the failed validation.</param>
-    /// <param name="failedValue">The value that failed validation.</param>
-    public InvalidTrickplayConfigurationException(string failedValidation, long failedValue)
-        : base(string.Create(
-            CultureInfo.InvariantCulture,
-            $"Jellyfin trickplay configuration failed validation {failedValidation} for value {failedValue}."))
+    /// <param name="failedValue">The value that failed validation, or null when the snapshot has no value.</param>
+    public InvalidTrickplayConfigurationException(string failedValidation, long? failedValue)
+        : base(CreateMessage(failedValidation, failedValue))
     {
         FailedValidation = failedValidation;
         FailedValue = failedValue;
@@ -27,7 +25,18 @@ internal sealed class InvalidTrickplayConfigurationException : InvalidOperationE
     public string FailedValidation { get; }
 
     /// <summary>
-    /// Gets the value that failed validation.
+    /// Gets the value that failed validation, or null when the snapshot has no value.
     /// </summary>
-    public long FailedValue { get; }
+    public long? FailedValue { get; }
+
+    private static string CreateMessage(string failedValidation, long? failedValue)
+    {
+        return failedValue is long value
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"Jellyfin trickplay configuration failed validation {failedValidation} for value {value}.")
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"Jellyfin trickplay configuration failed validation {failedValidation}.");
+    }
 }

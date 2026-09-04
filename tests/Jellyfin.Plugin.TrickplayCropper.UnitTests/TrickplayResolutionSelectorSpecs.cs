@@ -7,19 +7,18 @@ namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
 public sealed class TrickplayResolutionSelectorSpecs
 {
     [Theory]
-    [InlineData(new[] { 320 }, null, 320)]
-    [InlineData(new[] { 321 }, null, 320)]
-    [InlineData(new[] { 319 }, null, 318)]
-    [InlineData(new[] { 1023 }, null, 1022)]
-    [InlineData(new[] { 2 }, null, 2)]
+    [InlineData(new[] { 320 }, 320)]
+    [InlineData(new[] { 321 }, 320)]
+    [InlineData(new[] { 319 }, 318)]
+    [InlineData(new[] { 1023 }, 1022)]
+    [InlineData(new[] { 2 }, 2)]
     public void NormalizesTheOnlyConfiguredTargetToAnEvenSelectedResolution(
         int[] configuredTargets,
-        int? sourceVideoWidth,
         int selectedResolution)
     {
         Assert.Equal(
             selectedResolution,
-            TrickplayResolutionSelector.Select(configuredTargets, sourceVideoWidth));
+            TrickplayResolutionSelector.Select(configuredTargets, sourceVideoWidth: null));
     }
 
     [Theory]
@@ -88,6 +87,7 @@ public sealed class TrickplayResolutionSelectorSpecs
             () => TrickplayResolutionSelector.Select(configuredTargets: null, sourceVideoWidth: null));
 
         Assert.Equal("ConfigurationReadable", exception.FailedValidation);
+        Assert.Null(exception.FailedValue);
     }
 
     [Theory]
