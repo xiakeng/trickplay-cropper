@@ -6,6 +6,10 @@ namespace TrickplayCropper.ReleasePlanner;
 
 public static class ReleaseManifestPlanner
 {
+    private const string VersionField = "version";
+
+    private const string ChangelogField = "changelog";
+
     private static readonly JsonSerializerOptions jsonOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -18,8 +22,8 @@ public static class ReleaseManifestPlanner
 
         string currentText = ReadCurrentVersion(manifest);
         ReleaseVersion next = proposedVersion ?? ReleaseVersion.Parse(currentText).NextRoutine();
-        string updated = ReplaceJsonStringField(manifest, "version", next.ToString());
-        updated = ReplaceJsonStringField(updated, "changelog", changelog.TrimEnd());
+        string updated = ReplaceJsonStringField(manifest, VersionField, next.ToString());
+        updated = ReplaceJsonStringField(updated, ChangelogField, changelog.TrimEnd());
 
         return new ReleasePlan(updated, next);
     }
@@ -30,8 +34,8 @@ public static class ReleaseManifestPlanner
         {
             JsonNode root = JsonNode.Parse(manifest)
                 ?? throw new ReleasePlanningException("Build manifest must contain a JSON object.");
-            return root["version"]?.GetValue<string>()
-                ?? throw new ReleasePlanningException("Build manifest is missing a string 'version' field.");
+            return root[VersionField]?.GetValue<string>()
+                ?? throw new ReleasePlanningException($"Build manifest is missing a string '{VersionField}' field.");
         }
         catch (Exception error) when (error is JsonException or ArgumentException or InvalidOperationException)
         {

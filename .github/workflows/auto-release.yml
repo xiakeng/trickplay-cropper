@@ -98,10 +98,15 @@ jobs:
           # Preserve a version a maintainer already proposed in the open pull request so a
           # routine main push refreshes the changelog without clobbering a major/minor edit.
           version_args=()
-          if [[ -n "${existing_pr}" ]] && git fetch --quiet origin "${RELEASE_BRANCH}" 2>/dev/null; then
-            proposed_version="$(git show "FETCH_HEAD:${BUILD_MANIFEST}" 2>/dev/null | jq -r '.version // empty' || true)"
+          if [[ -n "${existing_pr}" ]]; then
+            proposed_version=""
+            if git fetch --quiet origin "${RELEASE_BRANCH}" 2>/dev/null; then
+              proposed_version="$(git show "FETCH_HEAD:${BUILD_MANIFEST}" 2>/dev/null | jq -r '.version // empty' || true)"
+            fi
             if [[ -n "${proposed_version}" ]]; then
               version_args=(--version "${proposed_version}")
+            else
+              echo "::warning::Open release pull request #${existing_pr} exists but its proposed version could not be read; falling back to the routine bump."
             fi
           fi
 

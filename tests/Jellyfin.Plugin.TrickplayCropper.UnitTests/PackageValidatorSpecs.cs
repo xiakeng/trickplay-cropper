@@ -187,7 +187,13 @@ public sealed class PackageValidatorSpecs
     private static JsonObject ReadBuildManifest()
     {
         var manifestPath = Path.Combine(AppContext.BaseDirectory, "build.yaml");
-        return JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+
+        // The release workflow advances build.yaml's version while the committed project, and so the
+        // assembly under test here, stays at the floor; JPRM realigns the assembly only at package
+        // time. Validate against the assembly's own version so these cases track the real artifact.
+        manifest["version"] = typeof(Plugin).Assembly.GetName().Version!.ToString();
+        return manifest;
     }
 
     private static JsonObject CreateMetadata(JsonObject manifest)

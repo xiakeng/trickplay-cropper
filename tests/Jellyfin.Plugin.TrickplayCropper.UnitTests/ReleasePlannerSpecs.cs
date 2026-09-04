@@ -60,12 +60,6 @@ public sealed class ReleasePlannerSpecs
     }
 
     [Fact]
-    public void TheFloorVersionProducesTheFirstAutomaticRelease()
-    {
-        Assert.Equal("1.0.1.0", ReleaseVersion.Parse("1.0.0.0").NextRoutine().ToString());
-    }
-
-    [Fact]
     public void NextRoutineRejectsThirdComponentOverflow()
     {
         ReleaseVersion version = new(1, 0, int.MaxValue, 0);

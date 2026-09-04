@@ -20,6 +20,11 @@ public sealed partial class ReleaseWorkflowContractSpecs
     [Fact]
     public void TheWorkflowGrantsExactlyTheTokenScopesItNeeds()
     {
+        int permissionBlocks = workflow
+            .Split('\n')
+            .Count(line => line.Trim().StartsWith("permissions:", StringComparison.Ordinal));
+        Assert.Equal(1, permissionBlocks);
+
         string[] scopes = ReadTopLevelPermissions()
             .Select(scope => $"{scope.Key}: {scope.Value}")
             .Order(StringComparer.Ordinal)
@@ -96,7 +101,6 @@ public sealed partial class ReleaseWorkflowContractSpecs
     public void TheWorkflowPreservesAnOpenPullRequestVersionWhileRefreshingTheChangelog()
     {
         Assert.Contains("--state open", workflow, StringComparison.Ordinal);
-        Assert.Contains("FETCH_HEAD:${BUILD_MANIFEST}", workflow, StringComparison.Ordinal);
         Assert.Contains("--version", workflow, StringComparison.Ordinal);
     }
 

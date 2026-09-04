@@ -4,6 +4,8 @@ namespace TrickplayCropper.ReleasePlanner;
 
 public readonly record struct ReleaseVersion
 {
+    private const int ComponentCount = 4;
+
     public ReleaseVersion(int major, int minor, int build, int revision)
     {
         if (major < 0 || minor < 0 || build < 0 || revision < 0)
@@ -31,14 +33,14 @@ public readonly record struct ReleaseVersion
         ArgumentNullException.ThrowIfNull(value);
 
         string[] components = value.Split('.');
-        if (components.Length != 4)
+        if (components.Length != ComponentCount)
         {
             throw new ReleasePlanningException(
                 $"Version must contain exactly four numeric components, got '{value}'.");
         }
 
-        int[] numbers = new int[4];
-        for (int index = 0; index < 4; index++)
+        int[] numbers = new int[ComponentCount];
+        for (int index = 0; index < ComponentCount; index++)
         {
             if (!int.TryParse(
                     components[index],

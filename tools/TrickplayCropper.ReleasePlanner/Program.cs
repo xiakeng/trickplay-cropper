@@ -1,11 +1,18 @@
 using TrickplayCropper.ReleasePlanner;
 
-if (args.Length is < 2 or > 4
-    || args.Length == 3
-    || (args.Length == 4 && args[2] != "--version"))
+const string VersionOption = "--version";
+
+bool validUsage = args.Length switch
+{
+    2 => true,
+    4 => args[2] == VersionOption,
+    _ => false,
+};
+
+if (!validUsage)
 {
     Console.Error.WriteLine(
-        "Usage: TrickplayCropper.ReleasePlanner <build-manifest> <changelog-file> [--version <a.b.c.d>]");
+        $"Usage: TrickplayCropper.ReleasePlanner <build-manifest> <changelog-file> [{VersionOption} <a.b.c.d>]");
     return 2;
 }
 

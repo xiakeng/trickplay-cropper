@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Xml.Linq;
+using TrickplayCropper.ReleasePlanner;
 using Xunit;
 
 namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
@@ -26,11 +27,10 @@ public sealed class ReleaseContractSpecs
 
         // The release workflow advances this value, so pin the four-component floor rather than an exact version.
         string versionText = manifest["version"]!.GetValue<string>();
+        ReleaseVersion version = ReleaseVersion.Parse(versionText);
         Assert.True(
-            Version.TryParse(versionText, out Version? version)
-                && version.Revision >= 0
-                && version >= new Version(1, 0, 0, 0),
-            $"Build manifest version must be four numeric components at or above the 1.0.0.0 floor, got '{versionText}'.");
+            new Version(version.Major, version.Minor, version.Build, version.Revision) >= new Version(1, 0, 0, 0),
+            $"Build manifest version must be at or above the 1.0.0.0 floor, got '{versionText}'.");
     }
 
     [Fact]
