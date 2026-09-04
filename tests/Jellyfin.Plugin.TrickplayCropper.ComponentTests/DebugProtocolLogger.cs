@@ -66,8 +66,3 @@ internal sealed class DebugProtocolLogger<TCategory> : ILogger<TCategory>
         }
     }
 }
-
-internal sealed record RecordedEvent(
-    LogLevel Level,
-    EventId EventId,
-    IReadOnlyDictionary<string, object?> Properties);

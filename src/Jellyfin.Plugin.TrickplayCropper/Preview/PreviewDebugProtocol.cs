@@ -55,7 +55,7 @@ internal static partial class PreviewDebugProtocol
     /// <summary>
     /// Records that one operation is waiting for exclusive Preview Cache Entry ownership.
     /// </summary>
-    /// <param name="logger">The category logger of the module that coordinates the entry.</param>
+    /// <param name="logger">The logger that reports Preview Cache Entry coordination.</param>
     [LoggerMessage(
         EventId = 1004,
         EventName = "TrickplayPreviewEntryLockWaiting",
@@ -66,7 +66,7 @@ internal static partial class PreviewDebugProtocol
     /// <summary>
     /// Records that one operation has taken exclusive Preview Cache Entry ownership.
     /// </summary>
-    /// <param name="logger">The category logger of the module that coordinates the entry.</param>
+    /// <param name="logger">The logger that reports Preview Cache Entry coordination.</param>
     [LoggerMessage(
         EventId = 1005,
         EventName = "TrickplayPreviewEntryLockOwned",
@@ -77,7 +77,7 @@ internal static partial class PreviewDebugProtocol
     /// <summary>
     /// Records that one operation is waiting for a Cache Tree lease.
     /// </summary>
-    /// <param name="logger">The category logger of the module that coordinates the Cache Tree.</param>
+    /// <param name="logger">The logger that reports Cache Tree coordination.</param>
     [LoggerMessage(
         EventId = 1006,
         EventName = "TrickplayPreviewCacheTreeLeaseWaiting",

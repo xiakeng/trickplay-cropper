@@ -117,6 +117,71 @@ public sealed class PreviewCacheCoordinationSpecs
     }
 
     [Fact]
+    public async Task ReportsCleanupEntryLockWaitingBehindTheCurrentEntryOwner()
+    {
+        var logger = new DebugProtocolLogger<PreviewCacheCoordination>();
+        var coordination = new PreviewCacheCoordination(logger);
+        var ownerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOwner = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<int> owner = coordination.ExecuteEntryAsync(
+            EntryPath,
+            async _ =>
+            {
+                ownerStarted.SetResult();
+                await releaseOwner.Task.ConfigureAwait(false);
+                return 1;
+            },
+            CancellationToken.None);
+        await ownerStarted.Task.WaitAsync(coordinationTimeout);
+
+        bool cleanupRan = false;
+        Task cleanup = coordination.ExecuteCleanupEntryAsync(
+            EntryPath,
+            () => cleanupRan = true,
+            CancellationToken.None);
+
+        Assert.False(cleanup.IsCompleted);
+        Assert.False(cleanupRan);
+        Assert.Single(logger.Events, recorded => recorded.EventId == entryLockWaiting);
+        Assert.Single(logger.Events, recorded => recorded.EventId == entryLockOwned);
+
+        releaseOwner.SetResult();
+        Assert.Equal(1, await owner.WaitAsync(coordinationTimeout));
+        await cleanup.WaitAsync(coordinationTimeout);
+
+        Assert.True(cleanupRan);
+        Assert.Single(logger.Events, recorded => recorded.EventId == entryLockWaiting);
+        Assert.Equal(2, logger.Events.Count(recorded => recorded.EventId == entryLockOwned));
+    }
+
+    [Fact]
+    public async Task ReportsCleanupCacheTreeLeaseWaitingBehindAnExclusiveLease()
+    {
+        var logger = new DebugProtocolLogger<PreviewCacheCoordination>();
+        var coordination = new PreviewCacheCoordination(logger);
+        using IDisposable exclusiveLease = await coordination.AcquireExclusiveAsync(CancellationToken.None);
+
+        bool cleanupRan = false;
+        Task cleanup = coordination.ExecuteCleanupEntryAsync(
+            EntryPath,
+            () => cleanupRan = true,
+            CancellationToken.None);
+
+        Assert.False(cleanup.IsCompleted);
+        Assert.False(cleanupRan);
+        Assert.Single(logger.Events, recorded => recorded.EventId == cacheTreeLeaseWaiting);
+        Assert.DoesNotContain(logger.Events, recorded => recorded.EventId == entryLockOwned);
+
+        exclusiveLease.Dispose();
+        await cleanup.WaitAsync(coordinationTimeout);
+
+        Assert.True(cleanupRan);
+        Assert.Single(logger.Events, recorded => recorded.EventId == cacheTreeLeaseWaiting);
+        Assert.Single(logger.Events, recorded => recorded.EventId == entryLockOwned);
+        Assert.DoesNotContain(logger.Events, recorded => recorded.EventId == entryLockWaiting);
+    }
+
+    [Fact]
     public async Task CarriesNoFieldsBeyondTheStableMessageTemplate()
     {
         var logger = new DebugProtocolLogger<PreviewCacheCoordination>();
