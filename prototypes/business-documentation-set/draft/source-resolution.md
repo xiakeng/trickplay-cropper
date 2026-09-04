@@ -105,39 +105,43 @@ preview.
 
 ## The decision path
 
+The gates, in the order they must run:
+
 ```mermaid
 flowchart TD
-    Start["Request: Item, optional Media Source, position"]
-
-    Start --> User{"Caller resolves<br/>to a real user?"}
-    User -->|"No"| Refuse401["401 / 403"]
+    Start["Request: Item, optional<br/>Media Source, position"] --> User{"Caller resolves<br/>to a real user?"}
+    User -->|"No"| A1["401 / 403"]
     User -->|"Yes"| Visible{"Logical video visible<br/>to this user?"}
-    Visible -->|"No"| Refuse404a["404"]
+    Visible -->|"No"| A2["404"]
     Visible -->|"Yes"| Play{"May play the<br/>logical video?"}
-    Play -->|"No"| Refuse403["403"]
+    Play -->|"No"| A3["403"]
     Play -->|"Yes"| Member{"Requested Media Source<br/>is a member?"}
-    Member -->|"No"| Refuse404b["404"]
+    Member -->|"No"| A4["404"]
     Member -->|"Yes"| Source{"Effective Source Video<br/>resolves?"}
-    Source -->|"No"| Refuse404c["404"]
-
-    Source -->|"Yes"| Targets{"Current Trickplay<br/>Resolution Targets"}
-    Targets -->|"Unreadable or invalid"| Fail500["500"]
-    Targets -->|"Empty array"| Refuse404d["404"]
-    Targets -->|"One or more"| Min["Select the minimum target"]
-
-    Min --> Normalize["Normalize for this Media Source:<br/>odd rounds down to even,<br/>wider than the video clamps to it"]
-    Normalize --> Selected["Selected Trickplay Resolution"]
-    Selected --> Match{"Generated metadata matches<br/>it exactly, and is consistent?"}
-    Match -->|"Inconsistent"| Fail500b["500"]
-    Match -->|"No exact match"| Refuse404e["404, log targets and recorded widths"]
-    Match -->|"Yes"| Frames{"Frames available?"}
-    Frames -->|"No"| Refuse404f["404"]
-    Frames -->|"Yes"| Done["Proceed to Frame Selection"]
+    Source -->|"No"| A5["404"]
+    Source -->|"Yes"| Next["Resolution selection, below"]
 ```
 
-Every exit is a distinct decision with its own status. The two `500` exits exist
-so that a broken configuration fails loudly instead of being papered over by a
-substitute width.
+Visibility precedes playback on purpose: an invisible Item must not reveal why it
+was refused. The tables above carry the exact status for each exit.
+
+Then the selection, which admits no alternative:
+
+```mermaid
+flowchart TD
+    Targets{"Current Trickplay<br/>Resolution Targets"} -->|"Empty array"| B1["404"]
+    Targets -->|"Unreadable, or invalid"| B2["500"]
+    Targets -->|"One or more"| Min["Select the minimum target"]
+    Min --> Normalize["Normalize for this Media Source:<br/>odd rounds down to even,<br/>wider than the video clamps to it"]
+    Normalize --> Selected["Selected Trickplay Resolution"]
+    Selected --> Match{"Metadata matches it exactly,<br/>is consistent, and has frames?"}
+    Match -->|"Inconsistent"| B3["500"]
+    Match -->|"No exact match, or no frames"| B4["404"]
+    Match -->|"Yes"| Done["Proceed to Frame Selection"]
+```
+
+The `500` exits exist so that a broken configuration fails loudly instead of being
+papered over by a substitute width.
 
 ## Anchors
 

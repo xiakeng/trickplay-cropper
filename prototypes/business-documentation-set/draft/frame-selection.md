@@ -48,7 +48,7 @@ recomputed per request rather than stored, because they are cheap and because
 storing them would create a second source of truth about geometry.
 
 ```mermaid
-flowchart LR
+flowchart TD
     P["Position in ticks"] --> D["Divide by the interval"]
     D --> R["Raw frame ordinal"]
     R --> C["Clamp to the last frame"]

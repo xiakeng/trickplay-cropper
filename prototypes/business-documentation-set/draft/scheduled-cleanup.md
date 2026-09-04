@@ -35,34 +35,23 @@ run.
 
 ```mermaid
 flowchart TD
-    Start["Run starts"] --> Lock{"Another run<br/>in progress?"}
-    Lock -->|"Yes"| Stop["Do nothing"]
-    Lock -->|"No"| Cut["Take the cutoff: now"]
-    Cut --> Safe{"Is the tree root still<br/>safe to walk?"}
-    Safe -->|"No"| Abort["Abort the run"]
-    Safe -->|"Yes"| Walk["Walk the tree, discovering files"]
+    Start["Run starts, unless one<br/>is already running"] --> Cut["Take the cutoff: now"]
+    Cut --> Walk["Walk the tree, discovering files"]
 
     Walk --> Age{"Last written at or<br/>before the cutoff?"}
     Age -->|"No"| Leave["Leave it: in-flight work"]
     Age -->|"Yes"| Kind{"What kind of file is it?"}
 
-    Kind -->|"A final entry"| Entry["Entry candidate"]
-    Kind -->|"A temporary entry belonging<br/>to an entry path"| Entry
-    Kind -->|"Any other temporary file"| Orphan["Orphan candidate"]
+    Kind -->|"A final entry, or a temporary entry<br/>belonging to an entry path"| ELock["Take the shared tree lease<br/>and that entry's lock"]
+    Kind -->|"Any other temporary file"| XLock["Take the exclusive tree lease"]
     Kind -->|"Anything unrecognized"| Skip["Skip it, never delete"]
 
-    Entry --> ELock["Take the shared tree lease<br/>and that entry's lock"]
-    ELock --> Recheck
-    Orphan --> XLock["Take the exclusive tree lease"]
-    XLock --> Recheck{"Still present, and unchanged<br/>since it was discovered?"}
-
+    ELock --> Recheck{"Still present, unchanged since<br/>discovery, and not a reparse point?"}
+    XLock --> Recheck
     Recheck -->|"No"| Counted["Count it as skipped"]
-    Recheck -->|"Yes"| Reparse{"Is it a reparse point?"}
-    Reparse -->|"Yes"| Warn["Warn and skip"]
-    Reparse -->|"No"| Delete["Delete it"]
+    Recheck -->|"Yes"| Delete["Delete it"]
 
     Delete --> Prune["Prune empty directories last,<br/>under an exclusive lease"]
-    Counted --> Prune
     Prune --> Done["Report what was removed and skipped"]
 ```
 

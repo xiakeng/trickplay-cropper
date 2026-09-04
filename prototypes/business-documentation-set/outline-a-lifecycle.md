@@ -47,9 +47,11 @@ Video playback check.
 
 - **Guarantees:** no substitute resolution is ever served; an Item the caller
   cannot see does not exist.
-- **Mermaid view:** one `flowchart TD` decision path, target selection →
-  normalization → metadata match → each rejection with its status. The branch
-  density is the point: prose cannot show that every exit is a distinct decision.
+- **Mermaid view:** two shallow `flowchart TD` views rather than one deep one —
+  the gates in the order they must run, then the selection and its normalization.
+  Rejections collapse to one exit per view because the two tables already carry
+  the exact status for each; what prose cannot show is that the gate order is not
+  rearrangeable and that the selection admits no alternative branch.
 
 ### `frame-probe.md` — the Trickplay Frame Probe
 The HEAD operation: what it is allowed to read, what it is forbidden to touch,
@@ -62,7 +64,7 @@ request can resolve a Source Sprite.
 
 - **Guarantees:** a probe never costs image work; a probe answer never promises a
   preview.
-- **Mermaid view:** one `flowchart LR` of the shared pipeline truncated at the
+- **Mermaid view:** one `flowchart TD` of the shared pipeline truncated at the
   Frame Index, with the forbidden remainder drawn as a detached, unreachable
   subgraph. The diagram's value is showing what is *not* reachable.
 
@@ -74,9 +76,9 @@ the crop rectangle inside that sprite. Explains why clamping is a business rule
 
 - **Guarantees:** the same position always selects the same frame; no position is
   out of range.
-- **Mermaid view:** one `flowchart LR` of the derivation chain, plus a small
-  grid sketch showing one Source Sprite as cells with the selected cell
-  highlighted. The grid is the only way to make row/column/crop offsets obvious.
+- **Mermaid view:** one `flowchart TD` of the derivation chain, plus a small grid
+  sketch showing one Source Sprite as cells with the selected cell highlighted. The
+  grid is the only way to make row/column/crop offsets obvious.
 
 ### `preview-generation.md` — cropping one Trickplay Preview
 How a single frame comes out of a Source Sprite: horizontal-subset scanline
@@ -99,8 +101,10 @@ namespace, and what a cache hit versus a miss means to the caller.
 
 - **Guarantees:** an entry is served only while it matches the source version
   that produced it; regenerated trickplay data cannot be served stale.
-- **Mermaid view:** one `flowchart TD` of the identity inputs converging on the
-  entry path and the ETag. Convergence is what prose describes badly.
+- **Mermaid view:** one `flowchart TD` with the identity inputs grouped into four
+  labelled clusters by the question each answers, converging on the digest that
+  yields the entry path and the ETag. Convergence is what prose describes badly,
+  and grouping is what keeps the view inside the reading column.
 
 ### `cache-coordination.md` — leases, entry locks, and the publication race
 The ordering rules that let concurrent requests share one Cache Tree: a shared

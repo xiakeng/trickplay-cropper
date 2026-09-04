@@ -42,28 +42,20 @@ them.
 
 ```mermaid
 flowchart TD
-    NS["Cache namespace"] --> D["Digest over everything<br/>that determines the bytes"]
-    MS["Media Source"] --> D
-    W["Selected Trickplay Resolution<br/>and its height"] --> D
-    I["Generation interval"] --> D
-    TW["Tile width and tile height"] --> D
-    N["Thumbnail count"] --> D
-    SI["Source Sprite index"] --> D
-    V["Sprite length and last modification time"] --> D
-    F["Frame Index"] --> D
-    Q["Encoding quality"] --> D
+    Where["Which frame<br/>Media Source, Source Sprite index,<br/>Frame Index"] --> D["Digest over everything<br/>that determines the bytes"]
+    Shape["What shape it has<br/>Selected Trickplay Resolution and its height,<br/>tile width and tile height, generation interval,<br/>thumbnail count"] --> D
+    Version["Which version of the sprite<br/>its length and last modification time"] --> D
+    How["How it was made<br/>cache namespace and encoding quality"] --> D
 
     D --> Stamp["Source version stamp"]
     Stamp --> Path["Preview Cache Entry path"]
     Stamp --> Tag["ETag"]
-    F --> Path
-    F --> Tag
     Path --> Tree["Cache Tree"]
 ```
 
-Every input feeds one digest, and the stamp it yields feeds both caller-visible
-values. That is why no single input can be dropped without making two different
-artifacts share an identity.
+Four groups of inputs feed one digest, and the stamp it yields feeds both
+caller-visible values. That is why no single input can be dropped without making
+two different artifacts share an identity.
 
 ## What a caller can observe
 

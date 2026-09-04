@@ -71,7 +71,64 @@ Fully drafted under [`draft/`](draft/README.md) as it would land in
 `docs/business/`, so the depth, the diagram style, and the anchor lines can be
 judged on real prose rather than on a promise about it.
 
+## What measuring the diagrams settled
+
+A rule that was not obvious before drafting, and that constrains every future view
+in this set: **GitHub scales a Mermaid diagram to fit the reading column, so a
+wide, flat diagram is scaled down until its text is unreadable, while a narrow,
+tall one is drawn at full size and simply scrolls.**
+
+The first draft got this wrong three times over. Laying a linear pipeline out left
+to right looked tidier on paper and measured 2823 × 366 — drawn in a column about
+1000 px wide, that is a third of its natural size. Fanning ten identity inputs into
+one node measured 2473 × 558 for the same reason. Both were fixed by going
+top-down, and the fan was fixed again by grouping ten inputs into four labelled
+clusters.
+
+A second, opposite mistake: collapsing ten refusal terminals into one shared node
+made the source-resolution view *taller*, 2578 → 2857, because a node with
+incoming edges from many ranks is placed below all of them, and every early exit
+stretches into a long edge. Splitting one deep view into two shallow ones, gates
+and then selection, is what actually shortened it.
+
+The rule the set now follows:
+
+- Top-down by default. Left-to-right only for a chain short enough to stay inside
+  the column.
+- No rank wider than about four nodes; group inputs instead of fanning them.
+- No view deeper than about eight ranks; split the chapter's halves into two views
+  instead.
+- Do not share one terminal node across many ranks. Give each rank its own short
+  exit, and let a table carry the detail.
+
+Measured result after those fixes, as intrinsic SVG size and the scale GitHub would
+apply in a 1000 px column: every one of the twelve views renders, none below 83 %.
+
+| View | Size | Scale |
+|---|---|---|
+| `README.md` lifecycle | 897 × 1192 | 100 % |
+| `source-resolution.md` gates | 848 × 1645 | 100 % |
+| `source-resolution.md` selection | 671 × 1210 | 100 % |
+| `frame-probe.md` truncated pipeline | 1129 × 700 | 89 % |
+| `frame-selection.md` derivation | 679 × 950 | 100 % |
+| `frame-selection.md` sprite grid | 762 × 414 | 100 % |
+| `preview-generation.md` generation | 567 × 1414 | 100 % |
+| `preview-cache.md` identity convergence | 1206 × 630 | 83 % |
+| `cache-coordination.md` two callers | 1072 × 1218 | 93 % |
+| `cache-coordination.md` publication race | 799 × 1170 | 100 % |
+| `client-interaction.md` conversation | 739 × 853 | 100 % |
+| `scheduled-cleanup.md` the run | 825 × 1841 | 100 % |
+
 ## How to view
 
-Pushed to the branch `prototype/business-documentation-set`. GitHub renders the
-Mermaid blocks inline, so read the files on github.com; no build, no server.
+Pushed to the branch `prototype/business-documentation-set`. Read the files on
+github.com, which renders Mermaid inline; no build, no server.
+
+What was actually verified here: all twelve views were parsed *and* rendered to SVG
+by Mermaid 11 running locally, with zero parse and zero render errors, and the
+sizes in the table above are the measured intrinsic SVG dimensions. GitHub's own
+renderer was not confirmed — it delegates to `viewscreen.githubusercontent.com` in
+a cross-origin iframe, and the embedded browser available for this check never
+completes that round-trip, leaving the raw-source fallback on screen. That is a
+limitation of the checking environment, not evidence of a problem with the diagrams,
+but it is unverified, so worth one look in a real browser.

@@ -75,7 +75,7 @@ still handle a `404` from the preview request. The probe narrows the question to
 ## Where the pipeline stops
 
 ```mermaid
-flowchart LR
+flowchart TD
     In["HEAD: Item, optional<br/>Media Source, position"] --> Auth["Authorization<br/>and visibility"]
     Auth --> Res["Selected Trickplay<br/>Resolution"]
     Res --> Sel["Frame Selection"]

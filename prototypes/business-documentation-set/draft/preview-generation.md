@@ -41,13 +41,9 @@ pixels is what makes this cheap; the horizontal band is what makes it cheap enou
 flowchart TD
     In["Resolved Source Sprite path<br/>plus crop rectangle"] --> Permit["Wait for a decode permit"]
     Permit --> Open["Open the sprite for decoding"]
-    Open --> V1{"Is it a JPEG with<br/>positive dimensions?"}
-    V1 -->|"No"| Bad["Fail: invalid Source Sprite"]
-    V1 -->|"Yes"| V2{"Do the sprite dimensions equal<br/>tile width x frame width by<br/>tile height x frame height?"}
-    V2 -->|"No"| Bad
-    V2 -->|"Yes"| V3{"Is the crop rectangle<br/>inside the sprite?"}
-    V3 -->|"No"| Bad
-    V3 -->|"Yes"| Band["Decode only the selected columns"]
+    Open --> Valid{"Is it a JPEG whose dimensions match<br/>the recorded tile geometry,<br/>and does the crop fit inside it?"}
+    Valid -->|"No"| Bad["Fail: invalid Source Sprite"]
+    Valid -->|"Yes"| Band["Decode only the selected columns"]
     Band --> Skip["Skip scanlines down to the crop"]
     Skip --> Read["Read the crop rows in batches,<br/>checking cancellation"]
     Read --> Encode["Encode one JPEG at a fixed quality"]
