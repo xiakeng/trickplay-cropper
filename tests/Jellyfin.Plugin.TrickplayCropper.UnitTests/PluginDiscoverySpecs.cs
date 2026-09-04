@@ -55,6 +55,39 @@ public sealed class PluginDiscoverySpecs
     }
 
     [Fact]
+    public void ProbeActionUsesTheApprovedRawBindingContract()
+    {
+        Type controller = typeof(TrickplayPreviewController);
+        MethodInfo action = Assert.IsAssignableFrom<MethodInfo>(
+            controller.GetMethod(nameof(TrickplayPreviewController.HeadAsync)));
+        Assert.NotNull(action.GetCustomAttribute<HttpHeadAttribute>());
+        ParameterInfo itemId = Assert.Single(action.GetParameters(), parameter => parameter.Name == "itemId");
+        ParameterInfo mediaSourceId = Assert.Single(
+            action.GetParameters(),
+            parameter => parameter.Name == "mediaSourceId");
+        ParameterInfo positionTicks = Assert.Single(
+            action.GetParameters(),
+            parameter => parameter.Name == "positionTicks");
+        ParameterInfo cancellationToken = Assert.Single(
+            action.GetParameters(),
+            parameter => parameter.Name == "cancellationToken");
+        Assert.Equal(typeof(string), itemId.ParameterType);
+        Assert.Equal(typeof(string), mediaSourceId.ParameterType);
+        Assert.Equal(typeof(string), positionTicks.ParameterType);
+        Assert.Equal(typeof(CancellationToken), cancellationToken.ParameterType);
+        Assert.NotNull(itemId.GetCustomAttribute<FromRouteAttribute>());
+        Assert.NotNull(mediaSourceId.GetCustomAttribute<FromQueryAttribute>());
+        Assert.NotNull(positionTicks.GetCustomAttribute<FromQueryAttribute>());
+        var nullability = new NullabilityInfoContext();
+        Assert.Equal(NullabilityState.Nullable, nullability.Create(itemId).WriteState);
+        Assert.Equal(NullabilityState.Nullable, nullability.Create(mediaSourceId).WriteState);
+        Assert.Equal(NullabilityState.Nullable, nullability.Create(positionTicks).WriteState);
+        Assert.Null(itemId.GetCustomAttribute<BindRequiredAttribute>());
+        Assert.Null(mediaSourceId.GetCustomAttribute<BindRequiredAttribute>());
+        Assert.Null(positionTicks.GetCustomAttribute<BindRequiredAttribute>());
+    }
+
+    [Fact]
     public void QueryParametersUseTheApprovedShape()
     {
         PropertyInfo[] queryProperties = typeof(PreviewQueryParameters)
@@ -86,6 +119,7 @@ public sealed class PluginDiscoverySpecs
                 "Jellyfin.Plugin.TrickplayCropper.Caching.PreviewCacheDisposition",
                 "Jellyfin.Plugin.TrickplayCropper.Plugin",
                 "Jellyfin.Plugin.TrickplayCropper.PluginServiceRegistrator",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.ITrickplayFrameProbe",
                 "Jellyfin.Plugin.TrickplayCropper.Preview.ITrickplayPreview",
                 "Jellyfin.Plugin.TrickplayCropper.Preview.PreviewOutcome",
                 "Jellyfin.Plugin.TrickplayCropper.Preview.PreviewOutcome+BadRequest",
@@ -99,6 +133,13 @@ public sealed class PluginDiscoverySpecs
                 "Jellyfin.Plugin.TrickplayCropper.Preview.PreviewTelemetry",
                 "Jellyfin.Plugin.TrickplayCropper.Preview.PreviewTelemetry+CacheAccess",
                 "Jellyfin.Plugin.TrickplayCropper.Preview.PreviewTelemetry+Conditional",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayFrameProbeOutcome",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayFrameProbeOutcome+BadRequest",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayFrameProbeOutcome+Forbidden",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayFrameProbeOutcome+InternalError",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayFrameProbeOutcome+NotFound",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayFrameProbeOutcome+Success",
+                "Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayFrameProbeOutcome+Unauthorized",
                 "Jellyfin.Plugin.TrickplayCropper.Tasks.ClearTrickplayCropperCacheTask",
             ],
             exportedTypes);

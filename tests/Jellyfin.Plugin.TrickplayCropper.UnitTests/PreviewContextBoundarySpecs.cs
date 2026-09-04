@@ -60,6 +60,32 @@ public sealed class PreviewContextBoundarySpecs
         Assert.All(exposedTypes, AssertSharedType);
     }
 
+    [Fact]
+    public void PublicTrickplayFrameProbeContractExposesNoGetOnlyFacility()
+    {
+        Type[] probeContract =
+        [
+            typeof(ITrickplayFrameProbe),
+            typeof(TrickplayFrameProbeOutcome),
+        ];
+
+        Type[] exposedTypes = CollectExposedTypes(probeContract);
+
+        Assert.Contains(typeof(PreviewQuery), exposedTypes);
+        Assert.All(exposedTypes, AssertSharedType);
+    }
+
+    [Fact]
+    public void TrickplayFrameProbeDependsOnNoGetOnlyFacility()
+    {
+        Type implementation = Assert.Single(CollectImplementations<ITrickplayFrameProbe>());
+
+        Type[] exposedTypes = CollectExposedTypes([implementation]);
+
+        Assert.Contains(typeof(IPreviewContextResolver), exposedTypes);
+        Assert.All(exposedTypes, AssertSharedType);
+    }
+
     private static Type[] CollectImplementations<TContract>()
     {
         return pluginAssembly

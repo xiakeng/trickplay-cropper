@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using Microsoft.AspNetCore.Authorization;
@@ -15,14 +16,20 @@ namespace Jellyfin.Plugin.TrickplayCropper.Api;
 [Route("TrickplayCropper/Videos/{itemId}/Preview")]
 public sealed class TrickplayPreviewController : ControllerBase
 {
+    private const string CacheControlHeaderValue = "private, no-cache";
+    private const string FrameIndexHeaderName = "X-Trickplay-Frame-Index";
+
+    private readonly ITrickplayFrameProbe trickplayFrameProbe;
     private readonly ITrickplayPreview trickplayPreview;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayPreviewController"/> class.
     /// </summary>
+    /// <param name="trickplayFrameProbe">The Trickplay Frame Probe module.</param>
     /// <param name="trickplayPreview">The Trickplay Preview request module.</param>
-    public TrickplayPreviewController(ITrickplayPreview trickplayPreview)
+    public TrickplayPreviewController(ITrickplayFrameProbe trickplayFrameProbe, ITrickplayPreview trickplayPreview)
     {
+        this.trickplayFrameProbe = trickplayFrameProbe;
         this.trickplayPreview = trickplayPreview;
     }
 
@@ -48,6 +55,96 @@ public sealed class TrickplayPreviewController : ControllerBase
             cancellationToken).ConfigureAwait(false);
 
         return MapOutcome(outcome);
+    }
+
+    /// <summary>
+    /// Probes the Frame Index the requested playback position selects, without a response body.
+    /// </summary>
+    /// <param name="itemId">The raw logical video identifier.</param>
+    /// <param name="mediaSourceId">The raw optional alternate media source identifier.</param>
+    /// <param name="positionTicks">The raw playback position in Jellyfin ticks.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <returns>The mapped bodyless HTTP response.</returns>
+    [HttpHead]
+    public async Task<IActionResult> HeadAsync(
+        [FromRoute] string? itemId,
+        [FromQuery] string? mediaSourceId,
+        [FromQuery] string? positionTicks,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCreateQuery(itemId, mediaSourceId, positionTicks, out PreviewQuery? query))
+        {
+            return CreateBodylessResult(StatusCodes.Status400BadRequest);
+        }
+
+        TrickplayFrameProbeOutcome outcome = await trickplayFrameProbe.ProbeAsync(query, User, cancellationToken)
+            .ConfigureAwait(false);
+        return MapProbeOutcome(outcome);
+    }
+
+    private static bool TryCreateQuery(
+        string? itemId,
+        string? mediaSourceId,
+        string? positionTicks,
+        [NotNullWhen(true)] out PreviewQuery? query)
+    {
+        query = null;
+        if (!Guid.TryParse(itemId, out Guid parsedItemId))
+        {
+            return false;
+        }
+
+        Guid? parsedMediaSourceId = null;
+        if (!string.IsNullOrEmpty(mediaSourceId))
+        {
+            if (!Guid.TryParse(mediaSourceId, out Guid parsedSourceId))
+            {
+                return false;
+            }
+
+            parsedMediaSourceId = parsedSourceId;
+        }
+
+        if (!long.TryParse(
+            positionTicks,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out long parsedPositionTicks))
+        {
+            return false;
+        }
+
+        query = new PreviewQuery(parsedItemId, parsedMediaSourceId, parsedPositionTicks);
+        return true;
+    }
+
+    private EmptyResult MapProbeOutcome(TrickplayFrameProbeOutcome outcome)
+    {
+        return outcome switch
+        {
+            TrickplayFrameProbeOutcome.Success success => CreateFrameIndexResult(success.FrameIndex),
+            TrickplayFrameProbeOutcome.BadRequest => CreateBodylessResult(StatusCodes.Status400BadRequest),
+            TrickplayFrameProbeOutcome.Unauthorized => CreateBodylessResult(StatusCodes.Status401Unauthorized),
+            TrickplayFrameProbeOutcome.Forbidden => CreateBodylessResult(StatusCodes.Status403Forbidden),
+            TrickplayFrameProbeOutcome.NotFound => CreateBodylessResult(StatusCodes.Status404NotFound),
+            TrickplayFrameProbeOutcome.InternalError => CreateBodylessResult(StatusCodes.Status500InternalServerError),
+            _ => throw new InvalidOperationException($"Unknown Trickplay Frame Probe outcome {outcome.GetType().Name}."),
+        };
+    }
+
+    private EmptyResult CreateFrameIndexResult(int frameIndex)
+    {
+        Response.Headers[FrameIndexHeaderName] = frameIndex.ToString(CultureInfo.InvariantCulture);
+        Response.Headers.CacheControl = CacheControlHeaderValue;
+        return CreateBodylessResult(StatusCodes.Status200OK);
+    }
+
+    // Setting the status directly and returning an empty result keeps every HEAD outcome bodyless,
+    // because the [ApiController] client-error transform would otherwise add a ProblemDetails body.
+    private EmptyResult CreateBodylessResult(int statusCode)
+    {
+        Response.StatusCode = statusCode;
+        return new EmptyResult();
     }
 
     private IActionResult MapOutcome(PreviewOutcome outcome)
@@ -84,7 +181,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     private void ApplySharedHeaders(string entityTag, PreviewTelemetry telemetry)
     {
         Response.Headers.ETag = entityTag;
-        Response.Headers.CacheControl = "private, no-cache";
+        Response.Headers.CacheControl = CacheControlHeaderValue;
         Response.Headers["Server-Timing"] = FormatServerTiming(telemetry);
     }
 

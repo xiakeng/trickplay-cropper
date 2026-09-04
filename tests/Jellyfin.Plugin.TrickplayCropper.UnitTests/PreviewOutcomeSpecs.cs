@@ -7,6 +7,7 @@ using MediaBrowser.Controller.Entities;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
 using Xunit;
+using static Jellyfin.Plugin.TrickplayCropper.UnitTests.PreviewContextMother;
 
 namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
 
@@ -44,7 +45,7 @@ public sealed class PreviewOutcomeSpecs
         ContextFailureKind failureKind,
         Type expectedOutcomeType)
     {
-        var contextResolver = new StubContextResolver(CreateContextResolution(failureKind));
+        var contextResolver = new StubResolver(CreateResolution(failureKind));
         var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
         TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver);
 
@@ -62,7 +63,7 @@ public sealed class PreviewOutcomeSpecs
     [Fact]
     public async Task MapsUnavailableSourceSpriteToNotFoundWithoutCacheAccess()
     {
-        var contextResolver = new StubContextResolver(
+        var contextResolver = new StubResolver(
             new PreviewContextResolution.Resolved(CreateContext()));
         var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
         TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver);
@@ -82,7 +83,7 @@ public sealed class PreviewOutcomeSpecs
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var contextResolver = new CancellingContextResolver();
+        var contextResolver = new CancellingResolver();
         var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
         TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver);
 
@@ -105,7 +106,7 @@ public sealed class PreviewOutcomeSpecs
     {
         PreviewContext context = CreateContext();
         ResolvedPreviewSource source = CreateSource(context);
-        var contextResolver = new StubContextResolver(new PreviewContextResolution.Resolved(context));
+        var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(context));
         var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.Found(source));
         var cache = new StubPreviewCache();
         TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, cache);
@@ -125,7 +126,7 @@ public sealed class PreviewOutcomeSpecs
     public async Task ConvertsUnexpectedCacheFailureToInternalError()
     {
         PreviewContext context = CreateContext();
-        var contextResolver = new StubContextResolver(new PreviewContextResolution.Resolved(context));
+        var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(context));
         var sourceResolver = new StubSourceResolver(
             new PreviewSourceResolution.Found(CreateSource(context)));
         var cache = new StubPreviewCache(new IOException("The unit-test cache failed."));
@@ -176,21 +177,6 @@ public sealed class PreviewOutcomeSpecs
         };
     }
 
-    private static PreviewContextResolution CreateContextResolution(ContextFailureKind failureKind)
-    {
-        return failureKind switch
-        {
-            ContextFailureKind.BadRequest => new PreviewContextResolution.BadRequest(),
-            ContextFailureKind.Unauthorized => new PreviewContextResolution.Unauthorized(),
-            ContextFailureKind.Forbidden => new PreviewContextResolution.Forbidden(),
-            ContextFailureKind.NotFound => new PreviewContextResolution.NotFound(),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(failureKind),
-                failureKind,
-                "Unknown shared context failure kind."),
-        };
-    }
-
     private static TrickplayPreview CreatePreview(
         IPreviewContextResolver contextResolver,
         IPreviewSourceResolver sourceResolver)
@@ -229,39 +215,6 @@ public sealed class PreviewOutcomeSpecs
             638_397_614_450_000_000,
             context.Metadata,
             FrameSelection.Create(context.Metadata, context.FrameIndex));
-    }
-
-    private sealed class StubContextResolver : IPreviewContextResolver
-    {
-        private readonly PreviewContextResolution resolution;
-        private int callCount;
-
-        public StubContextResolver(PreviewContextResolution resolution)
-        {
-            this.resolution = resolution;
-        }
-
-        public int CallCount => Volatile.Read(ref callCount);
-
-        public Task<PreviewContextResolution> ResolveAsync(
-            PreviewQuery query,
-            ClaimsPrincipal principal,
-            CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref callCount);
-            return Task.FromResult(resolution);
-        }
-    }
-
-    private sealed class CancellingContextResolver : IPreviewContextResolver
-    {
-        public Task<PreviewContextResolution> ResolveAsync(
-            PreviewQuery query,
-            ClaimsPrincipal principal,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromCanceled<PreviewContextResolution>(cancellationToken);
-        }
     }
 
     private sealed class StubSourceResolver : IPreviewSourceResolver
@@ -348,14 +301,6 @@ public sealed class PreviewOutcomeSpecs
         {
             throw new InvalidOperationException("The encoder must not be reached for a typed request failure.");
         }
-    }
-
-    public enum ContextFailureKind
-    {
-        BadRequest,
-        Unauthorized,
-        Forbidden,
-        NotFound,
     }
 
     public enum ConditionalRequestKind
