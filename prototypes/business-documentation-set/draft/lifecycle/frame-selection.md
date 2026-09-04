@@ -1,10 +1,8 @@
 # Frame Selection
 
-**Guarantees this chapter upholds**
-
-- The same playback position always selects the same frame.
-- No playback position is out of range.
-- The crop rectangle is derived from generated geometry, never assumed.
+_Why clamping is a rule rather than an error, and why a wrong frame is worse than a
+failure: [Frame determinism](../design/frame-determinism.md). This chapter is the
+mechanism._
 
 ## The inputs
 
@@ -101,14 +99,12 @@ Only the selected columns are decoded and only the selected rows are read; see
 possible, because the crop's horizontal extent is known before any pixel is
 touched.
 
-## Why the arithmetic is checked
+## Checking the arithmetic
 
-The derivation multiplies and divides recorded values whose magnitude the plugin
-does not control. A tile geometry or thumbnail count large enough to overflow the
-arithmetic would produce a plausible-looking but wrong crop, silently. Frame
-Selection therefore verifies that every intermediate value fits, and fails the
-request with the diagnostics attached if one does not. A wrong frame delivered
-confidently is worse than an error.
+The derivation multiplies and divides recorded values whose magnitude the plugin does not
+control. Frame Selection verifies that every intermediate value fits, and fails the
+request with diagnostics attached if one does not. Why an overflow must not be estimated
+around is in [frame determinism](../design/frame-determinism.md).
 
 ## Anchors
 

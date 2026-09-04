@@ -1,11 +1,9 @@
 # Preview generation
 
-**Guarantees this chapter upholds**
-
-- Generating a preview costs roughly one frame, not one Source Sprite.
-- A Source Sprite that does not match its recorded geometry fails the request
-  rather than producing a wrong image.
-- The number of decodes running at once is bounded, whatever clients do.
+_Why the sprite's geometry is verified rather than trusted:
+[Frame determinism](../design/frame-determinism.md). Why generation waits for a permit,
+and what the product deliberately does not cap:
+[Resource bounds](../design/resource-bounds.md). This chapter is the mechanism._
 
 ## What is being made
 
@@ -50,40 +48,30 @@ flowchart TD
     Encode --> Out["Buffered preview content"]
 ```
 
-## What is validated, and why
+## What is validated
 
 Three things are checked before any pixel is written:
 
-- **The file is a JPEG with positive dimensions.** A sprite in another format, or
-  a truncated one, is not something the plugin may reinterpret.
+- **The file is a JPEG with positive dimensions.**
 - **The sprite's dimensions equal tile width × frame width by tile height × frame
-  height.** This is the load-bearing check. The crop was computed from recorded
-  geometry; if the file on disk does not match that geometry, every offset derived
-  from it is wrong. Trusting the recorded geometry without checking it would
-  produce a confidently wrong frame — a piece of the neighbouring cell, or a
-  sliver across two frames.
-- **The crop lies inside the sprite.** A consequence of the check above, verified
-  independently so that the failure names the crop rather than the geometry.
+  height.** This is the load-bearing check: the crop was computed from recorded geometry,
+  so a file that does not match it invalidates every offset.
+- **The crop lies inside the sprite**, verified independently so that the failure names the
+  crop rather than the geometry.
 
-A failure here is an operational failure, not a "frame unavailable" answer. The
-sprite was expected to exist — resolution already established that — so a sprite
-that cannot be decoded means something changed or broke underneath the request.
-The distinction matters to a client: a `404` says *there is no preview here*,
-while a failure here says *this request could not be completed*.
+A failure here is an operational failure, not a "frame unavailable" answer: the sprite was
+already established to exist. Why that distinction matters to a client, and why the
+geometry is checked rather than trusted, is in
+[frame determinism](../design/frame-determinism.md).
 
 ## The decode permit
 
-Native image decoding is memory- and CPU-heavy, and the plugin runs inside the
-Jellyfin server process, sharing it with playback, scanning, and everything else
-the server does. An unbounded number of concurrent decodes under a scrub storm
-would starve the host.
+Generation waits for one of a small fixed number of **decode permits** before opening a
+sprite, and releases it on completion, failure, or cancellation. Waiting is cancellable and
+has no timeout, so a client that gives up does not leave a permit consumed.
 
-Generation therefore waits for one of a small fixed number of **decode permits**
-before opening a sprite, and releases it on completion, failure, or cancellation.
-The bound is a business rule about being a good tenant of the server, not a
-performance tweak: it caps what Trickplay Cropper can cost the host no matter how
-many clients ask at once. Waiting for a permit is cancellable and has no timeout,
-so a client that gives up does not leave a permit consumed.
+Why the bound exists, and why it is the only numeric cap the product places on generation,
+is in [resource bounds](../design/resource-bounds.md).
 
 ## What comes out
 

@@ -1,24 +1,14 @@
 # Cache coordination
 
-**Guarantees this chapter upholds**
+_Why the coordination is shaped this way, why it is not global serialization, and what
+breaks without it: [Concurrency safety](../design/concurrency-safety.md). This chapter is
+the mechanism._
 
-- No caller ever reads a partially written entry.
-- Two callers asking for the same frame pay for one generation.
-- Emptying the Cache Tree never disturbs a request in flight.
-- A caller that gives up leaves nothing held behind.
+## The setting
 
-## The problem
-
-One Cache Tree is shared by every concurrent request in the server process, and by
-the maintenance run that empties it. Under a scrub storm, many callers ask for
-frames of the same video at the same time: some for the same frame, most for
-different ones. The coordination has to be cheap in the common case, where callers
-are not in each other's way at all, and correct in the rare one, where two of them
-want to generate the same entry.
-
-The design deliberately avoids global serialization. Making every request wait its
-turn behind one lock would be simple and would turn a preview into a queue. See
-ADR 0001.
+One Cache Tree is shared by every concurrent request in the server process, and by the
+maintenance run that empties it. Under a scrub storm, many callers ask for frames of the
+same video at once: some for the same frame, most for different ones.
 
 ## Two locks, one order
 
@@ -33,24 +23,18 @@ asking for different frames take different entry locks and never meet. Only
 callers asking for the *same* frame contend, and that contention is the point: it
 is what makes the second caller reuse the first caller's work.
 
-Every path through the cache takes them in the same order — tree lease, then entry
-lock — and releases them in the reverse order. A consistent order is what makes
-deadlock impossible between the two, including when a maintenance run holds one
-exclusively and requests hold the other shared.
+Every path through the cache takes them in the same order — tree lease, then entry lock —
+and releases them in the reverse order. The order is mandatory on every path, including
+the maintenance ones.
 
-Neither lock has a timeout. Both waits are cancellable, so a caller that
-disconnects stops waiting instead of holding a lock it can no longer use.
+Neither lock has a timeout; both waits are cancellable.
 
 ## The critical detail: buffer before release
 
-The response content is read into memory **before** either lock is released. This
-looks like an inefficiency and is the load-bearing rule of the whole design.
-
-Once the entry lock is released, the maintenance run is free to delete that entry:
-from its point of view it is an ordinary file older than its cutoff. If the
-response still referred to the file rather than to buffered bytes, a request that
-had already succeeded could fail while writing its response. Buffering first means
-a released entry is nobody's problem any more.
+The response content is read into memory **before** either lock is released. The ordering
+is not an optimization and is not optional; why releasing first would break a request that
+had already succeeded is in
+[concurrency safety](../design/concurrency-safety.md).
 
 ```mermaid
 sequenceDiagram
@@ -94,12 +78,10 @@ Generation does not write directly to the entry path. It writes to a **temporary
 entry** beside it, created so that no two writers can share one, then publishes it
 with an atomic move that refuses to overwrite.
 
-That refusal is the whole cross-process story. Two server processes, or two
-requests that somehow escaped the in-process lock, may both generate the same
-frame. Whichever move lands first wins; the loser's move fails, and the loser
-**reads the winner's entry and reports a hit**. Losing the race is not an error and
-is not retried — both writers produced equivalent bytes, and the tree ends up with
-exactly one entry.
+That refusal is the whole cross-process story, because no in-process lock reaches another
+process. Two writers may both generate the same frame: whichever move lands first wins,
+the loser's move fails, and the loser **reads the winner's entry and reports a hit**.
+Losing is not an error and is not retried.
 
 ```mermaid
 flowchart TD
@@ -125,13 +107,12 @@ A caller sees coordination only through `Server-Timing`, which reports how long 
 lookup, cache, decode, and encode stages took. A wait shows up there as time, not
 as a named event.
 
-For diagnosis on the server, the waits themselves are observable at Debug level:
-the cache disposition, how long a caller waited for an entry lock and whether it
-ended up owning it, how long it waited for a Cache Tree lease, and how long it
-waited for a decode permit, together with the Frame Index and sprite index it was
-working on. Which of these a request actually waited on is the difference between
-"the cache is contended" and "the encoder is saturated", and the two have opposite
-remedies. The placement of that instrumentation is an implementation decision.
+For diagnosis on the server, the waits themselves are observable at Debug level: the cache
+disposition, how long a caller waited for an entry lock and whether it ended up owning it,
+how long it waited for a Cache Tree lease, and how long it waited for a decode permit,
+together with the Frame Index and sprite index it was working on. Where the placement of
+that instrumentation lands is an implementation decision; what it is for is in
+[concurrency safety](../design/concurrency-safety.md).
 
 ## Anchors
 

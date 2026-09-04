@@ -1,23 +1,17 @@
 # Scheduled cleanup
 
-**Guarantees this chapter upholds**
+_Why the tree needs emptying, what breaks without a careful run, and why the schedule
+belongs to the server: [Resource bounds](../design/resource-bounds.md). This chapter is
+the mechanism._
 
-- The Cache Tree does not grow without bound.
-- Emptying it never deletes an entry a live request is using.
-- Cleanup touches nothing Jellyfin owns.
+## What the run removes
 
-## Why the tree needs emptying
-
-Entries become unreachable without ever becoming invalid. When Jellyfin regenerates
-trickplay data, the sprite's version stamp changes, so every entry derived from the
-old version keeps sitting in the tree at a path no future request will compute. The
-same happens when the Selected Trickplay Resolution changes because an
-administrator edited the configured targets, and when a video leaves the library.
-
-Nothing corrects or invalidates those entries — see
-[Preview Cache Entry](preview-cache.md). They are simply abandoned, and a
-maintenance run removes them. The Cache Tree is entirely derived and disposable,
-so emptying it completely costs work and nothing else.
+Entries become unreachable without ever becoming invalid. When a sprite's version stamp
+changes, when the Selected Trickplay Resolution changes, or when a video leaves the
+library, the old entries stay in the tree at paths no future request will compute. Nothing
+invalidates them — see [Preview Cache Entry](preview-cache.md) — so the run is what removes
+them. Why the design abandons rather than invalidates is in
+[resource bounds](../design/resource-bounds.md).
 
 ## The run
 

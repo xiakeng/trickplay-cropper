@@ -1,22 +1,13 @@
 # Preview Cache Entry
 
-**Guarantees this chapter upholds**
-
-- A cached preview is served only while it still belongs to the source version
-  that produced it.
-- Regenerated trickplay data can never be served stale.
-- Two callers asking for the same frame find the same entry.
+_Why identity covers exactly these inputs, and why stale entries are abandoned rather than
+invalidated: [Cache identity and freshness](../design/cache-identity-and-freshness.md).
+This chapter is the mechanism._
 
 ## What makes two previews the same
 
-A **Preview Cache Entry** is the cached representation of one Trickplay Preview.
-The question "is this the same preview?" is not answered by the frame alone: the
-same Frame Index from a different sprite, at a different resolution, with a
-different tile geometry, or encoded at a different quality is a different
-artifact, and serving one in place of the other would be serving a wrong image
-confidently.
-
-So the entry's identity is a digest over everything that determines the bytes:
+A **Preview Cache Entry** is the cached representation of one Trickplay Preview. Its
+identity is a digest over everything that determines the bytes:
 
 | Input | Why it is part of identity |
 |---|---|
@@ -31,14 +22,10 @@ So the entry's identity is a digest over everything that determines the bytes:
 | The Frame Index | The frame itself |
 | The encoding quality | Two qualities of one frame are two artifacts |
 
-The **source version stamp** is the input that does the most work. Jellyfin may
-regenerate trickplay data at any time, replacing a sprite file in place. The
-stamp is derived from the sprite's length and last modification time — the
-observable evidence of which version of the file the plugin looked at. When the
-sprite is replaced, the stamp changes, the identity changes, the entry path
-changes, and the ETag changes. Stale entries are not corrected or invalidated;
-they become unreachable, and the [scheduled cleanup](scheduled-cleanup.md) removes
-them.
+The **source version stamp** is derived from the sprite's length and last modification
+time. When the sprite is replaced, the stamp changes, so the identity changes, the entry
+path changes, and the ETag changes. Stale entries are not corrected or invalidated; they
+become unreachable, and the [scheduled cleanup](scheduled-cleanup.md) removes them.
 
 ```mermaid
 flowchart TD
@@ -57,24 +44,21 @@ Four groups of inputs feed one digest, and the stamp it yields feeds both
 caller-visible values. That is why no single input can be dropped without making
 two different artifacts share an identity.
 
-## What a caller can observe
+## What the identity produces
 
-The identity produces two caller-visible values:
+Two caller-visible values come out of it:
 
-- **The ETag**, which combines the source version stamp and the Frame Index. A
-  conditional request presenting a matching ETag is answered `304` with no body.
-  Because the stamp is in it, an ETag stops matching the moment the underlying
-  sprite is replaced — a client cannot hold a stale frame past a regeneration.
-- **`X-Trickplay-Cache: HIT` or `MISS`**, telling the caller whether the bytes
-  were reused or generated. This is diagnostic, not contractual: a client must
-  not change its behaviour based on it, and the plugin makes no promise about
-  which requests hit.
+- **The ETag**, which combines the source version stamp and the Frame Index.
+- **The entry path**, which restates the same inputs as a directory hierarchy.
 
-## The Cache Tree
+A conditional request presenting a matching ETag is answered `304` with no body. The full
+header and status contract, including the diagnostic `X-Trickplay-Cache` disposition, is
+in [the response contract](response-contract.md).
 
-The **Cache Tree** is the plugin-owned hierarchy of entries beneath Jellyfin's
-temporary storage. It is a cache in the strict sense: everything in it is derived
-from data Jellyfin owns, and deleting any part of it loses nothing but work.
+## The Cache Tree layout
+
+The **Cache Tree** is the plugin-owned hierarchy of entries beneath Jellyfin's temporary
+storage; the ownership boundary is in [the participants layer](../participants/cache-tree.md).
 
 ```text
 <temporary storage>/
@@ -108,13 +92,10 @@ rather than served.
 
 ## Staying inside the tree
 
-Every path the cache reads or writes is re-checked before use: it must remain
-inside the Cache Tree, and no component of it may be a reparse point. The tree
-lives in temporary storage on a host the plugin does not control, and the entry
-path is built from values derived from server state. A symbolic link planted in
-the tree would otherwise redirect a write outside it, and a crafted identity would
-otherwise reach a path that was never an entry. Both are refused rather than
-followed.
+Every path the cache reads or writes is re-checked before use: it must remain inside the
+Cache Tree, and no component of it may be a reparse point. Both are refused rather than
+followed, on every access and not only when an entry is created. What that prevents is in
+[concurrency safety](../design/concurrency-safety.md).
 
 ## Anchors
 
