@@ -116,11 +116,7 @@ internal sealed class TrickplayPreview : ITrickplayPreview
 
     private PreviewOutcome.NotFound MapUnavailable(PreviewUnavailableReason reason)
     {
-        if (reason != PreviewUnavailableReason.Concealed)
-        {
-            PreviewDebugProtocol.LogUnavailable(logger, reason);
-        }
-
+        PreviewDebugProtocol.LogUnavailable(logger, reason);
         return new PreviewOutcome.NotFound();
     }
 

@@ -539,12 +539,14 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         RecordedLog frameSelected = Assert.Single(
             fixture.DebugLogs,
-            entry => entry.EventId == new EventId(1002, "TrickplayPreviewFrameSelected"));
+            entry => entry.EventId.Id == 1002);
+        Assert.Equal("TrickplayPreviewFrameSelected", frameSelected.EventId.Name);
         Assert.Equal(0, frameSelected.Properties["FrameIndex"]);
         Assert.Equal(0, frameSelected.Properties["SpriteIndex"]);
         RecordedLog cacheDisposition = Assert.Single(
             fixture.DebugLogs,
-            entry => entry.EventId == new EventId(1003, "TrickplayPreviewCacheDisposition"));
+            entry => entry.EventId.Id == 1003);
+        Assert.Equal("TrickplayPreviewCacheDisposition", cacheDisposition.EventId.Name);
         Assert.Equal(nameof(PreviewCacheDisposition.Miss), cacheDisposition.Properties["CacheDisposition"]!.ToString());
     }
 
@@ -1019,7 +1021,7 @@ public sealed class TrickplayPreviewHttpSpecs
     private static void AssertExpectedUnavailableDebugReason(RecordedLog[] debugLogs, NotFoundCondition condition)
     {
         RecordedLog[] unavailable = debugLogs
-            .Where(entry => entry.EventId == new EventId(1001, "TrickplayPreviewUnavailable"))
+            .Where(entry => entry.EventId.Id == 1001)
             .ToArray();
         string? expectedReason = ExpectedDebugReason(condition);
         if (expectedReason is null)
@@ -1030,6 +1032,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         RecordedLog log = Assert.Single(unavailable);
         Assert.Equal(LogLevel.Debug, log.Level);
+        Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
         Assert.Equal(expectedReason, log.Properties["Reason"]!.ToString());
     }
 

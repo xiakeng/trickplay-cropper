@@ -139,7 +139,8 @@ public sealed class TrickplayFrameProbeSpecs
         Assert.IsType<TrickplayFrameProbeOutcome.NotFound>(outcome);
         RecordingLogger<TrickplayFrameProbe>.RecordedLog log = Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Debug, log.Level);
-        Assert.Equal(new EventId(1001, "TrickplayPreviewUnavailable"), log.EventId);
+        Assert.Equal(1001, log.EventId.Id);
+        Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
         Assert.Equal(expected, Assert.IsType<PreviewUnavailableReason>(log.Properties["Reason"]));
     }
 

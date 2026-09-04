@@ -15,15 +15,17 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 internal static partial class PreviewDebugProtocol
 {
     /// <summary>
-    /// Records one expected resolution-unavailable outcome and its stable reason.
+    /// Records one expected resolution-unavailable outcome, staying silent for a concealed outcome.
     /// </summary>
     /// <param name="logger">The category logger of the module that resolved the outcome.</param>
     /// <param name="reason">The stable unavailable reason.</param>
-    [LoggerMessage(
-        EventId = 1001,
-        Level = LogLevel.Debug,
-        Message = "Trickplay Preview resolved unavailable with reason {Reason}.")]
-    public static partial void LogUnavailable(ILogger logger, PreviewUnavailableReason reason);
+    public static void LogUnavailable(ILogger logger, PreviewUnavailableReason reason)
+    {
+        if (reason != PreviewUnavailableReason.Concealed)
+        {
+            LogUnavailableReason(logger, reason);
+        }
+    }
 
     /// <summary>
     /// Records the Frame Index and sprite index selected for one resolved GET.
@@ -33,6 +35,7 @@ internal static partial class PreviewDebugProtocol
     /// <param name="spriteIndex">The Source Sprite index that carries the frame.</param>
     [LoggerMessage(
         EventId = 1002,
+        EventName = "TrickplayPreviewFrameSelected",
         Level = LogLevel.Debug,
         Message = "Trickplay Preview selected FrameIndex {FrameIndex} on SpriteIndex {SpriteIndex}.")]
     public static partial void LogFrameSelected(ILogger logger, int frameIndex, int spriteIndex);
@@ -44,7 +47,15 @@ internal static partial class PreviewDebugProtocol
     /// <param name="cacheDisposition">The Preview Cache disposition of the served response.</param>
     [LoggerMessage(
         EventId = 1003,
+        EventName = "TrickplayPreviewCacheDisposition",
         Level = LogLevel.Debug,
         Message = "Trickplay Preview served from cache with disposition {CacheDisposition}.")]
     public static partial void LogCacheDisposition(ILogger logger, PreviewCacheDisposition cacheDisposition);
+
+    [LoggerMessage(
+        EventId = 1001,
+        EventName = "TrickplayPreviewUnavailable",
+        Level = LogLevel.Debug,
+        Message = "Trickplay Preview resolved unavailable with reason {Reason}.")]
+    private static partial void LogUnavailableReason(ILogger logger, PreviewUnavailableReason reason);
 }

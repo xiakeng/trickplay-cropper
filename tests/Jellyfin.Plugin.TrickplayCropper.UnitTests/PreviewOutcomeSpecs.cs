@@ -173,7 +173,8 @@ public sealed class PreviewOutcomeSpecs
         Assert.IsType<PreviewOutcome.NotFound>(outcome);
         RecordingLogger<TrickplayPreview>.RecordedLog log = Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Debug, log.Level);
-        Assert.Equal(new EventId(1001, "TrickplayPreviewUnavailable"), log.EventId);
+        Assert.Equal(1001, log.EventId.Id);
+        Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
         Assert.Equal(expected, Assert.IsType<PreviewUnavailableReason>(log.Properties["Reason"]));
     }
 
@@ -193,7 +194,8 @@ public sealed class PreviewOutcomeSpecs
 
         Assert.IsType<PreviewOutcome.NotFound>(outcome);
         RecordingLogger<TrickplayPreview>.RecordedLog log = Assert.Single(logger.Entries);
-        Assert.Equal(new EventId(1001, "TrickplayPreviewUnavailable"), log.EventId);
+        Assert.Equal(1001, log.EventId.Id);
+        Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
         Assert.Equal(
             PreviewUnavailableReason.SourceSpriteUnavailable,
             Assert.IsType<PreviewUnavailableReason>(log.Properties["Reason"]));
@@ -257,14 +259,16 @@ public sealed class PreviewOutcomeSpecs
         Assert.IsType<PreviewOutcome.Ok>(outcome);
         RecordingLogger<TrickplayPreview>.RecordedLog frameSelected = Assert.Single(
             logger.Entries,
-            entry => entry.EventId == new EventId(1002, "TrickplayPreviewFrameSelected"));
+            entry => entry.EventId.Id == 1002);
         Assert.Equal(LogLevel.Debug, frameSelected.Level);
+        Assert.Equal("TrickplayPreviewFrameSelected", frameSelected.EventId.Name);
         Assert.Equal(0, frameSelected.Properties["FrameIndex"]);
         Assert.Equal(0, frameSelected.Properties["SpriteIndex"]);
         RecordingLogger<TrickplayPreview>.RecordedLog cacheDisposition = Assert.Single(
             logger.Entries,
-            entry => entry.EventId == new EventId(1003, "TrickplayPreviewCacheDisposition"));
+            entry => entry.EventId.Id == 1003);
         Assert.Equal(LogLevel.Debug, cacheDisposition.Level);
+        Assert.Equal("TrickplayPreviewCacheDisposition", cacheDisposition.EventId.Name);
         Assert.Equal(
             PreviewCacheDisposition.Hit,
             Assert.IsType<PreviewCacheDisposition>(cacheDisposition.Properties["CacheDisposition"]));
@@ -288,12 +292,8 @@ public sealed class PreviewOutcomeSpecs
             CancellationToken.None);
 
         Assert.IsType<PreviewOutcome.NotModified>(outcome);
-        Assert.Single(
-            logger.Entries,
-            entry => entry.EventId == new EventId(1002, "TrickplayPreviewFrameSelected"));
-        Assert.DoesNotContain(
-            logger.Entries,
-            entry => entry.EventId == new EventId(1003, "TrickplayPreviewCacheDisposition"));
+        Assert.Single(logger.Entries, entry => entry.EventId.Id == 1002);
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId.Id == 1003);
     }
 
     public static TheoryData<ConditionalRequestKind, Type, int> ExpectedConditionalOutcomes => new()

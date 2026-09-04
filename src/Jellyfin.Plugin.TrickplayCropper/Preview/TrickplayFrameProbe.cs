@@ -60,11 +60,7 @@ internal sealed class TrickplayFrameProbe : ITrickplayFrameProbe
 
     private TrickplayFrameProbeOutcome.NotFound MapUnavailable(PreviewUnavailableReason reason)
     {
-        if (reason != PreviewUnavailableReason.Concealed)
-        {
-            PreviewDebugProtocol.LogUnavailable(logger, reason);
-        }
-
+        PreviewDebugProtocol.LogUnavailable(logger, reason);
         return new TrickplayFrameProbeOutcome.NotFound();
     }
 }

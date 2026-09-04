@@ -150,22 +150,22 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             return new PreviewContextResolution.NotFound(PreviewUnavailableReason.NoConfiguredTarget);
         }
 
-        return await SelectMetadataAsync(
-                query,
-                sourceVideo,
-                configuredTargets,
-                normalizationSourceWidth,
-                selectedResolution.Value)
-            .ConfigureAwait(false);
+        var configuration = new PreviewConfigurationDiagnostics
+        {
+            ConfiguredTargets = configuredTargets,
+            ChosenTarget = configuredTargets?.Min(),
+            SelectedResolution = selectedResolution,
+            NormalizationSourceWidth = normalizationSourceWidth,
+        };
+        return await SelectMetadataAsync(query, sourceVideo, configuration).ConfigureAwait(false);
     }
 
     private async Task<PreviewContextResolution> SelectMetadataAsync(
         PreviewQuery query,
         Video sourceVideo,
-        int[]? configuredTargets,
-        int? normalizationSourceWidth,
-        int selectedResolution)
+        PreviewConfigurationDiagnostics configuration)
     {
+        int selectedResolution = configuration.SelectedResolution!.Value;
         Guid mediaSourceId = query.ResolvedMediaSourceId;
         Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
             .GetTrickplayResolutions(mediaSourceId)
@@ -199,14 +199,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         }
         catch (InvalidTrickplayMetadataException failure)
         {
-            failure.Configuration = new PreviewConfigurationDiagnostics
-            {
-                ConfiguredTargets = configuredTargets,
-                ChosenTarget = configuredTargets?.Min(),
-                SelectedResolution = selectedResolution,
-                NormalizationSourceWidth = normalizationSourceWidth,
-                GeneratedKeys = resolutions.Keys.Order().ToArray(),
-            };
+            failure.Configuration = configuration with { GeneratedKeys = resolutions.Keys.Order().ToArray() };
             throw;
         }
 
