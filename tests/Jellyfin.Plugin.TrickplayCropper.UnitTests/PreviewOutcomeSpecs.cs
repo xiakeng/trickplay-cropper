@@ -4,6 +4,7 @@ using Jellyfin.Plugin.TrickplayCropper.Imaging;
 using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Controller.Entities;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
 using Xunit;
@@ -150,6 +151,151 @@ public sealed class PreviewOutcomeSpecs
         { ContextFailureKind.NotFound, typeof(PreviewOutcome.NotFound) },
     };
 
+    [Theory]
+    [InlineData("NoConfiguredTarget")]
+    [InlineData("NoGeneratedMetadata")]
+    [InlineData("SelectedResolutionMissing")]
+    [InlineData("NoThumbnails")]
+    public async Task RecordsTheStableDebugReasonForAnExpectedContextUnavailableOutcome(string reason)
+    {
+        PreviewUnavailableReason expected = Enum.Parse<PreviewUnavailableReason>(reason);
+        var contextResolver = new StubResolver(new PreviewContextResolution.NotFound(expected));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
+        var logger = new RecordingLogger<TrickplayPreview>();
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, logger: logger);
+
+        PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            [],
+            CancellationToken.None);
+
+        Assert.IsType<PreviewOutcome.NotFound>(outcome);
+        RecordingLogger<TrickplayPreview>.RecordedLog log = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Debug, log.Level);
+        Assert.Equal(1001, log.EventId.Id);
+        Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
+        Assert.Equal(expected, Assert.IsType<PreviewUnavailableReason>(log.Properties["Reason"]));
+    }
+
+    [Fact]
+    public async Task RecordsSourceSpriteUnavailableWhenTheGetOnlySourceResolutionFails()
+    {
+        var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(CreateContext()));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
+        var logger = new RecordingLogger<TrickplayPreview>();
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, logger: logger);
+
+        PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            [],
+            CancellationToken.None);
+
+        Assert.IsType<PreviewOutcome.NotFound>(outcome);
+        RecordingLogger<TrickplayPreview>.RecordedLog log = Assert.Single(logger.Entries);
+        Assert.Equal(1001, log.EventId.Id);
+        Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
+        Assert.Equal(
+            PreviewUnavailableReason.SourceSpriteUnavailable,
+            Assert.IsType<PreviewUnavailableReason>(log.Properties["Reason"]));
+    }
+
+    [Fact]
+    public async Task RecordsNoPluginLogForAConcealedContextOutcome()
+    {
+        var contextResolver = new StubResolver(
+            new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
+        var logger = new RecordingLogger<TrickplayPreview>();
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, logger: logger);
+
+        PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            [],
+            CancellationToken.None);
+
+        Assert.IsType<PreviewOutcome.NotFound>(outcome);
+        Assert.Empty(logger.Entries);
+    }
+
+    [Theory]
+    [InlineData(ContextFailureKind.BadRequest)]
+    [InlineData(ContextFailureKind.Unauthorized)]
+    [InlineData(ContextFailureKind.Forbidden)]
+    public async Task RecordsNoPluginLogForOrdinaryRequestAuthenticationOrAuthorizationOutcomes(
+        ContextFailureKind failureKind)
+    {
+        var contextResolver = new StubResolver(CreateResolution(failureKind));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
+        var logger = new RecordingLogger<TrickplayPreview>();
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, logger: logger);
+
+        await ((ITrickplayPreview)preview).GetAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            [],
+            CancellationToken.None);
+
+        Assert.Empty(logger.Entries);
+    }
+
+    [Fact]
+    public async Task RecordsFrameSelectionAndCacheDispositionDebugEventsForAServedGet()
+    {
+        PreviewContext context = CreateContext();
+        var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(context));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.Found(CreateSource(context)));
+        var logger = new RecordingLogger<TrickplayPreview>();
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, new StubPreviewCache(), logger);
+
+        PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            [],
+            CancellationToken.None);
+
+        Assert.IsType<PreviewOutcome.Ok>(outcome);
+        RecordingLogger<TrickplayPreview>.RecordedLog frameSelected = Assert.Single(
+            logger.Entries,
+            entry => entry.EventId.Id == 1002);
+        Assert.Equal(LogLevel.Debug, frameSelected.Level);
+        Assert.Equal("TrickplayPreviewFrameSelected", frameSelected.EventId.Name);
+        Assert.Equal(0, frameSelected.Properties["FrameIndex"]);
+        Assert.Equal(0, frameSelected.Properties["SpriteIndex"]);
+        RecordingLogger<TrickplayPreview>.RecordedLog cacheDisposition = Assert.Single(
+            logger.Entries,
+            entry => entry.EventId.Id == 1003);
+        Assert.Equal(LogLevel.Debug, cacheDisposition.Level);
+        Assert.Equal("TrickplayPreviewCacheDisposition", cacheDisposition.EventId.Name);
+        Assert.Equal(
+            PreviewCacheDisposition.Hit,
+            Assert.IsType<PreviewCacheDisposition>(cacheDisposition.Properties["CacheDisposition"]));
+    }
+
+    [Fact]
+    public async Task RecordsFrameSelectionButNoCacheDispositionForAConditionalNotModifiedGet()
+    {
+        PreviewContext context = CreateContext();
+        ResolvedPreviewSource source = CreateSource(context);
+        var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(context));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.Found(source));
+        var logger = new RecordingLogger<TrickplayPreview>();
+        string entityTag = PreviewIdentity.Create(source).EntityTag;
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, logger: logger);
+
+        PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            [new EntityTagHeaderValue(entityTag)],
+            CancellationToken.None);
+
+        Assert.IsType<PreviewOutcome.NotModified>(outcome);
+        Assert.Single(logger.Entries, entry => entry.EventId.Id == 1002);
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId.Id == 1003);
+    }
+
     public static TheoryData<ConditionalRequestKind, Type, int> ExpectedConditionalOutcomes => new()
     {
         { ConditionalRequestKind.Exact, typeof(PreviewOutcome.NotModified), 0 },
@@ -179,22 +325,16 @@ public sealed class PreviewOutcomeSpecs
 
     private static TrickplayPreview CreatePreview(
         IPreviewContextResolver contextResolver,
-        IPreviewSourceResolver sourceResolver)
-    {
-        return CreatePreview(contextResolver, sourceResolver, new UnreachablePreviewCache());
-    }
-
-    private static TrickplayPreview CreatePreview(
-        IPreviewContextResolver contextResolver,
         IPreviewSourceResolver sourceResolver,
-        IPreviewCache previewCache)
+        IPreviewCache? previewCache = null,
+        ILogger<TrickplayPreview>? logger = null)
     {
         return new TrickplayPreview(
             contextResolver,
             sourceResolver,
-            previewCache,
+            previewCache ?? new UnreachablePreviewCache(),
             new UnreachablePreviewEncoder(),
-            NullLogger<TrickplayPreview>.Instance);
+            logger ?? NullLogger<TrickplayPreview>.Instance);
     }
 
     private static PreviewContext CreateContext()

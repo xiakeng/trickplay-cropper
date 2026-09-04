@@ -2,6 +2,8 @@ using System.Security.Claims;
 using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Controller.Entities;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using static Jellyfin.Plugin.TrickplayCropper.UnitTests.PreviewContextMother;
 
@@ -44,7 +46,7 @@ public sealed class TrickplayFrameProbeSpecs
         using var cancellation = new CancellationTokenSource();
         var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(
             new PreviewContext(itemId, new Video { Id = itemId }, metadata, metadata.SelectFrameIndex(positionTicks))));
-        TrickplayFrameProbe probe = new(contextResolver);
+        TrickplayFrameProbe probe = new(contextResolver, NullLogger<TrickplayFrameProbe>.Instance);
 
         TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
             query,
@@ -66,7 +68,7 @@ public sealed class TrickplayFrameProbeSpecs
         Type expectedOutcomeType)
     {
         var contextResolver = new StubResolver(CreateResolution(failureKind));
-        TrickplayFrameProbe probe = new(contextResolver);
+        TrickplayFrameProbe probe = new(contextResolver, NullLogger<TrickplayFrameProbe>.Instance);
 
         TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
             new PreviewQuery(itemId, null, 0),
@@ -84,7 +86,7 @@ public sealed class TrickplayFrameProbeSpecs
     public async Task ConvertsSharedContextFailureKindToInternalError(SharedContextFailureKind kind)
     {
         var contextResolver = new ThrowingContextResolver(CreateFailureException(kind));
-        TrickplayFrameProbe probe = new(contextResolver);
+        TrickplayFrameProbe probe = new(contextResolver, NullLogger<TrickplayFrameProbe>.Instance);
 
         TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
             new PreviewQuery(itemId, null, 0),
@@ -100,7 +102,7 @@ public sealed class TrickplayFrameProbeSpecs
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var contextResolver = new CancellingResolver();
-        TrickplayFrameProbe probe = new(contextResolver);
+        TrickplayFrameProbe probe = new(contextResolver, NullLogger<TrickplayFrameProbe>.Instance);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => ((ITrickplayFrameProbe)probe).ProbeAsync(
@@ -116,6 +118,67 @@ public sealed class TrickplayFrameProbeSpecs
         { ContextFailureKind.Forbidden, typeof(TrickplayFrameProbeOutcome.Forbidden) },
         { ContextFailureKind.NotFound, typeof(TrickplayFrameProbeOutcome.NotFound) },
     };
+
+    [Theory]
+    [InlineData("NoConfiguredTarget")]
+    [InlineData("NoGeneratedMetadata")]
+    [InlineData("SelectedResolutionMissing")]
+    [InlineData("NoThumbnails")]
+    public async Task RecordsTheStableDebugReasonForAnExpectedUnavailableOutcome(string reason)
+    {
+        PreviewUnavailableReason expected = Enum.Parse<PreviewUnavailableReason>(reason);
+        var contextResolver = new StubResolver(new PreviewContextResolution.NotFound(expected));
+        var logger = new RecordingLogger<TrickplayFrameProbe>();
+        TrickplayFrameProbe probe = new(contextResolver, logger);
+
+        TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            CancellationToken.None);
+
+        Assert.IsType<TrickplayFrameProbeOutcome.NotFound>(outcome);
+        RecordingLogger<TrickplayFrameProbe>.RecordedLog log = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Debug, log.Level);
+        Assert.Equal(1001, log.EventId.Id);
+        Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
+        Assert.Equal(expected, Assert.IsType<PreviewUnavailableReason>(log.Properties["Reason"]));
+    }
+
+    [Fact]
+    public async Task RecordsNoPluginLogForAConcealedUnavailableOutcome()
+    {
+        var contextResolver = new StubResolver(
+            new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed));
+        var logger = new RecordingLogger<TrickplayFrameProbe>();
+        TrickplayFrameProbe probe = new(contextResolver, logger);
+
+        TrickplayFrameProbeOutcome outcome = await ((ITrickplayFrameProbe)probe).ProbeAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            CancellationToken.None);
+
+        Assert.IsType<TrickplayFrameProbeOutcome.NotFound>(outcome);
+        Assert.Empty(logger.Entries);
+    }
+
+    [Theory]
+    [InlineData(ContextFailureKind.BadRequest)]
+    [InlineData(ContextFailureKind.Unauthorized)]
+    [InlineData(ContextFailureKind.Forbidden)]
+    public async Task RecordsNoPluginLogForOrdinaryRequestAuthenticationOrAuthorizationOutcomes(
+        ContextFailureKind failureKind)
+    {
+        var contextResolver = new StubResolver(CreateResolution(failureKind));
+        var logger = new RecordingLogger<TrickplayFrameProbe>();
+        TrickplayFrameProbe probe = new(contextResolver, logger);
+
+        await ((ITrickplayFrameProbe)probe).ProbeAsync(
+            new PreviewQuery(itemId, null, 0),
+            new ClaimsPrincipal(),
+            CancellationToken.None);
+
+        Assert.Empty(logger.Entries);
+    }
 
     private static Exception CreateFailureException(SharedContextFailureKind kind)
     {
