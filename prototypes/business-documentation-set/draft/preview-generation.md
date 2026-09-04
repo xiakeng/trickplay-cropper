@@ -1,0 +1,109 @@
+# Preview generation
+
+**Guarantees this chapter upholds**
+
+- Generating a preview costs roughly one frame, not one Source Sprite.
+- A Source Sprite that does not match its recorded geometry fails the request
+  rather than producing a wrong image.
+- The number of decodes running at once is bounded, whatever clients do.
+
+## What is being made
+
+A **Trickplay Preview** is one JPEG frame, cropped out of a Source Sprite that
+Jellyfin generated. The plugin never creates a sprite, never adds frames to one,
+and never repairs one. It reads a rectangle out of an existing file and encodes
+that rectangle as a small JPEG.
+
+The rectangle is already known from [Frame Selection](frame-selection.md): its
+horizontal offset, its vertical offset, and its size — exactly one frame wide and
+one frame high.
+
+## Why only part of the sprite is decoded
+
+A Source Sprite is much larger than one frame. It is a grid of frames, so it is
+many frame widths across and many frame heights tall, and it can hold hundreds of
+frames. Decoding all of it to extract one frame would make a preview cost more
+than the frame is worth, and would do so on every cache miss — which under a scrub
+storm is many times a second.
+
+So generation decodes **only the selected columns**. The decoder is told the
+horizontal band up front, and writes only those pixels per scanline. Then it skips
+scanlines down to the crop's vertical offset, and reads only as many rows as the
+crop is tall. Rows are skipped and read in batches, and cancellation is checked
+between batches, so a client that has already scrubbed away does not keep a decode
+running to completion.
+
+The vertical offset cannot be avoided the same way: JPEG is scanned top to bottom,
+so reaching row 40 means passing rows 0 to 39. Passing them without writing their
+pixels is what makes this cheap; the horizontal band is what makes it cheap enough.
+
+```mermaid
+flowchart TD
+    In["Resolved Source Sprite path<br/>plus crop rectangle"] --> Permit["Wait for a decode permit"]
+    Permit --> Open["Open the sprite for decoding"]
+    Open --> V1{"Is it a JPEG with<br/>positive dimensions?"}
+    V1 -->|"No"| Bad["Fail: invalid Source Sprite"]
+    V1 -->|"Yes"| V2{"Do the sprite dimensions equal<br/>tile width x frame width by<br/>tile height x frame height?"}
+    V2 -->|"No"| Bad
+    V2 -->|"Yes"| V3{"Is the crop rectangle<br/>inside the sprite?"}
+    V3 -->|"No"| Bad
+    V3 -->|"Yes"| Band["Decode only the selected columns"]
+    Band --> Skip["Skip scanlines down to the crop"]
+    Skip --> Read["Read the crop rows in batches,<br/>checking cancellation"]
+    Read --> Encode["Encode one JPEG at a fixed quality"]
+    Encode --> Out["Buffered preview content"]
+```
+
+## What is validated, and why
+
+Three things are checked before any pixel is written:
+
+- **The file is a JPEG with positive dimensions.** A sprite in another format, or
+  a truncated one, is not something the plugin may reinterpret.
+- **The sprite's dimensions equal tile width × frame width by tile height × frame
+  height.** This is the load-bearing check. The crop was computed from recorded
+  geometry; if the file on disk does not match that geometry, every offset derived
+  from it is wrong. Trusting the recorded geometry without checking it would
+  produce a confidently wrong frame — a piece of the neighbouring cell, or a
+  sliver across two frames.
+- **The crop lies inside the sprite.** A consequence of the check above, verified
+  independently so that the failure names the crop rather than the geometry.
+
+A failure here is an operational failure, not a "frame unavailable" answer. The
+sprite was expected to exist — resolution already established that — so a sprite
+that cannot be decoded means something changed or broke underneath the request.
+The distinction matters to a client: a `404` says *there is no preview here*,
+while a failure here says *this request could not be completed*.
+
+## The decode permit
+
+Native image decoding is memory- and CPU-heavy, and the plugin runs inside the
+Jellyfin server process, sharing it with playback, scanning, and everything else
+the server does. An unbounded number of concurrent decodes under a scrub storm
+would starve the host.
+
+Generation therefore waits for one of a small fixed number of **decode permits**
+before opening a sprite, and releases it on completion, failure, or cancellation.
+The bound is a business rule about being a good tenant of the server, not a
+performance tweak: it caps what Trickplay Cropper can cost the host no matter how
+many clients ask at once. Waiting for a permit is cancellable and has no timeout,
+so a client that gives up does not leave a permit consumed.
+
+## What comes out
+
+One JPEG at a fixed quality. The quality is part of the Preview Cache Entry
+identity — see [Preview Cache Entry](preview-cache.md) — because two encodings of
+the same frame at different qualities are different artifacts and must not share
+an entry.
+
+Generation returns the encoded bytes buffered in memory, not a file handle. The
+caller holds the whole response before any lock is released, which is what makes
+the coordination rules in [Cache coordination](cache-coordination.md) safe.
+
+## Anchors
+
+`TrickplayPreviewEncoder` owns the permit bound, the validation gates, the subset
+scanline decode, and the JPEG encode; `ResolvedPreviewSource` carries the sprite
+path and the crop; `PreviewStageException` and `PreviewFailureDetails` carry a
+failure without disclosing paths or identifiers. Source Sprites are trusted as
+Jellyfin generated them, within the geometry check above; see ADR 0002.
