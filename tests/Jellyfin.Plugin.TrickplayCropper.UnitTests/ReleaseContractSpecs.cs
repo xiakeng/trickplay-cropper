@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Xml.Linq;
+using TrickplayCropper.ReleasePlanner;
 using Xunit;
 
 namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
@@ -8,13 +9,11 @@ public sealed class ReleaseContractSpecs
 {
     private const string ProductionAssembly = "Jellyfin.Plugin.TrickplayCropper.dll";
 
-    private static readonly string repositoryRoot = FindRepositoryRoot();
-
     [Fact]
     public void BuildManifestUsesTheApprovedV1Contract()
     {
         JsonObject manifest = JsonNode.Parse(
-            File.ReadAllText(GetPath("src/Jellyfin.Plugin.TrickplayCropper/build.yaml")))!.AsObject();
+            RepositoryFiles.Read("src/Jellyfin.Plugin.TrickplayCropper/build.yaml"))!.AsObject();
         string[] artifacts = manifest["artifacts"]!
             .AsArray()
             .Select(artifact => artifact!.GetValue<string>())
@@ -22,16 +21,22 @@ public sealed class ReleaseContractSpecs
 
         Assert.Equal("Trickplay Cropper", manifest["name"]!.GetValue<string>());
         Assert.Equal("630fb758-9a29-4f2c-a54c-95793651bb8a", manifest["guid"]!.GetValue<string>());
-        Assert.Equal("1.0.0.0", manifest["version"]!.GetValue<string>());
         Assert.Equal("10.11.0.0", manifest["targetAbi"]!.GetValue<string>());
         Assert.Equal("net9.0", manifest["framework"]!.GetValue<string>());
         Assert.Equal([ProductionAssembly], artifacts);
+
+        // The release workflow advances this value, so pin the four-component floor rather than an exact version.
+        string versionText = manifest["version"]!.GetValue<string>();
+        ReleaseVersion version = ReleaseVersion.Parse(versionText);
+        Assert.True(
+            new Version(version.Major, version.Minor, version.Build, version.Revision) >= new Version(1, 0, 0, 0),
+            $"Build manifest version must be at or above the 1.0.0.0 floor, got '{versionText}'.");
     }
 
     [Fact]
     public void ProductionProjectUsesTheApprovedRuntimeContract()
     {
-        XDocument project = XDocument.Load(GetPath(
+        XDocument project = XDocument.Load(RepositoryFiles.GetPath(
             "src/Jellyfin.Plugin.TrickplayCropper/Jellyfin.Plugin.TrickplayCropper.csproj"));
 
         Assert.Equal("net9.0", GetProperty(project, "TargetFramework"));
@@ -47,7 +52,7 @@ public sealed class ReleaseContractSpecs
     [Fact]
     public void DependenciesUseTheApprovedPinnedVersions()
     {
-        XDocument packages = XDocument.Load(GetPath("Directory.Packages.props"));
+        XDocument packages = XDocument.Load(RepositoryFiles.GetPath("Directory.Packages.props"));
         Dictionary<string, string> versions = packages
             .Descendants("PackageVersion")
             .ToDictionary(
@@ -65,7 +70,7 @@ public sealed class ReleaseContractSpecs
     [Fact]
     public void OnlyTheComponentTestsCarryPrivateLinuxNativeAssets()
     {
-        string componentProjectPath = GetPath(
+        string componentProjectPath = RepositoryFiles.GetPath(
             "tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/"
             + "Jellyfin.Plugin.TrickplayCropper.ComponentTests.csproj");
         XDocument componentProject = XDocument.Load(componentProjectPath);
@@ -98,7 +103,7 @@ public sealed class ReleaseContractSpecs
             projectPaths,
             projectPath => Assert.True(
                 File.Exists(Path.Combine(Path.GetDirectoryName(projectPath)!, "packages.lock.json")),
-                $"Missing packages.lock.json beside {Path.GetRelativePath(repositoryRoot, projectPath)}."));
+                $"Missing packages.lock.json beside {Path.GetRelativePath(RepositoryFiles.Root, projectPath)}."));
     }
 
     private static void AssertRuntimeExcluded(XDocument project, string packageName)
@@ -111,27 +116,10 @@ public sealed class ReleaseContractSpecs
 
     private static string[] EnumerateProjectPaths()
     {
-        return Directory.EnumerateFiles(repositoryRoot, "*.csproj", SearchOption.AllDirectories)
+        return Directory.EnumerateFiles(RepositoryFiles.Root, "*.csproj", SearchOption.AllDirectories)
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal)
             .ToArray();
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TrickplayCropper.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName
-            ?? throw new DirectoryNotFoundException("Could not locate the Trickplay Cropper repository root.");
-    }
-
-    private static string GetPath(string relativePath)
-    {
-        return Path.Combine(repositoryRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static string? GetProperty(XDocument project, string name)
