@@ -15,6 +15,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 /// </summary>
 internal sealed class TrickplayPreview : ITrickplayPreview
 {
+    private readonly IPreviewContextResolver contextResolver;
     private readonly IPreviewSourceResolver sourceResolver;
     private readonly IPreviewCache previewCache;
     private readonly ITrickplayPreviewEncoder encoder;
@@ -24,11 +25,13 @@ internal sealed class TrickplayPreview : ITrickplayPreview
     /// Initializes a new instance of the <see cref="TrickplayPreview"/> class.
     /// </summary>
     public TrickplayPreview(
+        IPreviewContextResolver contextResolver,
         IPreviewSourceResolver sourceResolver,
         IPreviewCache previewCache,
         ITrickplayPreviewEncoder encoder,
         ILogger<TrickplayPreview> logger)
     {
+        this.contextResolver = contextResolver;
         this.sourceResolver = sourceResolver;
         this.previewCache = previewCache;
         this.encoder = encoder;
@@ -42,11 +45,6 @@ internal sealed class TrickplayPreview : ITrickplayPreview
         IReadOnlyCollection<EntityTagHeaderValue> conditionalEntityTags,
         CancellationToken cancellationToken)
     {
-        if (query.PositionTicks < 0)
-        {
-            return new PreviewOutcome.BadRequest();
-        }
-
         long requestStarted = Stopwatch.GetTimestamp();
         var failureContext = new RequestFailureContext(query);
         try
@@ -77,11 +75,19 @@ internal sealed class TrickplayPreview : ITrickplayPreview
         CancellationToken cancellationToken)
     {
         long lookupStarted = Stopwatch.GetTimestamp();
-        PreviewSourceResolution resolution = await sourceResolver
+        PreviewContextResolution contextResolution = await contextResolver
             .ResolveAsync(query, user, cancellationToken)
             .ConfigureAwait(false);
+        if (contextResolution is not PreviewContextResolution.Resolved resolved)
+        {
+            return MapContextFailure(contextResolution);
+        }
+
+        PreviewSourceResolution sourceResolution = await sourceResolver
+            .ResolveAsync(resolved.Context)
+            .ConfigureAwait(false);
         TimeSpan lookupDuration = Stopwatch.GetElapsedTime(lookupStarted);
-        return resolution switch
+        return sourceResolution switch
         {
             PreviewSourceResolution.Found found => await GetResolvedAsync(
                 found.Source,
@@ -89,10 +95,22 @@ internal sealed class TrickplayPreview : ITrickplayPreview
                 conditionalEntityTags,
                 failureContext,
                 cancellationToken).ConfigureAwait(false),
-            PreviewSourceResolution.Unauthorized => new PreviewOutcome.Unauthorized(),
-            PreviewSourceResolution.Forbidden => new PreviewOutcome.Forbidden(),
             PreviewSourceResolution.NotFound => new PreviewOutcome.NotFound(),
-            _ => throw new InvalidOperationException($"Unknown source resolution {resolution.GetType().Name}."),
+            _ => throw new InvalidOperationException(
+                $"Unknown source resolution {sourceResolution.GetType().Name}."),
+        };
+    }
+
+    private static PreviewOutcome MapContextFailure(PreviewContextResolution contextResolution)
+    {
+        return contextResolution switch
+        {
+            PreviewContextResolution.BadRequest => new PreviewOutcome.BadRequest(),
+            PreviewContextResolution.Unauthorized => new PreviewOutcome.Unauthorized(),
+            PreviewContextResolution.Forbidden => new PreviewOutcome.Forbidden(),
+            PreviewContextResolution.NotFound => new PreviewOutcome.NotFound(),
+            _ => throw new InvalidOperationException(
+                $"Unknown preview context resolution {contextResolution.GetType().Name}."),
         };
     }
 
@@ -216,11 +234,6 @@ internal sealed class TrickplayPreview : ITrickplayPreview
             {
                 case InvalidTrickplayMetadataException invalidMetadata:
                     Capture(invalidMetadata.Metadata);
-                    if (invalidMetadata.Selection is not null)
-                    {
-                        Capture(invalidMetadata.Selection);
-                    }
-
                     if (invalidMetadata.SelectionDiagnostics is not null)
                     {
                         Capture(invalidMetadata.SelectionDiagnostics);

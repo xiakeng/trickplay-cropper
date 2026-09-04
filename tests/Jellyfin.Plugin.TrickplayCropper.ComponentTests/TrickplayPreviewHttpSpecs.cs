@@ -84,6 +84,9 @@ public sealed class TrickplayPreviewHttpSpecs
             fixture.Services.GetRequiredService<ITrickplayPreview>(),
             fixture.Services.GetRequiredService<ITrickplayPreview>());
         Assert.Same(
+            fixture.Services.GetRequiredService<IPreviewContextResolver>(),
+            fixture.Services.GetRequiredService<IPreviewContextResolver>());
+        Assert.Same(
             fixture.Services.GetRequiredService<IPreviewSourceResolver>(),
             fixture.Services.GetRequiredService<IPreviewSourceResolver>());
         Assert.Same(
@@ -220,6 +223,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         await AssertAuthorizationErrorResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
     }
@@ -235,6 +239,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         await AssertAuthorizationErrorResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
     }
@@ -251,6 +256,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         await AssertAuthorizationErrorResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
     }
@@ -264,6 +270,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         await AssertAuthorizationErrorResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
     }
@@ -280,9 +287,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(NotFoundCondition.ExactMetadataMissing)]
     [InlineData(NotFoundCondition.ThumbnailsMissing)]
     [InlineData(NotFoundCondition.ThumbnailsNegative)]
-    [InlineData(NotFoundCondition.ManagerPathMissing)]
-    [InlineData(NotFoundCondition.SourceSpriteMissing)]
-    public async Task ConcealsUnavailableResource(NotFoundCondition condition)
+    public async Task ConcealsUnavailableResourceWithoutGetOnlyWork(NotFoundCondition condition)
     {
         PreviewScenario scenario = CreateNotFoundScenario(condition);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
@@ -290,6 +295,23 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
+    [Theory]
+    [InlineData(NotFoundCondition.ManagerPathMissing)]
+    [InlineData(NotFoundCondition.SourceSpriteMissing)]
+    public async Task ConcealsMissingSourceSpriteAfterASuccessfulSharedContext(NotFoundCondition condition)
+    {
+        PreviewScenario scenario = CreateNotFoundScenario(condition);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(1, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
     }
@@ -331,6 +353,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
     }
@@ -342,9 +365,9 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(InternalFailureCondition.IntervalZero, "IntervalMillisecondsPositive", 0)]
     [InlineData(InternalFailureCondition.TileWidthZero, "TileWidthPositive", 0)]
     [InlineData(InternalFailureCondition.TileHeightZero, "TileHeightPositive", 0)]
-    [InlineData(InternalFailureCondition.CropXOverflow, "CropXInt32", 4_294_967_294L)]
+    [InlineData(InternalFailureCondition.CropXOverflow, "CropXInt32", 2_240_000_000L)]
     [InlineData(InternalFailureCondition.CropYOverflow, "CropYInt32", 4_294_967_294L)]
-    [InlineData(InternalFailureCondition.CropRightOverflow, "CropRightInt32", 4_294_967_294L)]
+    [InlineData(InternalFailureCondition.CropRightOverflow, "CropRightInt32", 2_147_483_840L)]
     [InlineData(InternalFailureCondition.CropBottomOverflow, "CropBottomInt32", 4_294_967_294L)]
     public async Task ReportsInvalidMetadataAndCheckedArithmeticAsInternalErrors(
         InternalFailureCondition condition,
@@ -358,6 +381,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         RecordedLog log = Assert.Single(fixture.ErrorLogs);
         TrickplayMetadata expectedMetadata = CreateExpectedMetadata(condition);
@@ -389,6 +413,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(1, fixture.SourceSpritePathRequests);
         Assert.Equal(3, log.Properties["FrameIndex"]);
         Assert.Equal(0, log.Properties["SpriteIndex"]);
         Assert.Equal(1, log.Properties["Row"]);
@@ -415,6 +440,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(1, fixture.SourceSpritePathRequests);
         Assert.Equal(320, log.Properties["ActualWidth"]);
         Assert.Equal(360, log.Properties["ActualHeight"]);
         Assert.Equal("SUBSET", log.Properties["DecodePath"]);
@@ -439,6 +465,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         await AssertProblemDetailsResponseAsync(response);
         RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(1, fixture.SourceSpritePathRequests);
         Assert.Equal(new EventId(1000, "TrickplayPreviewRequestFailed"), log.EventId);
         Assert.Null(log.Exception);
         Assert.Equal(itemId, log.Properties["ItemId"]);
@@ -614,7 +641,7 @@ public sealed class TrickplayPreviewHttpSpecs
             InternalFailureCondition.CropXOverflow => new PreviewScenario
             {
                 Metadata = MetadataAvailability.CropXOverflow,
-                RequestPositionTicks = 2 * TimeSpan.TicksPerMillisecond,
+                RequestPositionTicks = 7_000_000 * TimeSpan.TicksPerMillisecond,
             },
             InternalFailureCondition.CropYOverflow => new PreviewScenario
             {
@@ -624,7 +651,7 @@ public sealed class TrickplayPreviewHttpSpecs
             InternalFailureCondition.CropRightOverflow => new PreviewScenario
             {
                 Metadata = MetadataAvailability.CropRightOverflow,
-                RequestPositionTicks = TimeSpan.TicksPerMillisecond,
+                RequestPositionTicks = 6_710_886 * TimeSpan.TicksPerMillisecond,
             },
             InternalFailureCondition.CropBottomOverflow => new PreviewScenario
             {
@@ -642,15 +669,6 @@ public sealed class TrickplayPreviewHttpSpecs
         switch (condition)
         {
             case InternalFailureCondition.ContradictoryFrameWidth:
-                Assert.Equal(0, log.Properties["FrameIndex"]);
-                Assert.Equal(0, log.Properties["SpriteIndex"]);
-                Assert.Equal(0, log.Properties["Row"]);
-                Assert.Equal(0, log.Properties["Column"]);
-                Assert.Equal(0L, log.Properties["CropX"]);
-                Assert.Equal(0L, log.Properties["CropY"]);
-                Assert.Equal(640, log.Properties["CropWidth"]);
-                Assert.Equal(180, log.Properties["CropHeight"]);
-                break;
             case InternalFailureCondition.FrameWidthZero:
             case InternalFailureCondition.FrameHeightZero:
             case InternalFailureCondition.IntervalZero:
@@ -666,13 +684,13 @@ public sealed class TrickplayPreviewHttpSpecs
                 Assert.Null(log.Properties["CropHeight"]);
                 break;
             case InternalFailureCondition.CropXOverflow:
-                Assert.Equal(2, log.Properties["FrameIndex"]);
+                Assert.Equal(7_000_000, log.Properties["FrameIndex"]);
                 Assert.Equal(0, log.Properties["SpriteIndex"]);
                 Assert.Equal(0, log.Properties["Row"]);
-                Assert.Equal(2, log.Properties["Column"]);
-                Assert.Equal(4_294_967_294L, log.Properties["CropX"]);
+                Assert.Equal(7_000_000, log.Properties["Column"]);
+                Assert.Equal(2_240_000_000L, log.Properties["CropX"]);
                 Assert.Equal(0L, log.Properties["CropY"]);
-                Assert.Equal(int.MaxValue, log.Properties["CropWidth"]);
+                Assert.Equal(320, log.Properties["CropWidth"]);
                 Assert.Equal(180, log.Properties["CropHeight"]);
                 break;
             case InternalFailureCondition.CropYOverflow:
@@ -686,13 +704,13 @@ public sealed class TrickplayPreviewHttpSpecs
                 Assert.Equal(int.MaxValue, log.Properties["CropHeight"]);
                 break;
             case InternalFailureCondition.CropRightOverflow:
-                Assert.Equal(1, log.Properties["FrameIndex"]);
+                Assert.Equal(6_710_886, log.Properties["FrameIndex"]);
                 Assert.Equal(0, log.Properties["SpriteIndex"]);
                 Assert.Equal(0, log.Properties["Row"]);
-                Assert.Equal(1, log.Properties["Column"]);
-                Assert.Equal((long)int.MaxValue, log.Properties["CropX"]);
+                Assert.Equal(6_710_886, log.Properties["Column"]);
+                Assert.Equal(2_147_483_520L, log.Properties["CropX"]);
                 Assert.Equal(0L, log.Properties["CropY"]);
-                Assert.Equal(int.MaxValue, log.Properties["CropWidth"]);
+                Assert.Equal(320, log.Properties["CropWidth"]);
                 Assert.Equal(180, log.Properties["CropHeight"]);
                 break;
             case InternalFailureCondition.CropBottomOverflow:
@@ -724,12 +742,12 @@ public sealed class TrickplayPreviewHttpSpecs
             InternalFailureCondition.TileWidthZero => new TrickplayMetadata(320, 180, 10_000, 0, 2, 4),
             InternalFailureCondition.TileHeightZero => new TrickplayMetadata(320, 180, 10_000, 2, 0, 4),
             InternalFailureCondition.CropXOverflow => new TrickplayMetadata(
-                int.MaxValue,
+                320,
                 180,
                 1,
-                3,
+                10_000_000,
                 1,
-                3),
+                10_000_000),
             InternalFailureCondition.CropYOverflow => new TrickplayMetadata(
                 320,
                 int.MaxValue,
@@ -738,12 +756,12 @@ public sealed class TrickplayPreviewHttpSpecs
                 3,
                 3),
             InternalFailureCondition.CropRightOverflow => new TrickplayMetadata(
-                int.MaxValue,
+                320,
                 180,
                 1,
-                2,
+                10_000_000,
                 1,
-                2),
+                10_000_000),
             InternalFailureCondition.CropBottomOverflow => new TrickplayMetadata(
                 320,
                 int.MaxValue,
@@ -816,6 +834,9 @@ public sealed class TrickplayPreviewHttpSpecs
         public IServiceProvider Services => host.Services;
 
         public string SourceSpritePath { get; }
+
+        public int SourceSpritePathRequests =>
+            Services.GetRequiredService<PreviewScenario>().SourceSpritePathRequests;
 
         public static Task<PreviewHostFixture> CreateAsync()
         {
@@ -1124,12 +1145,12 @@ public sealed class TrickplayPreviewHttpSpecs
                     }
 
                 case MetadataAvailability.CropXOverflow:
+                case MetadataAvailability.CropRightOverflow:
                     {
-                        metadata.Width = int.MaxValue;
-                        metadata.TileWidth = 3;
-                        metadata.TileHeight = 1;
-                        metadata.ThumbnailCount = 3;
                         metadata.Interval = 1;
+                        metadata.TileWidth = 10_000_000;
+                        metadata.TileHeight = 1;
+                        metadata.ThumbnailCount = 10_000_000;
                         break;
                     }
 
@@ -1139,16 +1160,6 @@ public sealed class TrickplayPreviewHttpSpecs
                         metadata.TileWidth = 1;
                         metadata.TileHeight = 3;
                         metadata.ThumbnailCount = 3;
-                        metadata.Interval = 1;
-                        break;
-                    }
-
-                case MetadataAvailability.CropRightOverflow:
-                    {
-                        metadata.Width = int.MaxValue;
-                        metadata.TileWidth = 2;
-                        metadata.TileHeight = 1;
-                        metadata.ThumbnailCount = 2;
                         metadata.Interval = 1;
                         break;
                     }
@@ -1219,6 +1230,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         private static Task<string> ResolveSourceSpritePath(object?[]? arguments, PreviewHostContext context)
         {
+            context.Scenario.RecordSourceSpritePathRequest();
             if (!Equals(arguments?[1], 320)
                 || !Equals(arguments?[2], 0)
                 || !Equals(arguments?[3], false))
@@ -1541,6 +1553,8 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private sealed class PreviewScenario
     {
+        private int sourceSpritePathRequests;
+
         public AuthenticationState Authentication { get; init; } = AuthenticationState.UserSession;
 
         public bool BlocksCacheAccessUntilCancellation { get; init; }
@@ -1582,9 +1596,16 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public SourceSpriteAvailability SourceSprite { get; init; } = SourceSpriteAvailability.Available;
 
+        public int SourceSpritePathRequests => Volatile.Read(ref sourceSpritePathRequests);
+
         public Guid UserId { get; init; } = userId;
 
         public bool UsesAlternateSource { get; init; }
+
+        public void RecordSourceSpritePathRequest()
+        {
+            Interlocked.Increment(ref sourceSpritePathRequests);
+        }
     }
 
     public enum AuthenticationState
