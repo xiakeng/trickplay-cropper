@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// <param name="SourceSpritePath">The manager-owned Source Sprite path.</param>
 /// <param name="SourceLength">The captured Source Sprite length.</param>
 /// <param name="SourceLastWriteUtcTicks">The captured Source Sprite UTC modification ticks.</param>
-/// <param name="Metadata">The exact 320px metadata.</param>
+/// <param name="Metadata">The exactly selected generated metadata for the Selected Trickplay Resolution.</param>
 /// <param name="Selection">The selected frame and crop.</param>
 internal sealed record ResolvedPreviewSource(
     Guid MediaSourceId,

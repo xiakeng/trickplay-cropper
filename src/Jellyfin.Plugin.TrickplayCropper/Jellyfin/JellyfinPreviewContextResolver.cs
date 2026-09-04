@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Trickplay;
@@ -16,26 +17,33 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
 {
     private const string JellyfinIsApiKeyClaim = "Jellyfin-IsApiKey";
     private const string JellyfinUserIdClaim = "Jellyfin-UserId";
-    private const int PreviewWidth = 320;
 
     private readonly IUserManager userManager;
     private readonly ILibraryManager libraryManager;
     private readonly IMediaSourceManager mediaSourceManager;
     private readonly ITrickplayManager trickplayManager;
+    private readonly IServerConfigurationManager serverConfigurationManager;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JellyfinPreviewContextResolver"/> class.
     /// </summary>
+    /// <param name="userManager">Resolves the current Jellyfin user.</param>
+    /// <param name="libraryManager">Resolves user-scoped logical and Source Videos.</param>
+    /// <param name="mediaSourceManager">Enumerates the authorized logical video's Media Sources.</param>
+    /// <param name="trickplayManager">Reads the generated Trickplay metadata for one Source Video.</param>
+    /// <param name="serverConfigurationManager">Reads the current Trickplay configuration snapshot.</param>
     public JellyfinPreviewContextResolver(
         IUserManager userManager,
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
-        ITrickplayManager trickplayManager)
+        ITrickplayManager trickplayManager,
+        IServerConfigurationManager serverConfigurationManager)
     {
         this.userManager = userManager;
         this.libraryManager = libraryManager;
         this.mediaSourceManager = mediaSourceManager;
         this.trickplayManager = trickplayManager;
+        this.serverConfigurationManager = serverConfigurationManager;
     }
 
     /// <inheritdoc />
@@ -106,8 +114,9 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             true,
             false,
             cancellationToken).ConfigureAwait(false);
-        bool isMember = mediaSources.Any(source => IsSelectedSource(source, mediaSourceId));
-        if (!isMember)
+        MediaSourceInfo? matchedSource = mediaSources.FirstOrDefault(
+            source => IsSelectedSource(source, mediaSourceId));
+        if (matchedSource is null)
         {
             return new PreviewContextResolution.NotFound();
         }
@@ -118,30 +127,36 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             return new PreviewContextResolution.NotFound();
         }
 
-        if (sourceVideo.GetPlayAccess(user) != PlayAccess.Full)
+        int[]? configuredTargets = serverConfigurationManager.Configuration?.TrickplayOptions?.WidthResolutions;
+        int? selectedResolution = TrickplayResolutionSelector.Select(
+            configuredTargets,
+            matchedSource.VideoStream?.Width);
+        if (selectedResolution is null)
         {
-            return new PreviewContextResolution.Forbidden();
+            return new PreviewContextResolution.NotFound();
         }
 
-        return await SelectMetadataAsync(query, sourceVideo, mediaSourceId).ConfigureAwait(false);
+        return await SelectMetadataAsync(query, sourceVideo, selectedResolution.Value)
+            .ConfigureAwait(false);
     }
 
     private async Task<PreviewContextResolution> SelectMetadataAsync(
         PreviewQuery query,
         Video sourceVideo,
-        Guid mediaSourceId)
+        int selectedResolution)
     {
+        Guid mediaSourceId = query.ResolvedMediaSourceId;
         Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
             .GetTrickplayResolutions(mediaSourceId)
             .ConfigureAwait(false);
-        if (!resolutions.TryGetValue(PreviewWidth, out TrickplayInfo? info) || info.ThumbnailCount <= 0)
+        if (!resolutions.TryGetValue(selectedResolution, out TrickplayInfo? info) || info.ThumbnailCount <= 0)
         {
             return new PreviewContextResolution.NotFound();
         }
 
         TrickplayMetadata metadata = CreateMetadata(info);
         metadata.Validate();
-        if (metadata.FrameWidth != PreviewWidth)
+        if (metadata.FrameWidth != selectedResolution)
         {
             throw new InvalidTrickplayMetadataException(
                 metadata,
