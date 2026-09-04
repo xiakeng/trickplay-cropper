@@ -27,16 +27,15 @@ public static class RepositoryManifestBuilder
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceUrl);
 
         JsonObject build = ParseBuildManifest(buildManifest);
-        string version = RequireString(build, "version");
-        string guid = RequireString(build, "guid");
+        string guid = RequireString(build, "guid", "build manifest");
         string checksum = ComputeMd5(zipPath);
-        string timestamp = ReadEmbeddedTimestamp(zipPath);
+        (string version, string timestamp) = ReadEmbeddedMetadata(zipPath);
 
         JsonObject versionEntry = new()
         {
             ["version"] = version,
-            ["changelog"] = RequireString(build, "changelog"),
-            ["targetAbi"] = RequireString(build, "targetAbi"),
+            ["changelog"] = RequireString(build, "changelog", "build manifest"),
+            ["targetAbi"] = RequireString(build, "targetAbi", "build manifest"),
             ["sourceUrl"] = sourceUrl,
             ["checksum"] = checksum,
             ["timestamp"] = timestamp,
@@ -45,11 +44,11 @@ public static class RepositoryManifestBuilder
         JsonObject pluginEntry = new()
         {
             ["guid"] = guid,
-            ["name"] = RequireString(build, "name"),
-            ["description"] = RequireString(build, "description"),
-            ["overview"] = RequireString(build, "overview"),
-            ["owner"] = RequireString(build, "owner"),
-            ["category"] = RequireString(build, "category"),
+            ["name"] = RequireString(build, "name", "build manifest"),
+            ["description"] = RequireString(build, "description", "build manifest"),
+            ["overview"] = RequireString(build, "overview", "build manifest"),
+            ["owner"] = RequireString(build, "owner", "build manifest"),
+            ["category"] = RequireString(build, "category", "build manifest"),
             ["versions"] = new JsonArray(versionEntry),
         };
 
@@ -175,7 +174,7 @@ public static class RepositoryManifestBuilder
         }
     }
 
-    private static string ReadEmbeddedTimestamp(string zipPath)
+    private static (string Version, string Timestamp) ReadEmbeddedMetadata(string zipPath)
     {
         try
         {
@@ -189,13 +188,15 @@ public static class RepositoryManifestBuilder
                 ?? throw new ManifestBuildingException(
                     $"{MetadataFileName} must contain a JSON object.");
 
-            return RequireString(meta, "timestamp");
+            return (
+                RequireString(meta, "version", MetadataFileName),
+                RequireString(meta, "timestamp", MetadataFileName));
         }
         catch (Exception error) when (
             error is JsonException or InvalidOperationException or InvalidDataException)
         {
             throw new ManifestBuildingException(
-                $"Could not read the embedded timestamp from {MetadataFileName}: {error.Message}",
+                $"Could not read the embedded metadata from {MetadataFileName}: {error.Message}",
                 error);
         }
     }
@@ -215,13 +216,13 @@ public static class RepositoryManifestBuilder
         }
     }
 
-    private static string RequireString(JsonObject source, string key)
+    private static string RequireString(JsonObject source, string key, string sourceDescription)
     {
         string? value = source[key]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new ManifestBuildingException(
-                $"Build manifest is missing a non-empty string '{key}' field.");
+                $"The {sourceDescription} is missing a non-empty string '{key}' field.");
         }
 
         return value;

@@ -173,25 +173,13 @@ public sealed class ManifestBuilderSpecs
     [Fact]
     public void RejectsAZipWithoutEmbeddedMetadata()
     {
-        string directory = Path.Combine(Path.GetTempPath(), $"manifest-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        string zipPath = Path.Combine(directory, "empty.zip");
-        using (ZipFile.Open(zipPath, ZipArchiveMode.Create))
-        {
-        }
+        using ZipFixture zip = ZipFixture.CreateWithoutMetadata();
 
-        try
-        {
-            var error = Assert.Throws<ManifestBuildingException>(
-                () => RepositoryManifestBuilder.Build(
-                    SyntheticBuildManifest, zipPath, existingManifest: null, SourceUrl));
+        var error = Assert.Throws<ManifestBuildingException>(
+            () => RepositoryManifestBuilder.Build(
+                SyntheticBuildManifest, zip.ZipPath, existingManifest: null, SourceUrl));
 
-            Assert.Contains("meta.json", error.Message, StringComparison.Ordinal);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        Assert.Contains("meta.json", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -207,13 +195,15 @@ public sealed class ManifestBuilderSpecs
     }
 
     [Fact]
-    public void RejectsABuildManifestWithoutAVersion()
+    public void RejectsMetadataWithoutAVersion()
     {
-        using ZipFixture zip = ZipFixture.Create("1.0.1.0", "2026-09-02T07:00:00Z");
-        const string Manifest = """{ "guid": "630fb758-9a29-4f2c-a54c-95793651bb8a", "changelog": "x" }""";
+        using ZipFixture zip = ZipFixture.CreateWithoutVersion();
 
-        Assert.Throws<ManifestBuildingException>(
-            () => RepositoryManifestBuilder.Build(Manifest, zip.ZipPath, existingManifest: null, SourceUrl));
+        var error = Assert.Throws<ManifestBuildingException>(
+            () => RepositoryManifestBuilder.Build(
+                SyntheticBuildManifest, zip.ZipPath, existingManifest: null, SourceUrl));
+
+        Assert.Contains("version", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -305,6 +295,46 @@ public sealed class ManifestBuilderSpecs
             {
                 meta["timestamp"] = timestamp;
             }
+
+            using (ZipArchive zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+            {
+                ZipArchiveEntry entry = zip.CreateEntry("meta.json");
+                using Stream stream = entry.Open();
+                using StreamWriter writer = new(stream);
+                writer.Write(meta.ToJsonString());
+            }
+
+            return new ZipFixture(directory, zipPath);
+        }
+
+        public static ZipFixture CreateWithoutMetadata()
+        {
+            string directory = Path.Combine(
+                Path.GetTempPath(), $"manifest-zip-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            string zipPath = Path.Combine(directory, "plugin.zip");
+
+            using (ZipFile.Open(zipPath, ZipArchiveMode.Create))
+            {
+            }
+
+            return new ZipFixture(directory, zipPath);
+        }
+
+        public static ZipFixture CreateWithoutVersion()
+        {
+            string directory = Path.Combine(
+                Path.GetTempPath(), $"manifest-zip-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            string zipPath = Path.Combine(directory, "plugin.zip");
+
+            JsonObject meta = new()
+            {
+                ["name"] = "Trickplay Cropper",
+                ["guid"] = PluginGuid,
+                ["targetAbi"] = "10.11.0.0",
+                ["timestamp"] = "2026-09-02T07:00:00Z",
+            };
 
             using (ZipArchive zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
             {

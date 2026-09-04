@@ -1,9 +1,8 @@
-using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
 
-public sealed partial class ManifestWorkflowContractSpecs
+public sealed class ManifestWorkflowContractSpecs
 {
     private const string PublicationWorkflowRelativePath = ".github/workflows/publish-release.yml";
     private const string PreparationWorkflowRelativePath = ".github/workflows/auto-release.yml";
@@ -16,7 +15,7 @@ public sealed partial class ManifestWorkflowContractSpecs
     private static readonly string publication = RepositoryFiles.Read(PublicationWorkflowRelativePath);
     private static readonly string preparation = RepositoryFiles.Read(PreparationWorkflowRelativePath);
     private static readonly string manifestJob =
-        PublicationWorkflowContractSpecs.ExtractJobSection(publication, ManifestJobName);
+        WorkflowFiles.ExtractJobSection(publication, ManifestJobName);
 
     [Fact]
     public void ManifestJobDependsOnThePublishJob()
@@ -27,11 +26,11 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void ManifestJobGatesOnTheSameMergedReleasePullRequest()
     {
-        string condition = ReadJobCondition(manifestJob);
+        string condition = WorkflowFiles.ReadJobCondition(manifestJob);
 
         Assert.Contains("github.event.pull_request.merged == true", condition, StringComparison.Ordinal);
         Assert.Contains(
-            $"github.event.pull_request.title == '{ReadEnvValue(preparation, "RELEASE_TITLE")}'",
+            $"github.event.pull_request.title == '{WorkflowFiles.ReadEnvValue(preparation, "RELEASE_TITLE")}'",
             condition,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -43,7 +42,7 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void ManifestJobGrantsContentAndPullRequestWriteScopes()
     {
-        string[] scopes = ReadJobPermissionScopes(manifestJob);
+        string[] scopes = WorkflowFiles.ReadJobPermissionScopes(manifestJob);
 
         Assert.Equal(["contents: write", "pull-requests: write"], scopes);
     }
@@ -51,7 +50,7 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void PrerequisitesGuardFailsClosedBeforeAnyMutation()
     {
-        KeyValuePair<string, string>[] steps = ReadSteps(manifestJob);
+        KeyValuePair<string, string>[] steps = WorkflowFiles.ReadSteps(manifestJob);
         Assert.Equal(PrerequisitesStepName, steps[0].Key);
 
         string guard = steps[0].Value;
@@ -65,7 +64,8 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void PrerequisitesGuardUsesTheRulesApiRuleTypeNames()
     {
-        string guard = ReadBody(ReadSteps(manifestJob), PrerequisitesStepName);
+        string guard = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), PrerequisitesStepName);
 
         Assert.Contains(".type == \"pull_request\"", guard, StringComparison.Ordinal);
         Assert.Contains(".type == \"required_status_checks\"", guard, StringComparison.Ordinal);
@@ -75,7 +75,8 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void ThePatAuthorsTheManifestPullRequest()
     {
-        string submit = ReadBody(ReadSteps(manifestJob), SubmitStepName);
+        string submit = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), SubmitStepName);
 
         Assert.Contains("GH_TOKEN: ${{ secrets.RELEASE_BOT_PAT }}", submit, StringComparison.Ordinal);
         Assert.Contains("gh pr create", submit, StringComparison.Ordinal);
@@ -85,7 +86,8 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void TheGithubTokenApprovesAndMergesWithoutThePat()
     {
-        string approve = ReadBody(ReadSteps(manifestJob), ApproveStepName);
+        string approve = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), ApproveStepName);
 
         Assert.DoesNotContain("RELEASE_BOT_PAT", approve, StringComparison.Ordinal);
         Assert.Contains("gh pr review", approve, StringComparison.Ordinal);
@@ -96,7 +98,8 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void TheMergeUsesNoRulesetBypass()
     {
-        string approve = ReadBody(ReadSteps(manifestJob), ApproveStepName);
+        string approve = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), ApproveStepName);
 
         Assert.DoesNotContain("--admin", approve, StringComparison.Ordinal);
         Assert.DoesNotContain("--bypass", approve, StringComparison.Ordinal);
@@ -106,8 +109,10 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void ThePatIsNeverUsedToMerge()
     {
-        string approve = ReadBody(ReadSteps(manifestJob), ApproveStepName);
-        string wait = ReadBody(ReadSteps(manifestJob), WaitStepName);
+        string approve = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), ApproveStepName);
+        string wait = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), WaitStepName);
 
         Assert.DoesNotContain("RELEASE_BOT_PAT", approve, StringComparison.Ordinal);
         Assert.DoesNotMatch(@"GH_TOKEN:.*RELEASE_BOT_PAT", approve);
@@ -117,7 +122,7 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void RequiredChecksAreWatchedBeforeTheMerge()
     {
-        KeyValuePair<string, string>[] steps = ReadSteps(manifestJob);
+        KeyValuePair<string, string>[] steps = WorkflowFiles.ReadSteps(manifestJob);
         int waitIndex = Array.FindIndex(steps, step => step.Key == WaitStepName);
         int approveIndex = Array.FindIndex(steps, step => step.Key == ApproveStepName);
 
@@ -138,8 +143,8 @@ public sealed partial class ManifestWorkflowContractSpecs
     [Fact]
     public void TheManifestBranchIsDistinctFromTheReleaseBranch()
     {
-        string manifestBranch = ReadEnvValue(manifestJob, "MANIFEST_BRANCH");
-        string releaseBranch = ReadEnvValue(preparation, "RELEASE_BRANCH");
+        string manifestBranch = WorkflowFiles.ReadEnvValue(manifestJob, "MANIFEST_BRANCH");
+        string releaseBranch = WorkflowFiles.ReadEnvValue(preparation, "RELEASE_BRANCH");
 
         Assert.NotEqual(releaseBranch, manifestBranch);
     }
@@ -152,9 +157,19 @@ public sealed partial class ManifestWorkflowContractSpecs
     }
 
     [Fact]
+    public void TheExistingManifestIsSeededBeforeTheBuilderRuns()
+    {
+        string build = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), "Build the repository manifest entry");
+
+        Assert.Contains("cp \"${MANIFEST_FILE}\" \"${RUNNER_TEMP}/${MANIFEST_FILE}\"", build, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheBotMergedManifestChangeCannotRecursivelyOpenAReleasePullRequest()
     {
-        string approve = ReadBody(ReadSteps(manifestJob), ApproveStepName);
+        string approve = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), ApproveStepName);
 
         Assert.Contains("gh pr merge", approve, StringComparison.Ordinal);
         Assert.DoesNotContain("RELEASE_BOT_PAT", approve, StringComparison.Ordinal);
@@ -168,100 +183,4 @@ public sealed partial class ManifestWorkflowContractSpecs
     {
         Assert.DoesNotMatch(@"(?i)bypass.?actor|bypass_actors", publication);
     }
-
-    private static string[] ReadJobPermissionScopes(string jobSection)
-    {
-        string[] lines = jobSection.Replace("\r\n", "\n").Split('\n');
-        int permStart = Array.FindIndex(
-            lines, line => line.TrimEnd().EndsWith("permissions:", StringComparison.Ordinal));
-        Assert.True(permStart >= 0, "The manifest job must declare a permissions block.");
-
-        int permIndent = lines[permStart].Length - lines[permStart].TrimStart().Length;
-        List<string> scopes = [];
-
-        for (int index = permStart + 1; index < lines.Length; index++)
-        {
-            string line = lines[index];
-            if (line.Trim().Length == 0)
-            {
-                continue;
-            }
-
-            int indent = line.Length - line.TrimStart().Length;
-            if (indent <= permIndent)
-            {
-                break;
-            }
-
-            string entry = line.Trim();
-            int colon = entry.IndexOf(':');
-            Assert.True(colon > 0, $"Unexpected permissions entry: '{line}'.");
-            scopes.Add($"{entry[..colon].Trim()}: {entry[(colon + 1)..].Trim()}");
-        }
-
-        return scopes.Order(StringComparer.Ordinal).ToArray();
-    }
-
-    private static string ReadBody(KeyValuePair<string, string>[] steps, string name)
-    {
-        return steps.Single(step => step.Key == name).Value;
-    }
-
-    private static string ReadEnvValue(string workflow, string name)
-    {
-        string prefix = $"{name}:";
-        string line = workflow
-            .Split('\n')
-            .Select(candidate => candidate.Trim())
-            .Single(candidate => candidate.StartsWith(prefix, StringComparison.Ordinal));
-
-        return line[prefix.Length..].Trim();
-    }
-
-    private static string ReadJobCondition(string workflow)
-    {
-        Match match = JobConditionRegex().Match(workflow);
-        Assert.True(match.Success, "The manifest job must gate itself with a job-level if condition.");
-
-        return match.Groups["condition"].Value;
-    }
-
-    private static KeyValuePair<string, string>[] ReadSteps(string workflow)
-    {
-        string[] lines = workflow.Replace("\r\n", "\n").Split('\n');
-        List<KeyValuePair<string, string>> steps = [];
-
-        for (int index = 0; index < lines.Length; index++)
-        {
-            Match name = StepNameRegex().Match(lines[index]);
-            if (!name.Success)
-            {
-                continue;
-            }
-
-            int indent = name.Groups[1].Value.Length;
-            System.Text.StringBuilder body = new();
-            for (int line = index + 1; line < lines.Length; line++)
-            {
-                string text = lines[line];
-                int textIndent = text.Length - text.TrimStart().Length;
-                if (text.Trim().Length > 0 && textIndent <= indent)
-                {
-                    break;
-                }
-
-                body.Append(text.Length > indent + 2 ? text[(indent + 2)..] : string.Empty).Append('\n');
-            }
-
-            steps.Add(new(name.Groups[2].Value, body.ToString().TrimEnd('\n')));
-        }
-
-        return steps.ToArray();
-    }
-
-    [GeneratedRegex(@"^(\s*)-\s*name:\s*(.+?)\s*$")]
-    private static partial Regex StepNameRegex();
-
-    [GeneratedRegex(@"(?m)^(?<indent>[ \t]+)if: >-$\n(?<condition>(?:\k<indent>[ \t].*\n)+)")]
-    private static partial Regex JobConditionRegex();
 }
