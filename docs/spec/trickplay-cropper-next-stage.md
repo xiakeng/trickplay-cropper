@@ -312,7 +312,9 @@ Add a stable structured Debug protocol identified by EventId and EventName for:
 These events are an explicit product-side seam for the manual live suite. They
 must be Debug-only, redaction-safe, deterministic in identity and fields, and
 behavior-neutral. They must not add production control flow or make contention
-timing a correctness condition.
+timing a correctness condition. When the host operates at Information level,
+it pays no field-construction or other logging cost for the smoke-suite
+protocol.
 
 ADR 0003 records why HTTP and filesystem evidence alone are insufficient for
 the Scrub Storm's coordination questions, and why stable structured events are
@@ -399,8 +401,11 @@ Mermaid diagrams use these standing constraints:
 
 The repository README is updated after implementation with the project
 introduction, features, installation, update and exact-version rollback,
-build/test, and manual Integration Harness instructions. It does not link the
-legacy `docs/spec/` area and does not create a separate development-docs tree.
+build/test, and manual Integration Harness instructions. The harness guidance
+discloses credentials and credential risk, privileges, mutations, both
+Privileged Phases, the Restart Budget, the Retained End State, and every live
+coverage gap. It does not link the legacy `docs/spec/` area and does not create
+a separate development-docs tree.
 
 ## 10. Automated Release and manifest contract
 
@@ -466,16 +471,12 @@ and do not use the PAT for the merge.
 Rely on the non-recursive behavior of `GITHUB_TOKEN` so that the bot-merged
 manifest change does not open another Release Pull Request.
 
-The two automation-owned branches are the narrow workflow exceptions approved
-in #56. The fixed Release Pull Request branch and PAT-authored Manifest Pull
-Request do not use a separately created issue or an `issue-<number>` branch.
-Their configured gates and actors replace the agent-run exact-head review loop:
-the Release Pull Request remains open until a human explicitly approves and
-merges it, while the Manifest Pull Request may be approved and merged by the
-distinct `GITHUB_TOKEN` actor only after all required checks, reviews, and
-`main` protections pass. These exceptions do not apply to ordinary human- or
-agent-authored changes and do not authorize ruleset bypass or automatic merge
-of any other pull request.
+The contribution workflow in `AGENTS.md` continues to govern implementation of
+this contract and every ordinary human- or agent-authored change. The Release
+and Manifest Pull Request actors and merge gates above describe the runtime
+automation approved in #56; they do not authorize an agent to merge this
+implementation pull request, bypass a ruleset, or alter the contribution
+workflow for unrelated changes.
 
 ## 11. Manual local Integration Harness
 
@@ -668,6 +669,11 @@ source geometry, cancellation, four-permit gating, encoding, and failure
 cleanup. Add stable Debug protocol checks at the module boundary without
 asserting free-form messages.
 
+Keep Cache Tree lease fairness, Preview Cache Entry lock ordering,
+decode-permit waiting and cancellation, cleanup interaction, and deterministic
+same-entry overlap as explicit component-test obligations. The live harness may
+observe them but does not replace deterministic automated coverage.
+
 ### 12.3 Release, documentation, CI, and live verification
 
 Extend release-contract and Package Validator tests for four-component version
@@ -706,6 +712,16 @@ that `GITHUB_TOKEN` can approve and merge the PAT-authored pull request after al
 protections pass.
 
 ## 13. Out of scope and explicit non-promises
+
+The seven deliberate product non-promises are:
+
+- no nearest-resolution substitute;
+- no promise that successful Trickplay Frame Probe means GET will succeed;
+- no plugin-prescribed client cache lifetime;
+- no repair of Jellyfin-owned Trickplay data;
+- no persistence promise for derived Cache Tree content;
+- no detection of a Source Sprite replaced during a request; and
+- no content negotiation for type, dimensions, or quality.
 
 The next stage does not include:
 
