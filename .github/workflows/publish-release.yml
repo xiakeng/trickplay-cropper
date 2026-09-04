@@ -140,3 +140,155 @@ jobs:
               --notes-file "${RUNNER_TEMP}/release-notes.md" \
               --target "${MERGE_COMMIT_SHA}"
           fi
+
+  manifest:
+    name: Submit the repository manifest update
+    needs: publish
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event.pull_request.merged == true
+      && github.event.pull_request.title == 'auto-release new version'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      MANIFEST_FILE: manifest.json
+      MANIFEST_BRANCH: auto-manifest
+      MANIFEST_TITLE: auto-manifest update
+    steps:
+      - name: Verify manifest prerequisites
+        env:
+          RELEASE_BOT_PAT: ${{ secrets.RELEASE_BOT_PAT }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+
+          if [[ -z "${RELEASE_BOT_PAT:-}" ]]; then
+            echo "::error::RELEASE_BOT_PAT secret is unavailable; the manifest pipeline cannot complete." >&2
+            exit 1
+          fi
+
+          bot_login="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api user --jq .login 2>/dev/null || echo 'the release bot')"
+
+          if ! bot_push="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api "repos/${repo}" --jq .permissions.push 2>/dev/null)" \
+            || [[ "${bot_push}" != "true" ]]; then
+            echo "::error::RELEASE_BOT_PAT (${bot_login}) does not authenticate with push access to ${repo}; it cannot author the manifest pull request." >&2
+            exit 1
+          fi
+
+          if ! can_approve="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api "repos/${repo}/actions/permissions/workflow" --jq .can_approve_pull_request_reviews 2>/dev/null)" \
+            || [[ "${can_approve}" != "true" ]]; then
+            echo "::error::Cannot confirm GitHub Actions may create and approve pull requests. RELEASE_BOT_PAT needs Administration read access, and that repository workflow permission must be enabled." >&2
+            exit 1
+          fi
+
+          if ! rules="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api "repos/${repo}/rules/branches/main" 2>/dev/null)"; then
+            echo "::error::Cannot read the branch rules that protect main. RELEASE_BOT_PAT needs Administration read access." >&2
+            exit 1
+          fi
+
+          if ! jq -e 'any(.[]; .type == "pull_request")' <<<"${rules}" >/dev/null \
+            || ! jq -e 'any(.[]; .type == "required_status_checks")' <<<"${rules}" >/dev/null; then
+            echo "::error::main protection is incompatible: required pull request review and required status checks must both be enforced." >&2
+            exit 1
+          fi
+
+          echo "Manifest prerequisites satisfied for bot ${bot_login}."
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "9.0.317"
+
+      - name: Restore locked dependencies
+        run: dotnet restore TrickplayCropper.sln --locked-mode
+
+      - name: Build the manifest builder
+        run: >-
+          dotnet build tools/TrickplayCropper.ManifestBuilder/TrickplayCropper.ManifestBuilder.csproj
+          --configuration Release
+          --no-restore
+
+      - name: Download the published release asset
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.version' "${BUILD_MANIFEST}")"
+          gh release download "v${version}" --pattern "*.zip" --dir "${RUNNER_TEMP}/release-asset"
+
+      - name: Build the repository manifest entry
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.version' "${BUILD_MANIFEST}")"
+          zip_path="$(find "${RUNNER_TEMP}/release-asset" -name '*.zip' -print -quit)"
+          asset_name="$(basename "${zip_path}")"
+          source_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}/${asset_name}"
+
+          dotnet run \
+            --project tools/TrickplayCropper.ManifestBuilder/TrickplayCropper.ManifestBuilder.csproj \
+            --configuration Release \
+            --no-build \
+            --no-restore \
+            -- \
+            "${BUILD_MANIFEST}" "${zip_path}" "${RUNNER_TEMP}/${MANIFEST_FILE}" "${source_url}"
+
+      - name: Submit the manifest pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_BOT_PAT }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.version' "${BUILD_MANIFEST}")"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B "${MANIFEST_BRANCH}" origin/main
+          cp "${RUNNER_TEMP}/${MANIFEST_FILE}" "${MANIFEST_FILE}"
+
+          git add "${MANIFEST_FILE}"
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            echo "The repository manifest already contains this release; nothing to update."
+            exit 0
+          fi
+
+          git commit -m "Publish repository manifest for v${version}"
+          git push --force origin "${MANIFEST_BRANCH}"
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+          existing_pr="$(gh pr list --base main --head "${MANIFEST_BRANCH}" --state open \
+            --json number --jq '.[0].number // empty')"
+
+          if [[ -n "${existing_pr}" ]]; then
+            gh pr edit "${existing_pr}" --title "${MANIFEST_TITLE}"
+            echo "pr_number=${existing_pr}" >> "${GITHUB_OUTPUT}"
+            echo "Updated manifest pull request #${existing_pr}."
+          else
+            pr_url="$(gh pr create --base main --head "${MANIFEST_BRANCH}" \
+              --title "${MANIFEST_TITLE}" \
+              --body "Automated repository manifest update for v${version}.")"
+            pr_number="${pr_url##*/}"
+            echo "pr_number=${pr_number}" >> "${GITHUB_OUTPUT}"
+            echo "Opened manifest pull request #${pr_number}."
+          fi
+
+      - name: Wait for required checks on the manifest pull request
+        if: steps.pr.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          gh pr checks "${{ steps.pr.outputs.pr_number }}" --watch --interval 30
+
+      - name: Approve and merge the manifest pull request
+        if: steps.pr.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          pr_number="${{ steps.pr.outputs.pr_number }}"
+          gh pr review "${pr_number}" --approve --body "Automated manifest entry for the published release."
+          gh pr merge "${pr_number}" --squash --delete-branch
