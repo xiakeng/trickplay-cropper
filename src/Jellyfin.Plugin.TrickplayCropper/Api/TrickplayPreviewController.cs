@@ -16,6 +16,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Api;
 [Route("TrickplayCropper/Videos/{itemId}/Preview")]
 public sealed class TrickplayPreviewController : ControllerBase
 {
+    private const string CacheControlHeaderValue = "private, no-cache";
     private const string FrameIndexHeaderName = "X-Trickplay-Frame-Index";
 
     private readonly ITrickplayFrameProbe frameProbe;
@@ -134,7 +135,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     private EmptyResult CreateFrameIndexResult(int frameIndex)
     {
         Response.Headers[FrameIndexHeaderName] = frameIndex.ToString(CultureInfo.InvariantCulture);
-        Response.Headers.CacheControl = "private, no-cache";
+        Response.Headers.CacheControl = CacheControlHeaderValue;
         return CreateBodylessResult(StatusCodes.Status200OK);
     }
 
@@ -180,7 +181,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     private void ApplySharedHeaders(string entityTag, PreviewTelemetry telemetry)
     {
         Response.Headers.ETag = entityTag;
-        Response.Headers.CacheControl = "private, no-cache";
+        Response.Headers.CacheControl = CacheControlHeaderValue;
         Response.Headers["Server-Timing"] = FormatServerTiming(telemetry);
     }
 

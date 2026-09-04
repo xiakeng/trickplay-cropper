@@ -854,6 +854,10 @@ public sealed class TrickplayPreviewHttpSpecs
 
         using HttpResponseMessage wildcardResponse = await fixture.HeadConditionalAsync("*");
         await AssertFrameProbeSuccessAsync(wildcardResponse, 0);
+
+        fixture.SetPlaybackAccess(false);
+        using HttpResponseMessage deniedResponse = await fixture.HeadConditionalAsync(entityTag);
+        await AssertBodylessFrameProbeFailureAsync(deniedResponse, HttpStatusCode.Forbidden);
     }
 
     [Theory]
@@ -1186,15 +1190,12 @@ public sealed class TrickplayPreviewHttpSpecs
     private static async Task AssertFrameProbeSuccessAsync(HttpResponseMessage response, int expectedFrameIndex)
     {
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        await AssertBodylessAsync(response);
+        await AssertBodylessWithoutGetOnlyHeadersAsync(response);
         Assert.Equal(
             expectedFrameIndex.ToString(CultureInfo.InvariantCulture),
             response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoCache);
-        Assert.False(response.Headers.Contains("ETag"));
-        Assert.False(response.Headers.Contains("Server-Timing"));
-        Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
     }
 
     private static async Task AssertBodylessFrameProbeFailureAsync(
@@ -1202,8 +1203,13 @@ public sealed class TrickplayPreviewHttpSpecs
         HttpStatusCode expectedStatus)
     {
         Assert.Equal(expectedStatus, response.StatusCode);
-        await AssertBodylessAsync(response);
+        await AssertBodylessWithoutGetOnlyHeadersAsync(response);
         Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
+    }
+
+    private static async Task AssertBodylessWithoutGetOnlyHeadersAsync(HttpResponseMessage response)
+    {
+        await AssertBodylessAsync(response);
         Assert.False(response.Headers.Contains("ETag"));
         Assert.False(response.Headers.Contains("Server-Timing"));
         Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
