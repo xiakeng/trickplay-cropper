@@ -21,10 +21,10 @@ stage of Trickplay Cropper. It extends the completed v1 server plugin with:
 - a manually invoked, no-mock Integration Harness for the target local Jellyfin
   host.
 
-The next stage preserves the v1 compatibility, authorization, Source Sprite,
-image-processing, Preview Cache Entry, Cache Tree, cleanup, and package
-contracts except where this document explicitly changes resolution selection,
-adds HEAD, or adds observability.
+The next stage preserves the v1 compatibility, Source Sprite, image-processing,
+Preview Cache Entry, Cache Tree, cleanup, and package contracts except where
+this document explicitly changes resolution selection, assigns playback policy
+solely to the authorized logical video, adds HEAD, or adds observability.
 
 The fixed delivery order is:
 
@@ -118,6 +118,11 @@ Source membership own playback policy; the Source Video lookup owns visibility.
 This avoids contradictory authorization decisions without weakening source
 membership.
 
+This ownership rule deliberately changes the v1 authorization contract, which
+required playback access independently on both the logical and selected Source
+Videos. It does not remove the logical-video playback decision, Media Source
+membership proof, or user-scoped Source Video visibility lookup.
+
 An API key without a current Jellyfin user is not user-scoped playback
 authority and is forbidden.
 
@@ -202,8 +207,12 @@ Map the shared and GET-only outcomes as follows:
 | `500 Internal Server Error` | Invalid configuration, contradictory metadata, arithmetic failure, operational failure, cache-safety failure, or encode failure |
 
 Unavailable and concealed cases must not expose internal distinctions to the
-client. Cancellation follows the host's existing cancellation behavior rather
-than being translated into a successful or cacheable outcome.
+client. Pass the request cancellation token to asynchronous Jellyfin manager
+calls. The shared pipeline and Trickplay Frame Probe add no explicit
+cancellation checkpoints, do not convert cancellation into a closed probe
+outcome, and do not log cancellation as a probe failure. Cancellation follows
+the host's existing behavior rather than becoming a successful or cacheable
+outcome.
 
 ## 6. GET Preview contract
 
@@ -266,14 +275,21 @@ decode, cache, or encode the representation.
 
 The Trickplay Frame Probe must not resolve or inspect a Source Sprite, create
 Preview Identity, evaluate conditional GET, access the Cache Tree, acquire a
-decode permit, or invoke the encoder.
+decode permit, snapshot the filesystem, calculate sprite/cell/row/column/crop
+geometry, take a lock, write state, retry, or invoke the encoder. The shared
+pipeline also has no dependency on these GET-only facilities. GET alone computes
+sprite index, cell, row, column, and crop geometry after Source Sprite
+resolution.
 
 Unsupported methods advertise `Allow: GET, HEAD`.
 
 ## 8. Diagnostics and Debug observability
 
-Expected resolution-unavailable outcomes are logged at Debug with stable
-reasons. Internal failures include all known redaction-safe request,
+Expected resolution-unavailable outcomes are logged at Debug with the stable
+reason values `NoConfiguredTarget`, `NoGeneratedMetadata`,
+`SelectedResolutionMissing`, `NoThumbnails`, and `SourceSpriteUnavailable`.
+Do not add plugin logs for ordinary `400`, `401`, `403`, or concealment
+outcomes. Internal failures include all known redaction-safe request,
 configuration, selected metadata, Frame Index, crop, and source-fingerprint
 values needed to reconstruct the failure.
 
@@ -404,6 +420,10 @@ increment the third component. The committed but unpublished `1.0.0.0` is the
 floor, so the first automatic Release is `1.0.1.0`. A maintainer may edit major
 or minor components in the Release Pull Request.
 
+The workflows fail closed before mutation or publication if the required
+`main` branch protection, repository workflow permissions, bot review
+capability, or `RELEASE_BOT_PAT` secret is absent or incompatible.
+
 Publication requires a human to approve and merge the Release Pull Request
 using an allowed non-merge-commit method.
 
@@ -446,6 +466,17 @@ and do not use the PAT for the merge.
 Rely on the non-recursive behavior of `GITHUB_TOKEN` so that the bot-merged
 manifest change does not open another Release Pull Request.
 
+The two automation-owned branches are the narrow workflow exceptions approved
+in #56. The fixed Release Pull Request branch and PAT-authored Manifest Pull
+Request do not use a separately created issue or an `issue-<number>` branch.
+Their configured gates and actors replace the agent-run exact-head review loop:
+the Release Pull Request remains open until a human explicitly approves and
+merges it, while the Manifest Pull Request may be approved and merged by the
+distinct `GITHUB_TOKEN` actor only after all required checks, reviews, and
+`main` protections pass. These exceptions do not apply to ordinary human- or
+agent-authored changes and do not authorize ruleset bypass or automatic merge
+of any other pull request.
+
 ## 11. Manual local Integration Harness
 
 ### 11.1 Project and human input
@@ -479,7 +510,7 @@ output, plus a small privileged host operation for plugin/cache filesystem
 work, logging configuration, and systemd restart. Invoke `sudo` at exactly two
 Privileged Phase boundaries and perform exactly two service restarts.
 
-Do not use `sudo -n`, edit sudoers, retain elevation credentials, add a separate
+Do not use `sudo -n`, edit sudoers, store elevation credentials, add a separate
 run lock, add a server-version gate, or add a confirmation prompt.
 
 Before mutation, refuse to start if the sibling `logging.json.bak` Logging
@@ -662,6 +693,13 @@ without mocks.
 The live suite does not prove installation of the shippable ZIP because it
 deploys a Debug DLL and PDB. CI Package Validator and the Release workflow own
 that contract.
+
+Keep the following live gaps explicit and cover their policy through automated
+unit or component tests where practical: playback-policy `403`, alternate Media
+Sources, every `500` shape, clamp-to-source-width normalization, selection among
+multiple targets, media-side Source Sprite storage, no-thumbnails, missing
+manager path or Source Sprite, cleanup behavior, Cache Tree seeding, and Cache
+Tree lease contention.
 
 The first production Manifest Pull Request remains the real-world verification
 that `GITHUB_TOKEN` can approve and merge the PAT-authored pull request after all
