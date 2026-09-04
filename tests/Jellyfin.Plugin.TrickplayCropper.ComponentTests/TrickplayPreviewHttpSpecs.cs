@@ -352,6 +352,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(NotFoundCondition.SelectedVideoHidden)]
     [InlineData(NotFoundCondition.SelectedItemWrongType)]
     [InlineData(NotFoundCondition.NoConfiguredTarget)]
+    [InlineData(NotFoundCondition.GeneratedMetadataMissing)]
     [InlineData(NotFoundCondition.ExactMetadataMissing)]
     [InlineData(NotFoundCondition.ThumbnailsMissing)]
     [InlineData(NotFoundCondition.ThumbnailsNegative)]
@@ -366,6 +367,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
+        AssertExpectedUnavailableDebugReason(fixture.DebugLogs, condition);
     }
 
     [Theory]
@@ -382,6 +384,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(1, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
         Assert.Equal(0, fixture.ErrorLogCount);
+        AssertExpectedUnavailableDebugReason(fixture.DebugLogs, condition);
     }
 
     [Fact]
@@ -460,15 +463,20 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Theory]
-    [InlineData(ConfigurationFailureKind.UnreadableSnapshot, "ConfigurationReadable", null)]
-    [InlineData(ConfigurationFailureKind.NonPositiveConfiguredTarget, "ConfiguredTargetPositive", 0L)]
-    [InlineData(ConfigurationFailureKind.NonPositiveSelectedResolution, "SelectedResolutionPositive", 0L)]
+    [InlineData(ConfigurationFailureKind.UnreadableSnapshot, "ConfigurationReadable", null, null)]
+    [InlineData(ConfigurationFailureKind.NonPositiveConfiguredTarget, "ConfiguredTargetPositive", 0L, "320,0")]
+    [InlineData(ConfigurationFailureKind.NonPositiveSelectedResolution, "SelectedResolutionPositive", 0L, "1")]
     public async Task ReportsInvalidConfigurationAsInternalError(
         ConfigurationFailureKind kind,
         string failedValidation,
-        long? failedValue)
+        long? failedValue,
+        string? expectedConfiguredTargets)
     {
-        var scenario = new PreviewScenario { ConfiguredWidthResolutions = CreateInvalidConfiguration(kind) };
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = CreateInvalidConfiguration(kind),
+            SourceVideoWidth = 640,
+        };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.GetAsync();
@@ -481,9 +489,63 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(nameof(InvalidTrickplayConfigurationException), log.Properties["ExceptionType"]);
         Assert.Equal(failedValidation, log.Properties["FailedValidation"]);
         Assert.Equal(failedValue, log.Properties["FailedValue"]);
+        Assert.Equal(640, log.Properties["NormalizationSourceWidth"]);
+        if (expectedConfiguredTargets is null)
+        {
+            Assert.Null(log.Properties["ConfiguredTargets"]);
+        }
+        else
+        {
+            Assert.Equal(expectedConfiguredTargets, log.Properties["ConfiguredTargets"]);
+        }
+
+        Assert.Null(log.Properties["ChosenTarget"]);
+        Assert.Null(log.Properties["SelectedResolution"]);
+        Assert.Null(log.Properties["GeneratedKeys"]);
         Assert.DoesNotContain(fixture.SourceSpritePath, log.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(fixture.CacheRoot, log.Message, StringComparison.Ordinal);
         Assert.Empty(fixture.EnumerateCacheFiles());
+    }
+
+    [Fact]
+    public async Task IncludesConfigurationAndGeneratedKeysInTheMetadataFailureDiagnostic()
+    {
+        var scenario = new PreviewScenario
+        {
+            Metadata = MetadataAvailability.ContradictoryFrameWidth,
+            SourceVideoWidth = 640,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(nameof(InvalidTrickplayMetadataException), log.Properties["ExceptionType"]);
+        Assert.Equal("320", log.Properties["ConfiguredTargets"]);
+        Assert.Equal(320, log.Properties["ChosenTarget"]);
+        Assert.Equal(320, log.Properties["SelectedResolution"]);
+        Assert.Equal(640, log.Properties["NormalizationSourceWidth"]);
+        Assert.Equal("320", log.Properties["GeneratedKeys"]);
+    }
+
+    [Fact]
+    public async Task RecordsFrameSelectionAndCacheDispositionDebugEventsForAServedGet()
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        RecordedLog frameSelected = Assert.Single(
+            fixture.DebugLogs,
+            entry => entry.EventId == new EventId(1002, "TrickplayPreviewFrameSelected"));
+        Assert.Equal(0, frameSelected.Properties["FrameIndex"]);
+        Assert.Equal(0, frameSelected.Properties["SpriteIndex"]);
+        RecordedLog cacheDisposition = Assert.Single(
+            fixture.DebugLogs,
+            entry => entry.EventId == new EventId(1003, "TrickplayPreviewCacheDisposition"));
+        Assert.Equal(nameof(PreviewCacheDisposition.Miss), cacheDisposition.Properties["CacheDisposition"]!.ToString());
     }
 
     [Fact]
@@ -783,6 +845,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(NotFoundCondition.SelectedVideoHidden)]
     [InlineData(NotFoundCondition.SelectedItemWrongType)]
     [InlineData(NotFoundCondition.NoConfiguredTarget)]
+    [InlineData(NotFoundCondition.GeneratedMetadataMissing)]
     [InlineData(NotFoundCondition.ExactMetadataMissing)]
     [InlineData(NotFoundCondition.ThumbnailsMissing)]
     [InlineData(NotFoundCondition.ThumbnailsNegative)]
@@ -794,6 +857,7 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage response = await fixture.HeadAsync();
 
         await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.NotFound);
+        AssertExpectedUnavailableDebugReason(fixture.ProbeDebugLogs, condition);
     }
 
     [Theory]
@@ -952,6 +1016,38 @@ public sealed class TrickplayPreviewHttpSpecs
         };
     }
 
+    private static void AssertExpectedUnavailableDebugReason(RecordedLog[] debugLogs, NotFoundCondition condition)
+    {
+        RecordedLog[] unavailable = debugLogs
+            .Where(entry => entry.EventId == new EventId(1001, "TrickplayPreviewUnavailable"))
+            .ToArray();
+        string? expectedReason = ExpectedDebugReason(condition);
+        if (expectedReason is null)
+        {
+            Assert.Empty(unavailable);
+            return;
+        }
+
+        RecordedLog log = Assert.Single(unavailable);
+        Assert.Equal(LogLevel.Debug, log.Level);
+        Assert.Equal(expectedReason, log.Properties["Reason"]!.ToString());
+    }
+
+    private static string? ExpectedDebugReason(NotFoundCondition condition)
+    {
+        return condition switch
+        {
+            NotFoundCondition.NoConfiguredTarget => "NoConfiguredTarget",
+            NotFoundCondition.GeneratedMetadataMissing => "NoGeneratedMetadata",
+            NotFoundCondition.ExactMetadataMissing => "SelectedResolutionMissing",
+            NotFoundCondition.ThumbnailsMissing => "NoThumbnails",
+            NotFoundCondition.ThumbnailsNegative => "NoThumbnails",
+            NotFoundCondition.ManagerPathMissing => "SourceSpriteUnavailable",
+            NotFoundCondition.SourceSpriteMissing => "SourceSpriteUnavailable",
+            _ => null,
+        };
+    }
+
     private static PreviewScenario CreateNotFoundScenario(NotFoundCondition condition)
     {
         return condition switch
@@ -975,6 +1071,10 @@ public sealed class TrickplayPreviewHttpSpecs
             NotFoundCondition.NoConfiguredTarget => new PreviewScenario
             {
                 ConfiguredWidthResolutions = [],
+            },
+            NotFoundCondition.GeneratedMetadataMissing => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.GeneratedMetadataMissing,
             },
             NotFoundCondition.ExactMetadataMissing => new PreviewScenario
             {
@@ -1257,6 +1357,16 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public RecordedLog[] ErrorLogs => Services.GetRequiredService<RecordingLogger<TrickplayPreview>>().Errors;
 
+        public RecordedLog[] DebugLogs =>
+            Services.GetRequiredService<RecordingLogger<TrickplayPreview>>().Entries
+                .Where(entry => entry.Level == LogLevel.Debug)
+                .ToArray();
+
+        public RecordedLog[] ProbeDebugLogs =>
+            Services.GetRequiredService<RecordingLogger<TrickplayFrameProbe>>().Entries
+                .Where(entry => entry.Level == LogLevel.Debug)
+                .ToArray();
+
         public IServiceProvider Services => host.Services;
 
         public string SourceSpritePath { get; }
@@ -1464,6 +1574,9 @@ public sealed class TrickplayPreviewHttpSpecs
             var recordingLogger = new RecordingLogger<TrickplayPreview>();
             services.AddSingleton(recordingLogger);
             services.AddSingleton<ILogger<TrickplayPreview>>(recordingLogger);
+            var probeRecordingLogger = new RecordingLogger<TrickplayFrameProbe>();
+            services.AddSingleton(probeRecordingLogger);
+            services.AddSingleton<ILogger<TrickplayFrameProbe>>(probeRecordingLogger);
             string cacheRoot = Path.Combine(
                 context.TemporaryDirectory,
                 "Jellyfin.Plugin.TrickplayCropper",
@@ -1618,9 +1731,12 @@ public sealed class TrickplayPreviewHttpSpecs
         private static ITrickplayManager CreateTrickplayManager(PreviewHostContext context)
         {
             TrickplayInfo metadata = CreateMetadata(context.Scenario);
-            Dictionary<int, TrickplayInfo> resolutions = context.Scenario.Metadata == MetadataAvailability.ExactWidthMissing
-                ? new Dictionary<int, TrickplayInfo> { [640] = metadata }
-                : new Dictionary<int, TrickplayInfo> { [320] = metadata };
+            Dictionary<int, TrickplayInfo> resolutions = context.Scenario.Metadata switch
+            {
+                MetadataAvailability.ExactWidthMissing => new Dictionary<int, TrickplayInfo> { [640] = metadata },
+                MetadataAvailability.GeneratedMetadataMissing => new Dictionary<int, TrickplayInfo>(),
+                _ => new Dictionary<int, TrickplayInfo> { [320] = metadata },
+            };
 
             InterfaceMockSpecs<ITrickplayManager> mock = InterfaceMock.Create<ITrickplayManager>();
             mock.Handle("GetTrickplayResolutions", arguments =>
@@ -1646,6 +1762,7 @@ public sealed class TrickplayPreviewHttpSpecs
             switch (scenario.Metadata)
             {
                 case MetadataAvailability.Available:
+                case MetadataAvailability.GeneratedMetadataMissing:
                     {
                         break;
                     }
@@ -1955,15 +2072,26 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private sealed class RecordingLogger<TCategory> : ILogger<TCategory>
     {
-        private readonly List<RecordedLog> errors = [];
+        private readonly List<RecordedLog> entries = [];
+
+        public RecordedLog[] Entries
+        {
+            get
+            {
+                lock (entries)
+                {
+                    return entries.ToArray();
+                }
+            }
+        }
 
         public RecordedLog[] Errors
         {
             get
             {
-                lock (errors)
+                lock (entries)
                 {
-                    return errors.ToArray();
+                    return entries.Where(entry => entry.Level >= LogLevel.Error).ToArray();
                 }
             }
         }
@@ -1985,22 +2113,20 @@ public sealed class TrickplayPreviewHttpSpecs
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (logLevel >= LogLevel.Error)
+            IReadOnlyDictionary<string, object?> properties = state
+                is IEnumerable<KeyValuePair<string, object?>> structuredState
+                ? structuredState.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+                : new Dictionary<string, object?>(StringComparer.Ordinal);
+            var log = new RecordedLog(logLevel, eventId, formatter(state, exception), properties, exception);
+            lock (entries)
             {
-                IReadOnlyDictionary<string, object?> properties = state
-                    is IEnumerable<KeyValuePair<string, object?>> structuredState
-                    ? structuredState.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
-                    : new Dictionary<string, object?>(StringComparer.Ordinal);
-                var log = new RecordedLog(eventId, formatter(state, exception), properties, exception);
-                lock (errors)
-                {
-                    errors.Add(log);
-                }
+                entries.Add(log);
             }
         }
     }
 
     private sealed record RecordedLog(
+        LogLevel Level,
         EventId EventId,
         string Message,
         IReadOnlyDictionary<string, object?> Properties,
@@ -2176,6 +2302,7 @@ public sealed class TrickplayPreviewHttpSpecs
         ExactWidthMissing,
         FrameHeightZero,
         FrameWidthZero,
+        GeneratedMetadataMissing,
         IntervalZero,
         NegativeThumbnails,
         NoThumbnails,
@@ -2208,6 +2335,7 @@ public sealed class TrickplayPreviewHttpSpecs
         SelectedVideoHidden,
         SelectedItemWrongType,
         NoConfiguredTarget,
+        GeneratedMetadataMissing,
         ExactMetadataMissing,
         ThumbnailsMissing,
         ThumbnailsNegative,

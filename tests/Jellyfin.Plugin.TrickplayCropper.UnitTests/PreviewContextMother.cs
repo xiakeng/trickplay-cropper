@@ -16,7 +16,7 @@ internal static class PreviewContextMother
             ContextFailureKind.BadRequest => new PreviewContextResolution.BadRequest(),
             ContextFailureKind.Unauthorized => new PreviewContextResolution.Unauthorized(),
             ContextFailureKind.Forbidden => new PreviewContextResolution.Forbidden(),
-            ContextFailureKind.NotFound => new PreviewContextResolution.NotFound(),
+            ContextFailureKind.NotFound => new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failureKind),
                 failureKind,

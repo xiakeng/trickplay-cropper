@@ -45,4 +45,14 @@ internal sealed class InvalidTrickplayMetadataException : InvalidOperationExcept
     /// Gets the selection values computed before coordinate narrowing failed.
     /// </summary>
     public FrameSelectionDiagnostics? SelectionDiagnostics { get; init; }
+
+    /// <summary>
+    /// Gets or sets the configuration and normalization values known when the failure was raised.
+    /// </summary>
+    /// <remarks>
+    /// The context resolver enriches this for metadata failures it raises so the diagnostic log can
+    /// reconstruct the configuration, selection, and generated-key inputs. Failures raised during GET-only
+    /// frame selection leave this null because those values are no longer in scope.
+    /// </remarks>
+    public PreviewConfigurationDiagnostics? Configuration { get; set; }
 }

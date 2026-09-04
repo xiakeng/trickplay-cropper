@@ -29,6 +29,15 @@ internal sealed class InvalidTrickplayConfigurationException : InvalidOperationE
     /// </summary>
     public long? FailedValue { get; }
 
+    /// <summary>
+    /// Gets or sets the configuration and normalization values known when the failure was raised.
+    /// </summary>
+    /// <remarks>
+    /// The resolver enriches this after the selector raises the failure so the diagnostic log can reconstruct
+    /// the configuration and normalization inputs without the pure selector depending on diagnostics.
+    /// </remarks>
+    public PreviewConfigurationDiagnostics? Configuration { get; set; }
+
     private static string CreateMessage(string failedValidation, long? failedValue)
     {
         return failedValue is long value

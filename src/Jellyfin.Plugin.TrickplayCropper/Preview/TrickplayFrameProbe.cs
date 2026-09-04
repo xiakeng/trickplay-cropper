@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 
@@ -9,14 +10,19 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 internal sealed class TrickplayFrameProbe : ITrickplayFrameProbe
 {
     private readonly IPreviewContextResolver contextResolver;
+    private readonly ILogger<TrickplayFrameProbe> logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayFrameProbe"/> class.
     /// </summary>
     /// <param name="contextResolver">The shared Preview context resolver.</param>
-    public TrickplayFrameProbe(IPreviewContextResolver contextResolver)
+    /// <param name="logger">Records the stable Debug Preview decision protocol.</param>
+    public TrickplayFrameProbe(
+        IPreviewContextResolver contextResolver,
+        ILogger<TrickplayFrameProbe> logger)
     {
         this.contextResolver = contextResolver;
+        this.logger = logger;
     }
 
     /// <inheritdoc />
@@ -37,7 +43,7 @@ internal sealed class TrickplayFrameProbe : ITrickplayFrameProbe
                 PreviewContextResolution.BadRequest => new TrickplayFrameProbeOutcome.BadRequest(),
                 PreviewContextResolution.Unauthorized => new TrickplayFrameProbeOutcome.Unauthorized(),
                 PreviewContextResolution.Forbidden => new TrickplayFrameProbeOutcome.Forbidden(),
-                PreviewContextResolution.NotFound => new TrickplayFrameProbeOutcome.NotFound(),
+                PreviewContextResolution.NotFound notFound => MapUnavailable(notFound.Reason),
                 _ => throw new InvalidOperationException(
                     $"Unknown preview context resolution {contextResolution.GetType().Name}."),
             };
@@ -50,5 +56,15 @@ internal sealed class TrickplayFrameProbe : ITrickplayFrameProbe
         {
             return new TrickplayFrameProbeOutcome.InternalError();
         }
+    }
+
+    private TrickplayFrameProbeOutcome.NotFound MapUnavailable(PreviewUnavailableReason reason)
+    {
+        if (reason != PreviewUnavailableReason.Concealed)
+        {
+            PreviewDebugProtocol.LogUnavailable(logger, reason);
+        }
+
+        return new TrickplayFrameProbeOutcome.NotFound();
     }
 }

@@ -1,3 +1,5 @@
+using Jellyfin.Plugin.TrickplayCropper.Preview;
+
 namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 
 /// <summary>
@@ -29,5 +31,6 @@ internal abstract record PreviewContextResolution
     /// <summary>
     /// Represents an unavailable or concealed resource.
     /// </summary>
-    internal sealed record NotFound : PreviewContextResolution;
+    /// <param name="Reason">The stable internal reason, disclosed only through Debug diagnostics.</param>
+    internal sealed record NotFound(PreviewUnavailableReason Reason) : PreviewContextResolution;
 }

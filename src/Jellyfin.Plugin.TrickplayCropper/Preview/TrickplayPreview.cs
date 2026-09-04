@@ -95,23 +95,33 @@ internal sealed class TrickplayPreview : ITrickplayPreview
                 conditionalEntityTags,
                 failureContext,
                 cancellationToken).ConfigureAwait(false),
-            PreviewSourceResolution.NotFound => new PreviewOutcome.NotFound(),
+            PreviewSourceResolution.NotFound => MapUnavailable(PreviewUnavailableReason.SourceSpriteUnavailable),
             _ => throw new InvalidOperationException(
                 $"Unknown source resolution {sourceResolution.GetType().Name}."),
         };
     }
 
-    private static PreviewOutcome MapContextFailure(PreviewContextResolution contextResolution)
+    private PreviewOutcome MapContextFailure(PreviewContextResolution contextResolution)
     {
         return contextResolution switch
         {
             PreviewContextResolution.BadRequest => new PreviewOutcome.BadRequest(),
             PreviewContextResolution.Unauthorized => new PreviewOutcome.Unauthorized(),
             PreviewContextResolution.Forbidden => new PreviewOutcome.Forbidden(),
-            PreviewContextResolution.NotFound => new PreviewOutcome.NotFound(),
+            PreviewContextResolution.NotFound notFound => MapUnavailable(notFound.Reason),
             _ => throw new InvalidOperationException(
                 $"Unknown preview context resolution {contextResolution.GetType().Name}."),
         };
+    }
+
+    private PreviewOutcome.NotFound MapUnavailable(PreviewUnavailableReason reason)
+    {
+        if (reason != PreviewUnavailableReason.Concealed)
+        {
+            PreviewDebugProtocol.LogUnavailable(logger, reason);
+        }
+
+        return new PreviewOutcome.NotFound();
     }
 
     private async Task<PreviewOutcome> GetResolvedAsync(
@@ -122,6 +132,7 @@ internal sealed class TrickplayPreview : ITrickplayPreview
         CancellationToken cancellationToken)
     {
         failureContext.Capture(source);
+        PreviewDebugProtocol.LogFrameSelected(logger, source.Selection.FrameIndex, source.Selection.SpriteIndex);
         PreviewIdentity identity = PreviewIdentity.Create(source);
         if (MatchesConditionalEntityTag(identity.EntityTag, conditionalEntityTags))
         {
@@ -135,6 +146,7 @@ internal sealed class TrickplayPreview : ITrickplayPreview
             (destination, token) => encoder.EncodeAsync(source, destination, token),
             cancellationToken).ConfigureAwait(false);
         TimeSpan cacheDuration = Stopwatch.GetElapsedTime(cacheStarted);
+        PreviewDebugProtocol.LogCacheDisposition(logger, cacheResult.Disposition);
         var telemetry = new PreviewTelemetry.CacheAccess(lookupDuration, cacheDuration, cacheResult);
         return new PreviewOutcome.Ok(cacheResult.Content, identity.EntityTag, telemetry);
     }
@@ -177,7 +189,11 @@ internal sealed class TrickplayPreview : ITrickplayPreview
 
         public int? ActualWidth { get; private set; }
 
+        public int? ChosenTarget { get; private set; }
+
         public int? Column { get; private set; }
+
+        public string? ConfiguredTargets { get; private set; }
 
         public int? CropHeight { get; private set; }
 
@@ -201,9 +217,15 @@ internal sealed class TrickplayPreview : ITrickplayPreview
 
         public int? FrameWidth { get; private set; }
 
+        public string? GeneratedKeys { get; private set; }
+
         public int? IntervalMilliseconds { get; private set; }
 
+        public int? NormalizationSourceWidth { get; private set; }
+
         public int? Row { get; private set; }
+
+        public int? SelectedResolution { get; private set; }
 
         public string? SkiaResult { get; private set; }
 
@@ -239,10 +261,12 @@ internal sealed class TrickplayPreview : ITrickplayPreview
                         Capture(invalidMetadata.SelectionDiagnostics);
                     }
 
+                    Capture(invalidMetadata.Configuration);
                     FailedValidation = invalidMetadata.FailedValidation;
                     FailedValue = invalidMetadata.FailedValue;
                     break;
                 case InvalidTrickplayConfigurationException invalidConfiguration:
+                    Capture(invalidConfiguration.Configuration);
                     FailedValidation = invalidConfiguration.FailedValidation;
                     FailedValue = invalidConfiguration.FailedValue;
                     break;
@@ -267,6 +291,11 @@ internal sealed class TrickplayPreview : ITrickplayPreview
                 new("ItemId", query.ItemId),
                 new("MediaSourceId", query.ResolvedMediaSourceId),
                 new("PositionTicks", query.PositionTicks),
+                new("ConfiguredTargets", ConfiguredTargets),
+                new("ChosenTarget", ChosenTarget),
+                new("SelectedResolution", SelectedResolution),
+                new("NormalizationSourceWidth", NormalizationSourceWidth),
+                new("GeneratedKeys", GeneratedKeys),
                 new("FrameWidth", FrameWidth),
                 new("FrameHeight", FrameHeight),
                 new("IntervalMilliseconds", IntervalMilliseconds),
@@ -350,6 +379,29 @@ internal sealed class TrickplayPreview : ITrickplayPreview
             CropY = diagnostics.CropY;
             CropWidth = diagnostics.CropWidth;
             CropHeight = diagnostics.CropHeight;
+        }
+
+        private void Capture(PreviewConfigurationDiagnostics? configuration)
+        {
+            if (configuration is null)
+            {
+                return;
+            }
+
+            ConfiguredTargets = Join(configuration.ConfiguredTargets) ?? ConfiguredTargets;
+            ChosenTarget = configuration.ChosenTarget ?? ChosenTarget;
+            SelectedResolution = configuration.SelectedResolution ?? SelectedResolution;
+            NormalizationSourceWidth = configuration.NormalizationSourceWidth ?? NormalizationSourceWidth;
+            GeneratedKeys = Join(configuration.GeneratedKeys) ?? GeneratedKeys;
+        }
+
+        private static string? Join(IReadOnlyList<int>? values)
+        {
+            return values is null
+                ? null
+                : string.Join(
+                    ',',
+                    values.Select(value => value.ToString(CultureInfo.InvariantCulture)));
         }
 
         private static int? ConvertToInt32(long value)

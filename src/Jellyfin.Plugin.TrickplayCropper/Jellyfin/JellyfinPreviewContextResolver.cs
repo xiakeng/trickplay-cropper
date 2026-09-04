@@ -73,7 +73,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         Video? logicalVideo = libraryManager.GetItemById<Video>(query.ItemId, user);
         if (logicalVideo is null)
         {
-            return new PreviewContextResolution.NotFound();
+            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
         }
 
         if (logicalVideo.GetPlayAccess(user) != PlayAccess.Full)
@@ -118,50 +118,96 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             source => IsSelectedSource(source, mediaSourceId));
         if (matchedSource is null)
         {
-            return new PreviewContextResolution.NotFound();
+            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
         }
 
         Video? sourceVideo = libraryManager.GetItemById<Video>(mediaSourceId, user);
         if (sourceVideo is null)
         {
-            return new PreviewContextResolution.NotFound();
+            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
         }
 
         int[]? configuredTargets = serverConfigurationManager.Configuration?.TrickplayOptions?.WidthResolutions;
-        int? selectedResolution = TrickplayResolutionSelector.Select(
-            configuredTargets,
-            matchedSource.VideoStream?.Width);
-        if (selectedResolution is null)
+        int? normalizationSourceWidth = matchedSource.VideoStream?.Width;
+
+        int? selectedResolution;
+        try
         {
-            return new PreviewContextResolution.NotFound();
+            selectedResolution = TrickplayResolutionSelector.Select(configuredTargets, normalizationSourceWidth);
+        }
+        catch (InvalidTrickplayConfigurationException failure)
+        {
+            failure.Configuration = new PreviewConfigurationDiagnostics
+            {
+                ConfiguredTargets = configuredTargets,
+                NormalizationSourceWidth = normalizationSourceWidth,
+            };
+            throw;
         }
 
-        return await SelectMetadataAsync(query, sourceVideo, selectedResolution.Value)
+        if (selectedResolution is null)
+        {
+            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.NoConfiguredTarget);
+        }
+
+        return await SelectMetadataAsync(
+                query,
+                sourceVideo,
+                configuredTargets,
+                normalizationSourceWidth,
+                selectedResolution.Value)
             .ConfigureAwait(false);
     }
 
     private async Task<PreviewContextResolution> SelectMetadataAsync(
         PreviewQuery query,
         Video sourceVideo,
+        int[]? configuredTargets,
+        int? normalizationSourceWidth,
         int selectedResolution)
     {
         Guid mediaSourceId = query.ResolvedMediaSourceId;
         Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
             .GetTrickplayResolutions(mediaSourceId)
             .ConfigureAwait(false);
-        if (!resolutions.TryGetValue(selectedResolution, out TrickplayInfo? info) || info.ThumbnailCount <= 0)
+        if (resolutions.Count == 0)
         {
-            return new PreviewContextResolution.NotFound();
+            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.NoGeneratedMetadata);
+        }
+
+        if (!resolutions.TryGetValue(selectedResolution, out TrickplayInfo? info))
+        {
+            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.SelectedResolutionMissing);
+        }
+
+        if (info.ThumbnailCount <= 0)
+        {
+            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.NoThumbnails);
         }
 
         TrickplayMetadata metadata = CreateMetadata(info);
-        metadata.Validate();
-        if (metadata.FrameWidth != selectedResolution)
+        try
         {
-            throw new InvalidTrickplayMetadataException(
-                metadata,
-                "FrameWidthMatchesResolutionKey",
-                metadata.FrameWidth);
+            metadata.Validate();
+            if (metadata.FrameWidth != selectedResolution)
+            {
+                throw new InvalidTrickplayMetadataException(
+                    metadata,
+                    "FrameWidthMatchesResolutionKey",
+                    metadata.FrameWidth);
+            }
+        }
+        catch (InvalidTrickplayMetadataException failure)
+        {
+            failure.Configuration = new PreviewConfigurationDiagnostics
+            {
+                ConfiguredTargets = configuredTargets,
+                ChosenTarget = configuredTargets?.Min(),
+                SelectedResolution = selectedResolution,
+                NormalizationSourceWidth = normalizationSourceWidth,
+                GeneratedKeys = resolutions.Keys.Order().ToArray(),
+            };
+            throw;
         }
 
         return new PreviewContextResolution.Resolved(
