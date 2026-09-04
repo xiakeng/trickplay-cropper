@@ -279,11 +279,6 @@ public sealed class ManifestBuilderSpecs
 
         public static ZipFixture Create(string version, string? timestamp)
         {
-            string directory = Path.Combine(
-                Path.GetTempPath(), $"manifest-zip-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(directory);
-            string zipPath = Path.Combine(directory, "plugin.zip");
-
             JsonObject meta = new()
             {
                 ["name"] = "Trickplay Cropper",
@@ -296,38 +291,16 @@ public sealed class ManifestBuilderSpecs
                 meta["timestamp"] = timestamp;
             }
 
-            using (ZipArchive zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
-            {
-                ZipArchiveEntry entry = zip.CreateEntry("meta.json");
-                using Stream stream = entry.Open();
-                using StreamWriter writer = new(stream);
-                writer.Write(meta.ToJsonString());
-            }
-
-            return new ZipFixture(directory, zipPath);
+            return CreateZip(meta);
         }
 
         public static ZipFixture CreateWithoutMetadata()
         {
-            string directory = Path.Combine(
-                Path.GetTempPath(), $"manifest-zip-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(directory);
-            string zipPath = Path.Combine(directory, "plugin.zip");
-
-            using (ZipFile.Open(zipPath, ZipArchiveMode.Create))
-            {
-            }
-
-            return new ZipFixture(directory, zipPath);
+            return CreateZip(meta: null);
         }
 
         public static ZipFixture CreateWithoutVersion()
         {
-            string directory = Path.Combine(
-                Path.GetTempPath(), $"manifest-zip-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(directory);
-            string zipPath = Path.Combine(directory, "plugin.zip");
-
             JsonObject meta = new()
             {
                 ["name"] = "Trickplay Cropper",
@@ -336,12 +309,25 @@ public sealed class ManifestBuilderSpecs
                 ["timestamp"] = "2026-09-02T07:00:00Z",
             };
 
+            return CreateZip(meta);
+        }
+
+        private static ZipFixture CreateZip(JsonObject? meta)
+        {
+            string directory = Path.Combine(
+                Path.GetTempPath(), $"manifest-zip-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            string zipPath = Path.Combine(directory, "plugin.zip");
+
             using (ZipArchive zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
             {
-                ZipArchiveEntry entry = zip.CreateEntry("meta.json");
-                using Stream stream = entry.Open();
-                using StreamWriter writer = new(stream);
-                writer.Write(meta.ToJsonString());
+                if (meta is not null)
+                {
+                    ZipArchiveEntry entry = zip.CreateEntry("meta.json");
+                    using Stream stream = entry.Open();
+                    using StreamWriter writer = new(stream);
+                    writer.Write(meta.ToJsonString());
+                }
             }
 
             return new ZipFixture(directory, zipPath);

@@ -15,21 +15,7 @@ internal static partial class WorkflowFiles
 
     public static string[] ReadPermissionScopes(string workflow)
     {
-        List<string> scopes = [];
-        foreach (string line in ReadTopLevelBlock(workflow, "permissions:").Split('\n'))
-        {
-            string entry = line.Trim();
-            if (entry.Length == 0)
-            {
-                continue;
-            }
-
-            int colon = entry.IndexOf(':');
-            Assert.True(colon > 0, $"Unexpected permissions entry: '{line}'.");
-            scopes.Add($"{entry[..colon].Trim()}: {entry[(colon + 1)..].Trim()}");
-        }
-
-        return scopes.Order(StringComparer.Ordinal).ToArray();
+        return ParseScopeEntries(ReadTopLevelBlock(workflow, "permissions:").Split('\n'));
     }
 
     public static string[] ReadJobPermissionScopes(string jobSection)
@@ -40,7 +26,7 @@ internal static partial class WorkflowFiles
         Assert.True(permStart >= 0, "The job must declare a permissions block.");
 
         int permIndent = lines[permStart].Length - lines[permStart].TrimStart().Length;
-        List<string> scopes = [];
+        List<string> block = [];
 
         for (int index = permStart + 1; index < lines.Length; index++)
         {
@@ -56,7 +42,23 @@ internal static partial class WorkflowFiles
                 break;
             }
 
+            block.Add(line);
+        }
+
+        return ParseScopeEntries(block.ToArray());
+    }
+
+    private static string[] ParseScopeEntries(string[] lines)
+    {
+        List<string> scopes = [];
+        foreach (string line in lines)
+        {
             string entry = line.Trim();
+            if (entry.Length == 0)
+            {
+                continue;
+            }
+
             int colon = entry.IndexOf(':');
             Assert.True(colon > 0, $"Unexpected permissions entry: '{line}'.");
             scopes.Add($"{entry[..colon].Trim()}: {entry[(colon + 1)..].Trim()}");

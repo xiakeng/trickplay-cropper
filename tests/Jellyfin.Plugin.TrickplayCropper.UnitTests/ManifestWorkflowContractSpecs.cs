@@ -157,12 +157,22 @@ public sealed class ManifestWorkflowContractSpecs
     }
 
     [Fact]
-    public void TheExistingManifestIsSeededBeforeTheBuilderRuns()
+    public void TheExistingManifestIsSeededFromOriginMainBeforeTheBuilderRuns()
     {
         string build = WorkflowFiles.ReadStepBody(
             WorkflowFiles.ReadSteps(manifestJob), "Build the repository manifest entry");
 
-        Assert.Contains("cp \"${MANIFEST_FILE}\" \"${RUNNER_TEMP}/${MANIFEST_FILE}\"", build, StringComparison.Ordinal);
+        Assert.Contains("git show \"origin/main:${MANIFEST_FILE}\"", build, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ThePushAuthenticatesAsThePatRatherThanTheGithubToken()
+    {
+        string submit = WorkflowFiles.ReadStepBody(
+            WorkflowFiles.ReadSteps(manifestJob), SubmitStepName);
+
+        Assert.Contains("gh auth setup-git", submit, StringComparison.Ordinal);
+        Assert.Contains("GH_TOKEN: ${{ secrets.RELEASE_BOT_PAT }}", submit, StringComparison.Ordinal);
     }
 
     [Fact]

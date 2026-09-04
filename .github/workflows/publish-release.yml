@@ -230,8 +230,8 @@ jobs:
           asset_name="$(basename "${zip_path}")"
           source_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}/${asset_name}"
 
-          if [[ -f "${MANIFEST_FILE}" ]]; then
-            cp "${MANIFEST_FILE}" "${RUNNER_TEMP}/${MANIFEST_FILE}"
+          if git show "origin/main:${MANIFEST_FILE}" > "${RUNNER_TEMP}/${MANIFEST_FILE}" 2>/dev/null; then
+            echo "Seeded existing manifest from origin/main."
           fi
 
           dotnet run \
@@ -250,6 +250,7 @@ jobs:
           set -euo pipefail
           version="$(jq -r '.version' "${BUILD_MANIFEST}")"
 
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
