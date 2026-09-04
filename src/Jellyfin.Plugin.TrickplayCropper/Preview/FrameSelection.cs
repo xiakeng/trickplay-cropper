@@ -22,25 +22,14 @@ internal sealed record FrameSelection(
     int CropHeight)
 {
     /// <summary>
-    /// Selects the metadata-defined frame for a Jellyfin playback position.
+    /// Locates the Source Sprite cell and crop rectangle of an already selected frame.
     /// </summary>
-    /// <param name="metadata">The trusted Jellyfin trickplay metadata.</param>
-    /// <param name="positionTicks">The non-negative playback position.</param>
+    /// <param name="metadata">The validated Jellyfin trickplay metadata.</param>
+    /// <param name="frameIndex">The clamped Frame Index from the shared Preview context.</param>
     /// <returns>The selected Source Sprite cell and crop.</returns>
-    public static FrameSelection Create(TrickplayMetadata metadata, long positionTicks)
+    public static FrameSelection Create(TrickplayMetadata metadata, int frameIndex)
     {
-        if (positionTicks < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(positionTicks),
-                positionTicks,
-                "The playback position must be non-negative.");
-        }
-
-        ValidateMetadata(metadata);
-        long ticksPerFrame = checked((long)metadata.IntervalMilliseconds * TimeSpan.TicksPerMillisecond);
-        long rawFrameIndex = positionTicks / ticksPerFrame;
-        long selectedFrameIndex = Math.Min(rawFrameIndex, metadata.ThumbnailCount - 1L);
+        long selectedFrameIndex = frameIndex;
         long framesPerSprite = checked((long)metadata.TileWidth * metadata.TileHeight);
         long selectedSpriteIndex = selectedFrameIndex / framesPerSprite;
         long cellIndex = selectedFrameIndex % framesPerSprite;
@@ -74,24 +63,6 @@ internal sealed record FrameSelection(
             normalizedCropY,
             metadata.FrameWidth,
             metadata.FrameHeight);
-    }
-
-    private static void ValidateMetadata(TrickplayMetadata metadata)
-    {
-        ValidatePositive(metadata.FrameWidth, metadata, "FrameWidthPositive");
-        ValidatePositive(metadata.FrameHeight, metadata, "FrameHeightPositive");
-        ValidatePositive(metadata.IntervalMilliseconds, metadata, "IntervalMillisecondsPositive");
-        ValidatePositive(metadata.TileWidth, metadata, "TileWidthPositive");
-        ValidatePositive(metadata.TileHeight, metadata, "TileHeightPositive");
-        ValidatePositive(metadata.ThumbnailCount, metadata, "ThumbnailCountPositive");
-    }
-
-    private static void ValidatePositive(long value, TrickplayMetadata metadata, string validation)
-    {
-        if (value <= 0)
-        {
-            throw new InvalidTrickplayMetadataException(metadata, validation, value);
-        }
     }
 
     private static int ConvertToInt32(

@@ -450,9 +450,7 @@ public sealed class TrickplayPreviewEncoderSpecs
             string sourcePath = Path.Combine(directoryPath, "source-sprite");
             File.WriteAllBytes(sourcePath, sourceBytes);
             int frameIndex = (row * metadata.TileWidth) + column;
-            FrameSelection selection = FrameSelection.Create(
-                metadata,
-                frameIndex * TimeSpan.TicksPerSecond);
+            FrameSelection selection = FrameSelection.Create(metadata, frameIndex);
             var source = new ResolvedPreviewSource(
                 Guid.Parse("04e16925-12a7-49cf-b973-c51924ea54a8"),
                 sourcePath,

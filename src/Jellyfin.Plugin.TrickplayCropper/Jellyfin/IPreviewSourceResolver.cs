@@ -1,22 +1,14 @@
-using System.Security.Claims;
-using Jellyfin.Plugin.TrickplayCropper.Preview;
-
 namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 
 /// <summary>
-/// Resolves Jellyfin managers and a manager-owned Source Sprite into a typed preview source.
+/// Resolves the GET-only Source Sprite snapshot for a shared Preview context.
 /// </summary>
 internal interface IPreviewSourceResolver
 {
     /// <summary>
-    /// Resolves the authorized source, exact 320px metadata, and Source Sprite snapshot.
+    /// Selects the crop geometry and snapshots the manager-owned Source Sprite.
     /// </summary>
-    /// <param name="query">The normalized preview query.</param>
-    /// <param name="principal">The current request principal.</param>
-    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <param name="context">The successful shared Preview context.</param>
     /// <returns>The typed source-resolution result.</returns>
-    Task<PreviewSourceResolution> ResolveAsync(
-        PreviewQuery query,
-        ClaimsPrincipal principal,
-        CancellationToken cancellationToken);
+    Task<PreviewSourceResolution> ResolveAsync(PreviewContext context);
 }

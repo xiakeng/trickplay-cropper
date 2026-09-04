@@ -3,6 +3,7 @@ using Jellyfin.Plugin.TrickplayCropper.Caching;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
 using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
+using MediaBrowser.Controller.Entities;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
 using Xunit;
@@ -38,14 +39,14 @@ public sealed class PreviewOutcomeSpecs
     }
 
     [Theory]
-    [MemberData(nameof(ExpectedResolutionOutcomes))]
-    public async Task MapsSourceResolutionToTypedOutcome(
-        SourceResolutionKind resolutionKind,
+    [MemberData(nameof(ExpectedContextOutcomes))]
+    public async Task MapsSharedContextFailureToTypedOutcomeWithoutGetOnlyWork(
+        ContextFailureKind failureKind,
         Type expectedOutcomeType)
     {
-        PreviewSourceResolution resolution = CreateResolution(resolutionKind);
-        var resolver = new StubSourceResolver(resolution);
-        TrickplayPreview preview = CreatePreview(resolver);
+        var contextResolver = new StubContextResolver(CreateContextResolution(failureKind));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver);
 
         PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
             new PreviewQuery(itemId, null, 0),
@@ -54,22 +55,26 @@ public sealed class PreviewOutcomeSpecs
             CancellationToken.None);
 
         Assert.IsType(expectedOutcomeType, outcome);
+        Assert.Equal(1, contextResolver.CallCount);
+        Assert.Equal(0, sourceResolver.CallCount);
     }
 
     [Fact]
-    public async Task RejectsNegativePositionBeforeSourceResolution()
+    public async Task MapsUnavailableSourceSpriteToNotFoundWithoutCacheAccess()
     {
-        var resolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
-        TrickplayPreview preview = CreatePreview(resolver);
+        var contextResolver = new StubContextResolver(
+            new PreviewContextResolution.Resolved(CreateContext()));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver);
 
         PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
-            new PreviewQuery(itemId, null, -1),
+            new PreviewQuery(itemId, null, 0),
             new ClaimsPrincipal(),
             [],
             CancellationToken.None);
 
-        Assert.IsType<PreviewOutcome.BadRequest>(outcome);
-        Assert.Equal(0, resolver.CallCount);
+        Assert.IsType<PreviewOutcome.NotFound>(outcome);
+        Assert.Equal(1, sourceResolver.CallCount);
     }
 
     [Fact]
@@ -77,8 +82,9 @@ public sealed class PreviewOutcomeSpecs
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var resolver = new CancellingSourceResolver();
-        TrickplayPreview preview = CreatePreview(resolver);
+        var contextResolver = new CancellingContextResolver();
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.NotFound());
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => ((ITrickplayPreview)preview).GetAsync(
@@ -86,6 +92,8 @@ public sealed class PreviewOutcomeSpecs
                 new ClaimsPrincipal(),
                 [],
                 cancellation.Token));
+
+        Assert.Equal(0, sourceResolver.CallCount);
     }
 
     [Theory]
@@ -95,10 +103,12 @@ public sealed class PreviewOutcomeSpecs
         Type expectedOutcomeType,
         int expectedCacheCalls)
     {
-        ResolvedPreviewSource source = CreateSource();
-        var resolver = new StubSourceResolver(new PreviewSourceResolution.Found(source));
+        PreviewContext context = CreateContext();
+        ResolvedPreviewSource source = CreateSource(context);
+        var contextResolver = new StubContextResolver(new PreviewContextResolution.Resolved(context));
+        var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.Found(source));
         var cache = new StubPreviewCache();
-        TrickplayPreview preview = CreatePreview(resolver, cache);
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, cache);
         string entityTag = PreviewIdentity.Create(source).EntityTag;
 
         PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
@@ -114,10 +124,12 @@ public sealed class PreviewOutcomeSpecs
     [Fact]
     public async Task ConvertsUnexpectedCacheFailureToInternalError()
     {
-        ResolvedPreviewSource source = CreateSource();
-        var resolver = new StubSourceResolver(new PreviewSourceResolution.Found(source));
+        PreviewContext context = CreateContext();
+        var contextResolver = new StubContextResolver(new PreviewContextResolution.Resolved(context));
+        var sourceResolver = new StubSourceResolver(
+            new PreviewSourceResolution.Found(CreateSource(context)));
         var cache = new StubPreviewCache(new IOException("The unit-test cache failed."));
-        TrickplayPreview preview = CreatePreview(resolver, cache);
+        TrickplayPreview preview = CreatePreview(contextResolver, sourceResolver, cache);
 
         PreviewOutcome outcome = await ((ITrickplayPreview)preview).GetAsync(
             new PreviewQuery(itemId, null, 0),
@@ -129,11 +141,12 @@ public sealed class PreviewOutcomeSpecs
         Assert.Equal(1, cache.CallCount);
     }
 
-    public static TheoryData<SourceResolutionKind, Type> ExpectedResolutionOutcomes => new()
+    public static TheoryData<ContextFailureKind, Type> ExpectedContextOutcomes => new()
     {
-        { SourceResolutionKind.Unauthorized, typeof(PreviewOutcome.Unauthorized) },
-        { SourceResolutionKind.Forbidden, typeof(PreviewOutcome.Forbidden) },
-        { SourceResolutionKind.NotFound, typeof(PreviewOutcome.NotFound) },
+        { ContextFailureKind.BadRequest, typeof(PreviewOutcome.BadRequest) },
+        { ContextFailureKind.Unauthorized, typeof(PreviewOutcome.Unauthorized) },
+        { ContextFailureKind.Forbidden, typeof(PreviewOutcome.Forbidden) },
+        { ContextFailureKind.NotFound, typeof(PreviewOutcome.NotFound) },
     };
 
     public static TheoryData<ConditionalRequestKind, Type, int> ExpectedConditionalOutcomes => new()
@@ -163,47 +176,92 @@ public sealed class PreviewOutcomeSpecs
         };
     }
 
-    private static PreviewSourceResolution CreateResolution(SourceResolutionKind resolutionKind)
+    private static PreviewContextResolution CreateContextResolution(ContextFailureKind failureKind)
     {
-        return resolutionKind switch
+        return failureKind switch
         {
-            SourceResolutionKind.Unauthorized => new PreviewSourceResolution.Unauthorized(),
-            SourceResolutionKind.Forbidden => new PreviewSourceResolution.Forbidden(),
-            SourceResolutionKind.NotFound => new PreviewSourceResolution.NotFound(),
+            ContextFailureKind.BadRequest => new PreviewContextResolution.BadRequest(),
+            ContextFailureKind.Unauthorized => new PreviewContextResolution.Unauthorized(),
+            ContextFailureKind.Forbidden => new PreviewContextResolution.Forbidden(),
+            ContextFailureKind.NotFound => new PreviewContextResolution.NotFound(),
             _ => throw new ArgumentOutOfRangeException(
-                nameof(resolutionKind),
-                resolutionKind,
-                "Unknown source resolution kind."),
+                nameof(failureKind),
+                failureKind,
+                "Unknown shared context failure kind."),
         };
     }
 
-    private static TrickplayPreview CreatePreview(IPreviewSourceResolver resolver)
+    private static TrickplayPreview CreatePreview(
+        IPreviewContextResolver contextResolver,
+        IPreviewSourceResolver sourceResolver)
     {
-        return CreatePreview(resolver, new UnreachablePreviewCache());
+        return CreatePreview(contextResolver, sourceResolver, new UnreachablePreviewCache());
     }
 
     private static TrickplayPreview CreatePreview(
-        IPreviewSourceResolver resolver,
+        IPreviewContextResolver contextResolver,
+        IPreviewSourceResolver sourceResolver,
         IPreviewCache previewCache)
     {
         return new TrickplayPreview(
-            resolver,
+            contextResolver,
+            sourceResolver,
             previewCache,
             new UnreachablePreviewEncoder(),
             NullLogger<TrickplayPreview>.Instance);
     }
 
-    private static ResolvedPreviewSource CreateSource()
+    private static PreviewContext CreateContext()
     {
-        var metadata = new TrickplayMetadata(320, 180, 10_000, 2, 2, 4);
-        var selection = new FrameSelection(0, 0, 0, 0, 0, 0, 320, 180);
-        return new ResolvedPreviewSource(
+        return new PreviewContext(
             itemId,
+            new Video { Id = itemId },
+            new TrickplayMetadata(320, 180, 10_000, 2, 2, 4),
+            0);
+    }
+
+    private static ResolvedPreviewSource CreateSource(PreviewContext context)
+    {
+        return new ResolvedPreviewSource(
+            context.MediaSourceId,
             "/manager/source-sprite.jpg",
             12_345,
             638_397_614_450_000_000,
-            metadata,
-            selection);
+            context.Metadata,
+            FrameSelection.Create(context.Metadata, context.FrameIndex));
+    }
+
+    private sealed class StubContextResolver : IPreviewContextResolver
+    {
+        private readonly PreviewContextResolution resolution;
+        private int callCount;
+
+        public StubContextResolver(PreviewContextResolution resolution)
+        {
+            this.resolution = resolution;
+        }
+
+        public int CallCount => Volatile.Read(ref callCount);
+
+        public Task<PreviewContextResolution> ResolveAsync(
+            PreviewQuery query,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref callCount);
+            return Task.FromResult(resolution);
+        }
+    }
+
+    private sealed class CancellingContextResolver : IPreviewContextResolver
+    {
+        public Task<PreviewContextResolution> ResolveAsync(
+            PreviewQuery query,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromCanceled<PreviewContextResolution>(cancellationToken);
+        }
     }
 
     private sealed class StubSourceResolver : IPreviewSourceResolver
@@ -218,24 +276,10 @@ public sealed class PreviewOutcomeSpecs
 
         public int CallCount => Volatile.Read(ref callCount);
 
-        public Task<PreviewSourceResolution> ResolveAsync(
-            PreviewQuery query,
-            ClaimsPrincipal principal,
-            CancellationToken cancellationToken)
+        public Task<PreviewSourceResolution> ResolveAsync(PreviewContext context)
         {
             Interlocked.Increment(ref callCount);
             return Task.FromResult(resolution);
-        }
-    }
-
-    private sealed class CancellingSourceResolver : IPreviewSourceResolver
-    {
-        public Task<PreviewSourceResolution> ResolveAsync(
-            PreviewQuery query,
-            ClaimsPrincipal principal,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromCanceled<PreviewSourceResolution>(cancellationToken);
         }
     }
 
@@ -246,7 +290,7 @@ public sealed class PreviewOutcomeSpecs
             Func<Stream, CancellationToken, Task<PreviewEncodingTelemetry>> writer,
             CancellationToken cancellationToken)
         {
-            throw new InvalidOperationException("The cache must not be reached for a typed source failure.");
+            throw new InvalidOperationException("The cache must not be reached for a typed request failure.");
         }
 
         public Task ClearAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -302,12 +346,13 @@ public sealed class PreviewOutcomeSpecs
             Stream destination,
             CancellationToken cancellationToken)
         {
-            throw new InvalidOperationException("The encoder must not be reached for a typed source failure.");
+            throw new InvalidOperationException("The encoder must not be reached for a typed request failure.");
         }
     }
 
-    public enum SourceResolutionKind
+    public enum ContextFailureKind
     {
+        BadRequest,
         Unauthorized,
         Forbidden,
         NotFound,
