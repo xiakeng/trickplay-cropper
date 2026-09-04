@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 
 /// <summary>
-/// Owns the stable Debug identities and fields of the Preview decision protocol.
+/// Owns the stable Debug identities and fields of the Preview decision and coordination protocol.
 /// </summary>
 /// <remarks>
 /// Every event is Debug-only, redaction-safe, deterministic in identity and fields, and behavior-neutral.
@@ -51,6 +51,50 @@ internal static partial class PreviewDebugProtocol
         Level = LogLevel.Debug,
         Message = "Trickplay Preview served from cache with disposition {CacheDisposition}.")]
     public static partial void LogCacheDisposition(ILogger logger, PreviewCacheDisposition cacheDisposition);
+
+    /// <summary>
+    /// Records that one operation is waiting for exclusive Preview Cache Entry ownership.
+    /// </summary>
+    /// <param name="logger">The logger that reports Preview Cache Entry coordination.</param>
+    [LoggerMessage(
+        EventId = 1004,
+        EventName = "TrickplayPreviewEntryLockWaiting",
+        Level = LogLevel.Debug,
+        Message = "Trickplay Preview is waiting for Preview Cache Entry ownership.")]
+    public static partial void LogEntryLockWaiting(ILogger logger);
+
+    /// <summary>
+    /// Records that one operation has taken exclusive Preview Cache Entry ownership.
+    /// </summary>
+    /// <param name="logger">The logger that reports Preview Cache Entry coordination.</param>
+    [LoggerMessage(
+        EventId = 1005,
+        EventName = "TrickplayPreviewEntryLockOwned",
+        Level = LogLevel.Debug,
+        Message = "Trickplay Preview owns the Preview Cache Entry.")]
+    public static partial void LogEntryLockOwned(ILogger logger);
+
+    /// <summary>
+    /// Records that one operation is waiting for a Cache Tree lease.
+    /// </summary>
+    /// <param name="logger">The logger that reports Cache Tree coordination.</param>
+    [LoggerMessage(
+        EventId = 1006,
+        EventName = "TrickplayPreviewCacheTreeLeaseWaiting",
+        Level = LogLevel.Debug,
+        Message = "Trickplay Preview is waiting for a Cache Tree lease.")]
+    public static partial void LogCacheTreeLeaseWaiting(ILogger logger);
+
+    /// <summary>
+    /// Records that one encode is waiting for one of the process-wide decode permits.
+    /// </summary>
+    /// <param name="logger">The category logger of the module that gates decoding.</param>
+    [LoggerMessage(
+        EventId = 1007,
+        EventName = "TrickplayPreviewDecodePermitWaiting",
+        Level = LogLevel.Debug,
+        Message = "Trickplay Preview is waiting for a decode permit.")]
+    public static partial void LogDecodePermitWaiting(ILogger logger);
 
     [LoggerMessage(
         EventId = 1001,

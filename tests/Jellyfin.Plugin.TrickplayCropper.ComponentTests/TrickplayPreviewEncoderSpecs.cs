@@ -1,6 +1,8 @@
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
 using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SkiaSharp;
 using Xunit;
 
@@ -59,12 +61,14 @@ public sealed class TrickplayPreviewEncoderSpecs
         hDttvCHbbeEO2ktKzhDttvCHbbeEO2ktKzhDttvCHbSWlZwh223hDtpLSHbSWlZwh223hDtpLSHbSWlZwh223hDtpLT/2Q==
         """;
 
+    private static readonly EventId decodePermitWaiting = new(1007, "TrickplayPreviewDecodePermitWaiting");
+
     [Theory]
     [MemberData(nameof(ValidCrops))]
     public async Task CropsIndependentJpegFixtures(JpegFixture fixture, int row, int column)
     {
         using SourceFixture sourceFixture = SourceFixture.Create(GetFixture(fixture), row, column);
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new MemoryStream();
 
         PreviewEncodingTelemetry telemetry = await encoder.EncodeAsync(
@@ -86,7 +90,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     public async Task RejectsNonJpegInput()
     {
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(NonJpeg), 0, 0);
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new MemoryStream();
 
         PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
@@ -104,7 +108,7 @@ public sealed class TrickplayPreviewEncoderSpecs
         {
             Metadata = fixture.Source.Metadata with { TileWidth = 2 },
         };
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new MemoryStream();
 
         PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
@@ -120,7 +124,7 @@ public sealed class TrickplayPreviewEncoderSpecs
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 0, 0);
         FrameSelection selection = fixture.Source.Selection with { CropX = 80 };
         ResolvedPreviewSource outOfBounds = fixture.Source with { Selection = selection };
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new MemoryStream();
 
         PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
@@ -151,7 +155,7 @@ public sealed class TrickplayPreviewEncoderSpecs
             _ => throw new ArgumentOutOfRangeException(nameof(input), input, "Unknown invalid crop input."),
         };
         ResolvedPreviewSource invalid = fixture.Source with { Selection = selection };
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new MemoryStream();
 
         PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
@@ -166,6 +170,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     {
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 1, 2);
         using var encoder = new TrickplayPreviewEncoder(
+            NullLogger<TrickplayPreviewEncoder>.Instance,
             static _ => { },
             static (_, _, count, _) => count - 1);
         using var destination = new MemoryStream();
@@ -183,7 +188,7 @@ public sealed class TrickplayPreviewEncoderSpecs
         byte[] sourceBytes = DecodeFixture(BaselineJpeg);
         Array.Resize(ref sourceBytes, sourceBytes.Length - 1_500);
         using SourceFixture fixture = SourceFixture.Create(sourceBytes, 1, 2);
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new MemoryStream();
 
         PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
@@ -197,7 +202,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     public async Task LeavesTheDestinationOpenWhenEncodingFails()
     {
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 0, 1);
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new FailingWriteStream();
 
         PreviewStageException exception = await Assert.ThrowsAsync<PreviewStageException>(
@@ -212,7 +217,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     public async Task CancelsBeforeWaitingForADecodePermit()
     {
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 0, 0);
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var destination = new MemoryStream();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
@@ -231,6 +236,7 @@ public sealed class TrickplayPreviewEncoderSpecs
         using var cancellation = new CancellationTokenSource();
         int completedReadBatches = 0;
         using var encoder = new TrickplayPreviewEncoder(
+            NullLogger<TrickplayPreviewEncoder>.Instance,
             checkpoint =>
             {
                 if (checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.AfterReadBatch
@@ -257,6 +263,7 @@ public sealed class TrickplayPreviewEncoderSpecs
         using var cancellation = new CancellationTokenSource();
         int completedSkipBatches = 0;
         using var encoder = new TrickplayPreviewEncoder(
+            NullLogger<TrickplayPreviewEncoder>.Instance,
             checkpoint =>
             {
                 if (checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.AfterSkipBatch
@@ -282,6 +289,7 @@ public sealed class TrickplayPreviewEncoderSpecs
         using var cancellation = new CancellationTokenSource();
         bool reachedBeforeEncode = false;
         using var encoder = new TrickplayPreviewEncoder(
+            NullLogger<TrickplayPreviewEncoder>.Instance,
             checkpoint =>
             {
                 if (checkpoint == TrickplayPreviewEncoder.PreviewEncodingCheckpoint.BeforeEncode)
@@ -304,7 +312,7 @@ public sealed class TrickplayPreviewEncoderSpecs
     public async Task AWaitingFifthEncodeCanCancel()
     {
         using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 0, 0);
-        using var encoder = new TrickplayPreviewEncoder();
+        using var encoder = new TrickplayPreviewEncoder(NullLogger<TrickplayPreviewEncoder>.Instance);
         using var blocked = new CountdownEvent(4);
         using var release = new ManualResetEventSlim();
         BlockingWriteStream[] destinations = Enumerable.Range(0, 4)
@@ -340,6 +348,80 @@ public sealed class TrickplayPreviewEncoderSpecs
                 destination.Dispose();
             }
         }
+    }
+
+    [Fact]
+    public async Task ReportsDecodePermitWaitingForAFifthEncode()
+    {
+        var logger = new DebugProtocolLogger<TrickplayPreviewEncoder>();
+
+        IReadOnlyList<RecordedEvent> events = await RunSaturatedFifthEncodeAsync(
+            logger,
+            pending => Assert.Single(pending, recorded => recorded.EventId == decodePermitWaiting));
+
+        Assert.Single(events, recorded => recorded.EventId == decodePermitWaiting);
+        Assert.All(
+            events,
+            recorded => Assert.Equal(["{OriginalFormat}"], recorded.Properties.Keys.ToArray()));
+    }
+
+    [Fact]
+    public async Task ReportsNoDecodePermitWaitingWhenTheHostDisablesDebugLogging()
+    {
+        var logger = new DebugProtocolLogger<TrickplayPreviewEncoder>(LogLevel.Information);
+
+        IReadOnlyList<RecordedEvent> events = await RunSaturatedFifthEncodeAsync(
+            logger,
+            pending => Assert.Empty(pending));
+
+        Assert.Empty(events);
+    }
+
+    private static async Task<IReadOnlyList<RecordedEvent>> RunSaturatedFifthEncodeAsync(
+        DebugProtocolLogger<TrickplayPreviewEncoder> logger,
+        Action<IReadOnlyList<RecordedEvent>> observeWhileWaiting)
+    {
+        using SourceFixture fixture = SourceFixture.Create(DecodeFixture(BaselineJpeg), 0, 0);
+        using var encoder = new TrickplayPreviewEncoder(logger);
+        using var blocked = new CountdownEvent(4);
+        using var release = new ManualResetEventSlim();
+        BlockingWriteStream[] destinations = Enumerable.Range(0, 4)
+            .Select(_ => new BlockingWriteStream(blocked, release))
+            .ToArray();
+        Task<PreviewEncodingTelemetry>[] owners = destinations
+            .Select(destination => Task.Run(
+                () => encoder.EncodeAsync(fixture.Source, destination, CancellationToken.None)))
+            .ToArray();
+
+        try
+        {
+            Assert.True(blocked.Wait(TimeSpan.FromSeconds(10)));
+            Assert.Empty(logger.Events);
+
+            using var fifthDestination = new MemoryStream();
+            Task<PreviewEncodingTelemetry> fifth = encoder.EncodeAsync(
+                fixture.Source,
+                fifthDestination,
+                CancellationToken.None);
+            Assert.False(fifth.IsCompleted);
+            observeWhileWaiting(logger.Events);
+
+            release.Set();
+            await fifth.WaitAsync(TimeSpan.FromSeconds(10));
+            await Task.WhenAll(owners).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.True(fifthDestination.Length > 0);
+        }
+        finally
+        {
+            release.Set();
+            await Task.WhenAll(owners).WaitAsync(TimeSpan.FromSeconds(10));
+            foreach (BlockingWriteStream destination in destinations)
+            {
+                destination.Dispose();
+            }
+        }
+
+        return logger.Events;
     }
 
     public static TheoryData<JpegFixture, int, int> ValidCrops => new()

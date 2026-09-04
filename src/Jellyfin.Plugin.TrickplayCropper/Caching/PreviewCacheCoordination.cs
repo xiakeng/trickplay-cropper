@@ -1,3 +1,6 @@
+using Jellyfin.Plugin.TrickplayCropper.Preview;
+using Microsoft.Extensions.Logging;
+
 namespace Jellyfin.Plugin.TrickplayCropper.Caching;
 
 /// <summary>
@@ -7,22 +10,26 @@ internal sealed class PreviewCacheCoordination
 {
     private readonly Action<PreviewCacheCheckpoint> checkpointObserver;
     private readonly PreviewEntryLockRegistry entryLocks;
+    private readonly ILogger logger;
     private readonly CacheTreeLock treeLock = new();
 
     /// <summary>
     /// Initializes process-local coordination without boundary observation.
     /// </summary>
-    public PreviewCacheCoordination()
-        : this(static _ => { })
+    /// <param name="logger">The category logger that reports coordination waits and ownership.</param>
+    public PreviewCacheCoordination(ILogger logger)
+        : this(logger, static _ => { })
     {
     }
 
     /// <summary>
     /// Initializes process-local coordination whose boundaries can be observed by component tests.
     /// </summary>
+    /// <param name="logger">The category logger that reports coordination waits and ownership.</param>
     /// <param name="checkpointObserver">Observes deterministic cache coordination boundaries.</param>
-    internal PreviewCacheCoordination(Action<PreviewCacheCheckpoint> checkpointObserver)
+    internal PreviewCacheCoordination(ILogger logger, Action<PreviewCacheCheckpoint> checkpointObserver)
     {
+        this.logger = logger;
         this.checkpointObserver = checkpointObserver;
         StringComparer pathComparer;
         if (OperatingSystem.IsWindows())
@@ -57,13 +64,23 @@ internal sealed class PreviewCacheCoordination
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken)
     {
-        using IDisposable treeLease = await treeLock
-            .AcquireSharedAsync(cancellationToken)
-            .ConfigureAwait(false);
+        // A pending acquisition queued a waiter; a completed one acquired immediately, failed, or was canceled.
+        ValueTask<IDisposable> treeLeaseAcquisition = treeLock.AcquireSharedAsync(cancellationToken);
+        if (!treeLeaseAcquisition.IsCompleted)
+        {
+            PreviewDebugProtocol.LogCacheTreeLeaseWaiting(logger);
+        }
+
+        using IDisposable treeLease = await treeLeaseAcquisition.ConfigureAwait(false);
         checkpointObserver(PreviewCacheCheckpoint.TreeLeaseAcquired);
-        using IDisposable entryLease = await entryLocks
-            .AcquireAsync(path, cancellationToken)
-            .ConfigureAwait(false);
+        ValueTask<IDisposable> entryLeaseAcquisition = entryLocks.AcquireAsync(path, cancellationToken);
+        if (!entryLeaseAcquisition.IsCompleted)
+        {
+            PreviewDebugProtocol.LogEntryLockWaiting(logger);
+        }
+
+        using IDisposable entryLease = await entryLeaseAcquisition.ConfigureAwait(false);
+        PreviewDebugProtocol.LogEntryLockOwned(logger);
         checkpointObserver(PreviewCacheCheckpoint.EntryLeaseAcquired);
         TResult result = await operation(cancellationToken).ConfigureAwait(false);
         checkpointObserver(PreviewCacheCheckpoint.ResponseBuffered);
@@ -77,7 +94,13 @@ internal sealed class PreviewCacheCoordination
     /// <returns>A lease that releases exclusive ownership when disposed.</returns>
     public ValueTask<IDisposable> AcquireExclusiveAsync(CancellationToken cancellationToken)
     {
-        return treeLock.AcquireExclusiveAsync(cancellationToken);
+        ValueTask<IDisposable> leaseAcquisition = treeLock.AcquireExclusiveAsync(cancellationToken);
+        if (!leaseAcquisition.IsCompleted)
+        {
+            PreviewDebugProtocol.LogCacheTreeLeaseWaiting(logger);
+        }
+
+        return leaseAcquisition;
     }
 
     /// <summary>
@@ -92,12 +115,21 @@ internal sealed class PreviewCacheCoordination
         Action operation,
         CancellationToken cancellationToken)
     {
-        using IDisposable treeLease = await treeLock
-            .AcquireSharedAsync(cancellationToken)
-            .ConfigureAwait(false);
-        using IDisposable entryLease = await entryLocks
-            .AcquireAsync(path, cancellationToken)
-            .ConfigureAwait(false);
+        ValueTask<IDisposable> treeLeaseAcquisition = treeLock.AcquireSharedAsync(cancellationToken);
+        if (!treeLeaseAcquisition.IsCompleted)
+        {
+            PreviewDebugProtocol.LogCacheTreeLeaseWaiting(logger);
+        }
+
+        using IDisposable treeLease = await treeLeaseAcquisition.ConfigureAwait(false);
+        ValueTask<IDisposable> entryLeaseAcquisition = entryLocks.AcquireAsync(path, cancellationToken);
+        if (!entryLeaseAcquisition.IsCompleted)
+        {
+            PreviewDebugProtocol.LogEntryLockWaiting(logger);
+        }
+
+        using IDisposable entryLease = await entryLeaseAcquisition.ConfigureAwait(false);
+        PreviewDebugProtocol.LogEntryLockOwned(logger);
         checkpointObserver(PreviewCacheCheckpoint.CleanupEntryLeaseAcquired);
         cancellationToken.ThrowIfCancellationRequested();
         operation();
