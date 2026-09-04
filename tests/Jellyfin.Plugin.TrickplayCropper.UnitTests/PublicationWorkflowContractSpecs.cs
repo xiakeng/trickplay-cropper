@@ -21,7 +21,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationTriggersOnlyWhenAPullRequestAgainstMainCloses()
     {
-        string triggers = ReadTopLevelBlock(publication, "on:");
+        string triggers = WorkflowFiles.ReadTopLevelBlock(publication, "on:");
 
         Assert.Matches(@"pull_request:\s+types:\s+(?:-\s+\S+\s+)*-\s+closed\b", triggers);
         Assert.Matches(@"pull_request:[\s\S]*branches:\s+(?:-\s+\S+\s+)*-\s+main\b", triggers);
@@ -59,7 +59,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationChecksOutTheMergedCommitRatherThanThePullRequestHead()
     {
-        string checkout = BodyOf(ReadSteps(publication), CheckoutStepName);
+        string checkout = ReadBody(ReadSteps(publication), CheckoutStepName);
 
         Assert.Contains("ref: ${{ github.event.pull_request.merge_commit_sha }}", checkout, StringComparison.Ordinal);
     }
@@ -90,17 +90,15 @@ public sealed partial class PublicationWorkflowContractSpecs
             .ToArray();
 
         Assert.NotEmpty(gateSteps);
-        Assert.All(gateSteps, name => Assert.Equal(BodyOf(ciSteps, name), BodyOf(publicationSteps, name)));
+        Assert.All(gateSteps, name => Assert.Equal(ReadBody(ciSteps, name), ReadBody(publicationSteps, name)));
     }
 
     [Fact]
     public void PublicationGrantsExactlyTheContentWriteScope()
     {
-        Assert.Equal(
-            1,
-            publication.Split('\n').Count(line => line.Trim().StartsWith("permissions:", StringComparison.Ordinal)));
+        Assert.Equal(1, WorkflowFiles.CountBlocks(publication, "permissions:"));
 
-        string[] scopes = ReadTopLevelBlock(publication, "permissions:")
+        string[] scopes = WorkflowFiles.ReadTopLevelBlock(publication, "permissions:")
             .Split('\n')
             .Select(scope => scope.Trim())
             .Where(scope => scope.Length > 0)
@@ -113,8 +111,10 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationUsesNoActionThatTheExistingWorkflowsDoNotAlreadyPin()
     {
-        string[] used = ReadUsedActions(publication);
-        string[] pinned = ReadUsedActions(ci).Concat(ReadUsedActions(preparation)).ToArray();
+        string[] used = WorkflowFiles.ReadUsedActions(publication);
+        string[] pinned = WorkflowFiles.ReadUsedActions(ci)
+            .Concat(WorkflowFiles.ReadUsedActions(preparation))
+            .ToArray();
 
         Assert.NotEmpty(used);
         Assert.All(used, action => Assert.Matches(@"^[^@\s]+@[0-9a-f]{40}$", action));
@@ -124,9 +124,10 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void TheMergedBuildManifestIsTheOnlyVersionAndChangelogSource()
     {
-        Assert.Equal(BuildManifestPath, ReadEnvValue(publication, "BUILD_MANIFEST"));
+        string approvedManifestPath = ReadEnvValue(preparation, "BUILD_MANIFEST");
+        Assert.Equal(approvedManifestPath, ReadEnvValue(publication, "BUILD_MANIFEST"));
 
-        string publish = BodyOf(ReadSteps(publication), PublicationStepName);
+        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
         Assert.Contains("jq -r '.version' \"${BUILD_MANIFEST}\"", publish, StringComparison.Ordinal);
         Assert.Contains("jq -r '.changelog' \"${BUILD_MANIFEST}\"", publish, StringComparison.Ordinal);
         Assert.DoesNotMatch(@"\d+\.\d+\.\d+\.\d+", publication);
@@ -135,7 +136,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationCreatesOneStableReleaseTaggedAtTheMergedCommit()
     {
-        string publish = BodyOf(ReadSteps(publication), PublicationStepName);
+        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
 
         Assert.Contains("gh release create \"v${version}\" \"${PACKAGE_PATH}\"", publish, StringComparison.Ordinal);
         Assert.Contains("--title \"Trickplay Cropper ${version}\"", publish, StringComparison.Ordinal);
@@ -148,7 +149,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationUploadsExactlyTheSoleJprmArtifact()
     {
-        string publish = BodyOf(ReadSteps(publication), PublicationStepName);
+        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
 
         Assert.Contains("PACKAGE_PATH: ${{ steps.package.outputs.artifact }}", publish, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(publish, "\"${PACKAGE_PATH}\""));
@@ -159,7 +160,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationRetriesReuseTheExistingReleaseAndItsAsset()
     {
-        string publish = BodyOf(ReadSteps(publication), PublicationStepName);
+        string publish = ReadBody(ReadSteps(publication), PublicationStepName);
         int view = publish.IndexOf("gh release view", StringComparison.Ordinal);
         int upload = publish.IndexOf("gh release upload", StringComparison.Ordinal);
         int create = publish.IndexOf("gh release create", StringComparison.Ordinal);
@@ -196,9 +197,7 @@ public sealed partial class PublicationWorkflowContractSpecs
         Assert.Equal([PublicationWorkflowRelativePath], publishing);
     }
 
-    private static string BuildManifestPath => ReadEnvValue(preparation, "BUILD_MANIFEST");
-
-    private static string BodyOf(KeyValuePair<string, string>[] steps, string name)
+    private static string ReadBody(KeyValuePair<string, string>[] steps, string name)
     {
         return steps.Single(step => step.Key == name).Value;
     }
@@ -206,9 +205,11 @@ public sealed partial class PublicationWorkflowContractSpecs
     private static int CountOccurrences(string text, string needle)
     {
         int count = 0;
-        for (int index = text.IndexOf(needle, StringComparison.Ordinal); index >= 0; index = text.IndexOf(needle, index + needle.Length, StringComparison.Ordinal))
+        int index = text.IndexOf(needle, StringComparison.Ordinal);
+        while (index >= 0)
         {
             count++;
+            index = text.IndexOf(needle, index + needle.Length, StringComparison.Ordinal);
         }
 
         return count;
@@ -231,27 +232,6 @@ public sealed partial class PublicationWorkflowContractSpecs
         Assert.True(match.Success, "The publication job must gate itself with a job-level if condition.");
 
         return match.Groups["condition"].Value;
-    }
-
-    private static string ReadTopLevelBlock(string workflow, string header)
-    {
-        string[] lines = workflow.Replace("\r\n", "\n").Split('\n');
-        int start = Array.FindIndex(lines, line => line.TrimEnd() == header);
-        Assert.True(start >= 0, $"The publication workflow must declare a top-level '{header}' block.");
-
-        StringBuilder block = new();
-        for (int index = start + 1; index < lines.Length; index++)
-        {
-            string line = lines[index];
-            if (line.Trim().Length > 0 && !char.IsWhiteSpace(line[0]))
-            {
-                break;
-            }
-
-            block.Append(line).Append('\n');
-        }
-
-        return block.ToString();
     }
 
     private static KeyValuePair<string, string>[] ReadSteps(string workflow)
@@ -286,17 +266,6 @@ public sealed partial class PublicationWorkflowContractSpecs
 
         return steps.ToArray();
     }
-
-    private static string[] ReadUsedActions(string workflow)
-    {
-        return UsesActionRegex()
-            .Matches(workflow)
-            .Select(match => match.Groups[1].Value)
-            .ToArray();
-    }
-
-    [GeneratedRegex(@"uses:\s*(\S+)")]
-    private static partial Regex UsesActionRegex();
 
     [GeneratedRegex(@"^(\s*)-\s*name:\s*(.+?)\s*$")]
     private static partial Regex StepNameRegex();

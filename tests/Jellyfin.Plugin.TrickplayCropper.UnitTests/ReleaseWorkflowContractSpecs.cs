@@ -20,10 +20,7 @@ public sealed partial class ReleaseWorkflowContractSpecs
     [Fact]
     public void TheWorkflowGrantsExactlyTheTokenScopesItNeeds()
     {
-        int permissionBlocks = workflow
-            .Split('\n')
-            .Count(line => line.Trim().StartsWith("permissions:", StringComparison.Ordinal));
-        Assert.Equal(1, permissionBlocks);
+        Assert.Equal(1, WorkflowFiles.CountBlocks(workflow, "permissions:"));
 
         string[] scopes = ReadTopLevelPermissions()
             .Select(scope => $"{scope.Key}: {scope.Value}")
@@ -38,9 +35,7 @@ public sealed partial class ReleaseWorkflowContractSpecs
     [Fact]
     public void EveryActionIsFirstPartyAndPinnedToACommitSha()
     {
-        string[] uses = UsesActionRegex().Matches(workflow)
-            .Select(match => match.Groups[1].Value)
-            .ToArray();
+        string[] uses = WorkflowFiles.ReadUsedActions(workflow);
 
         Assert.NotEmpty(uses);
         Assert.All(uses, action => Assert.Matches(@"^actions/[^@\s]+@[0-9a-f]{40}$", action));
@@ -127,19 +122,9 @@ public sealed partial class ReleaseWorkflowContractSpecs
 
     private static Dictionary<string, string> ReadTopLevelPermissions()
     {
-        string[] lines = workflow.Split('\n');
-        int start = Array.FindIndex(lines, line => line.TrimEnd('\r') == "permissions:");
-        Assert.True(start >= 0, "The workflow must declare a top-level permissions block.");
-
         Dictionary<string, string> scopes = new(StringComparer.Ordinal);
-        for (int index = start + 1; index < lines.Length; index++)
+        foreach (string line in WorkflowFiles.ReadTopLevelBlock(workflow, "permissions:").Split('\n'))
         {
-            string line = lines[index].TrimEnd('\r');
-            if (line.Length > 0 && !char.IsWhiteSpace(line[0]))
-            {
-                break;
-            }
-
             string entry = line.Trim();
             if (entry.Length == 0)
             {
@@ -153,9 +138,6 @@ public sealed partial class ReleaseWorkflowContractSpecs
 
         return scopes;
     }
-
-    [GeneratedRegex(@"uses:\s*(\S+)")]
-    private static partial Regex UsesActionRegex();
 
     [GeneratedRegex(@"git tag(?:\s+--list)?")]
     private static partial Regex GitTagRegex();
