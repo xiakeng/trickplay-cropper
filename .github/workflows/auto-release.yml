@@ -8,7 +8,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  administration: read
 
 concurrency:
   group: auto-release
@@ -52,14 +51,14 @@ jobs:
             exit 1
           fi
 
-          if ! can_approve="$(gh api "repos/${repo}/actions/permissions/workflow" --jq .can_approve_pull_request_reviews 2>/dev/null)" \
+          if ! can_approve="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api "repos/${repo}/actions/permissions/workflow" --jq .can_approve_pull_request_reviews 2>/dev/null)" \
             || [[ "${can_approve}" != "true" ]]; then
-            echo "::error::Repository workflow permissions must allow GitHub Actions to create and approve pull requests." >&2
+            echo "::error::Cannot confirm GitHub Actions may create and approve pull requests. RELEASE_BOT_PAT needs Administration read access, and that repository workflow permission must be enabled." >&2
             exit 1
           fi
 
-          if ! rules="$(gh api "repos/${repo}/rules/branches/main" 2>/dev/null)"; then
-            echo "::error::Cannot read the branch rules that protect main." >&2
+          if ! rules="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api "repos/${repo}/rules/branches/main" 2>/dev/null)"; then
+            echo "::error::Cannot read the branch rules that protect main. RELEASE_BOT_PAT needs Administration read access." >&2
             exit 1
           fi
 

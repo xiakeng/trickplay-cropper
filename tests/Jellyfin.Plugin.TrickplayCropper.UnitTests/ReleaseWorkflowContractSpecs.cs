@@ -31,7 +31,7 @@ public sealed partial class ReleaseWorkflowContractSpecs
             .ToArray();
 
         Assert.Equal(
-            ["administration: read", "contents: write", "pull-requests: write"],
+            ["contents: write", "pull-requests: write"],
             scopes);
     }
 
