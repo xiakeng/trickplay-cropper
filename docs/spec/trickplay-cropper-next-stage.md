@@ -289,9 +289,10 @@ Expected resolution-unavailable outcomes are logged at Debug with the stable
 reason values `NoConfiguredTarget`, `NoGeneratedMetadata`,
 `SelectedResolutionMissing`, `NoThumbnails`, and `SourceSpriteUnavailable`.
 Do not add plugin logs for ordinary `400`, `401`, `403`, or concealment
-outcomes. Internal failures include all known redaction-safe request,
-configuration, selected metadata, Frame Index, crop, and source-fingerprint
-values needed to reconstruct the failure.
+outcomes. Internal failures include all known redaction-safe request values,
+configured targets, chosen target, Selected Trickplay Resolution,
+normalization source width, generated keys, selected metadata, Frame Index,
+crop values, and source fingerprint needed to reconstruct the failure.
 
 Logs must exclude:
 
@@ -495,7 +496,9 @@ committed example and contains only:
 
 The local default HTTP Jellyfin endpoint, Debug build location, deterministic
 seed, request volume, and timeouts are source constants. The harness performs
-no automatic media discovery and never prints the token.
+no automatic media discovery and never prints the token. It validates that the
+human-supplied subjects satisfy the required playable and invisible roles, or
+fails before any host mutation.
 
 ### 11.2 Deployment and privilege boundary
 
@@ -639,6 +642,9 @@ clamping. Extend HTTP component tests for nullable raw HEAD binding, missing and
 malformed inputs, every status, exact present and absent headers, ignored
 `If-None-Match`, and `405` with `Allow: GET, HEAD`.
 
+Test the public Trickplay Frame Probe contract rather than internal shared
+pipeline stage methods.
+
 Add one real-Kestrel automated seam that proves an empty HEAD body for every
 success and failure status. TestServer alone is insufficient for transport-level
 HEAD body suppression.
@@ -741,9 +747,9 @@ The next stage does not include:
 - live cleanup, Cache Tree seeding, alternate-source, playback-denial, synthetic
   `500`, or lease-contention verification;
 - publication in the official Jellyfin plugin catalog;
-- an automated withdrawal or rollback operation, release queue, version
-  pre-emption, public-download attestation gate, post-build identity attestation,
-  or retry evidence-adoption state machine;
+- an automated withdrawal or rollback operation, withdrawal ledger, release
+  queue, version pre-emption, public-download attestation gate, post-build
+  identity attestation, or retry evidence-adoption state machine;
 - automatic publication from an ordinary `main` push;
 - content negotiation, alternate formats, placeholders, full-decode fallback,
   or JPEG quality and crop changes;
