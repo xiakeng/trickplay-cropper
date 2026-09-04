@@ -13,11 +13,13 @@ using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Trickplay;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -211,6 +213,50 @@ public sealed class TrickplayPreviewHttpSpecs
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ServesTheMinimumConfiguredTargetAmongSeveral()
+    {
+        var scenario = new PreviewScenario { ConfiguredWidthResolutions = [640, 320, 480] };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ExpectedDefaultEntityTag, response.Headers.ETag?.Tag);
+        Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
+    }
+
+    [Fact]
+    public async Task ConcealsWhenTheSourceWidthClampsBelowEveryGeneratedResolution()
+    {
+        var scenario = new PreviewScenario { SourceVideoWidth = 300 };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
+    [Fact]
+    public async Task ReusesCompatibleCacheEntryForAnEquivalentNormalizedTarget()
+    {
+        var scenario = new PreviewScenario { ConfiguredWidthResolutions = [321] };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        byte[] expectedContent = [0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9];
+        string entryPath = GetDefaultEntryPath(fixture);
+        Directory.CreateDirectory(Path.GetDirectoryName(entryPath)!);
+        await File.WriteAllBytesAsync(entryPath, expectedContent, CancellationToken.None);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ExpectedDefaultEntityTag, response.Headers.ETag?.Tag);
+        Assert.Equal("HIT", response.Headers.GetValues("X-Trickplay-Cache").Single());
+        Assert.Equal(expectedContent, await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
+    }
+
     [Theory]
     [InlineData(AuthenticationState.Missing)]
     [InlineData(AuthenticationState.Invalid)]
@@ -228,12 +274,10 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(0, fixture.ErrorLogCount);
     }
 
-    [Theory]
-    [InlineData(ForbiddenCondition.LogicalVideoPlaybackDenied)]
-    [InlineData(ForbiddenCondition.SelectedVideoPlaybackDenied)]
-    public async Task ForbidsAuthenticatedPlaybackDenial(ForbiddenCondition condition)
+    [Fact]
+    public async Task ForbidsLogicalVideoPlaybackDenial()
     {
-        PreviewScenario scenario = CreateForbiddenScenario(condition);
+        var scenario = new PreviewScenario { DeniesLogicalVideoPlayback = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
         using HttpResponseMessage response = await fixture.GetAsync();
 
@@ -241,6 +285,27 @@ public sealed class TrickplayPreviewHttpSpecs
         await AssertAuthorizationErrorResponseAsync(response);
         Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
+        Assert.Equal(0, fixture.ErrorLogCount);
+    }
+
+    [Fact]
+    public async Task AuthorizesAnAlternateSourceWithoutASecondSourceVideoPlaybackDecision()
+    {
+        var scenario = new PreviewScenario
+        {
+            DeniesSelectedVideoPlayback = true,
+            UsesAlternateSource = true,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
+        Assert.Single(fixture.Cache.Identities);
+        Assert.StartsWith(
+            string.Concat(alternateSourceId.ToString("N"), Path.DirectorySeparatorChar),
+            fixture.Cache.Identities[0].RelativePath,
+            StringComparison.Ordinal);
         Assert.Equal(0, fixture.ErrorLogCount);
     }
 
@@ -284,6 +349,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(NotFoundCondition.SelectedVideoMissing)]
     [InlineData(NotFoundCondition.SelectedVideoHidden)]
     [InlineData(NotFoundCondition.SelectedItemWrongType)]
+    [InlineData(NotFoundCondition.NoConfiguredTarget)]
     [InlineData(NotFoundCondition.ExactMetadataMissing)]
     [InlineData(NotFoundCondition.ThumbnailsMissing)]
     [InlineData(NotFoundCondition.ThumbnailsNegative)]
@@ -395,6 +461,28 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(failedValidation, log.Properties["FailedValidation"]);
         Assert.Equal(failedValue, log.Properties["FailedValue"]);
         AssertAvailableSelectionDiagnostics(condition, log);
+        Assert.Empty(fixture.EnumerateCacheFiles());
+    }
+
+    [Theory]
+    [InlineData(ConfigurationFailureKind.UnreadableSnapshot)]
+    [InlineData(ConfigurationFailureKind.NonPositiveConfiguredTarget)]
+    [InlineData(ConfigurationFailureKind.NonPositiveSelectedResolution)]
+    public async Task ReportsInvalidConfigurationAsInternalError(ConfigurationFailureKind kind)
+    {
+        var scenario = new PreviewScenario { ConfiguredWidthResolutions = CreateInvalidConfiguration(kind) };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        await AssertProblemDetailsResponseAsync(response);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+        RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal(nameof(InvalidTrickplayConfigurationException), log.Properties["ExceptionType"]);
+        Assert.DoesNotContain(fixture.SourceSpritePath, log.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.CacheRoot, log.Message, StringComparison.Ordinal);
         Assert.Empty(fixture.EnumerateCacheFiles());
     }
 
@@ -549,20 +637,17 @@ public sealed class TrickplayPreviewHttpSpecs
             $"{ExpectedDefaultFrameToken}.jpg");
     }
 
-    private static PreviewScenario CreateForbiddenScenario(ForbiddenCondition condition)
+    private static int[]? CreateInvalidConfiguration(ConfigurationFailureKind kind)
     {
-        return condition switch
+        return kind switch
         {
-            ForbiddenCondition.LogicalVideoPlaybackDenied => new PreviewScenario
-            {
-                DeniesLogicalVideoPlayback = true,
-            },
-            ForbiddenCondition.SelectedVideoPlaybackDenied => new PreviewScenario
-            {
-                DeniesSelectedVideoPlayback = true,
-                UsesAlternateSource = true,
-            },
-            _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown forbidden condition."),
+            ConfigurationFailureKind.UnreadableSnapshot => null,
+            ConfigurationFailureKind.NonPositiveConfiguredTarget => [320, 0],
+            ConfigurationFailureKind.NonPositiveSelectedResolution => [1],
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind),
+                kind,
+                "Unknown configuration failure kind."),
         };
     }
 
@@ -586,6 +671,10 @@ public sealed class TrickplayPreviewHttpSpecs
             NotFoundCondition.SelectedVideoMissing => CreateSelectedAvailabilityScenario(ItemAvailability.Missing),
             NotFoundCondition.SelectedVideoHidden => CreateSelectedAvailabilityScenario(ItemAvailability.Hidden),
             NotFoundCondition.SelectedItemWrongType => CreateSelectedAvailabilityScenario(ItemAvailability.WrongType),
+            NotFoundCondition.NoConfiguredTarget => new PreviewScenario
+            {
+                ConfiguredWidthResolutions = [],
+            },
             NotFoundCondition.ExactMetadataMissing => new PreviewScenario
             {
                 Metadata = MetadataAvailability.ExactWidthMissing,
@@ -966,6 +1055,7 @@ public sealed class TrickplayPreviewHttpSpecs
             services.AddSingleton(CreateUserManager(user));
             services.AddSingleton(CreateLibraryManager(context.Scenario, user));
             services.AddSingleton(CreateMediaSourceManager(context.Scenario, user));
+            services.AddSingleton(CreateServerConfigurationManager(context.Scenario));
             services.AddSingleton(CreateTrickplayManager(context));
             services.AddSingleton(applicationPaths);
         }
@@ -1096,9 +1186,39 @@ public sealed class TrickplayPreviewHttpSpecs
                     SourceMembership.Malformed => "not-a-guid",
                     _ => throw new InvalidOperationException("Unknown source-membership scenario."),
                 };
-                IReadOnlyList<MediaSourceInfo> mediaSources = [new MediaSourceInfo { Id = memberId }];
+                var mediaSource = new MediaSourceInfo { Id = memberId };
+                if (scenario.SourceVideoWidth is int sourceVideoWidth)
+                {
+                    mediaSource.MediaStreams =
+                    [
+                        new MediaStream
+                        {
+                            Type = MediaStreamType.Video,
+                            IsDefault = true,
+                            Width = sourceVideoWidth,
+                        },
+                    ];
+                }
+
+                IReadOnlyList<MediaSourceInfo> mediaSources = [mediaSource];
                 return Task.FromResult(mediaSources);
             });
+            return mock.Service;
+        }
+
+        private static IServerConfigurationManager CreateServerConfigurationManager(PreviewScenario scenario)
+        {
+            var configuration = new ServerConfiguration
+            {
+                TrickplayOptions = new TrickplayOptions
+                {
+                    // The unreadable-snapshot scenario deliberately stores null in this non-nullable
+                    // property to reproduce a configuration deserialized without a target array.
+                    WidthResolutions = scenario.ConfiguredWidthResolutions!,
+                },
+            };
+            InterfaceMockSpecs<IServerConfigurationManager> mock = InterfaceMock.Create<IServerConfigurationManager>();
+            mock.Handle("get_Configuration", _ => configuration);
             return mock.Service;
         }
 
@@ -1562,6 +1682,8 @@ public sealed class TrickplayPreviewHttpSpecs
         public TaskCompletionSource CacheAccessStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public int[]? ConfiguredWidthResolutions { get; init; } = [320];
+
         public bool DeniesDefaultAuthorizationPolicy { get; init; }
 
         public bool DeniesLogicalVideoPlayback { get; init; }
@@ -1598,6 +1720,8 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public int SourceSpritePathRequests => Volatile.Read(ref sourceSpritePathRequests);
 
+        public int? SourceVideoWidth { get; init; }
+
         public Guid UserId { get; init; } = userId;
 
         public bool UsesAlternateSource { get; init; }
@@ -1623,10 +1747,11 @@ public sealed class TrickplayPreviewHttpSpecs
         Wildcard,
     }
 
-    public enum ForbiddenCondition
+    public enum ConfigurationFailureKind
     {
-        LogicalVideoPlaybackDenied,
-        SelectedVideoPlaybackDenied,
+        UnreadableSnapshot,
+        NonPositiveConfiguredTarget,
+        NonPositiveSelectedResolution,
     }
 
     private enum ItemAvailability
@@ -1679,6 +1804,7 @@ public sealed class TrickplayPreviewHttpSpecs
         SelectedVideoMissing,
         SelectedVideoHidden,
         SelectedItemWrongType,
+        NoConfiguredTarget,
         ExactMetadataMissing,
         ThumbnailsMissing,
         ThumbnailsNegative,

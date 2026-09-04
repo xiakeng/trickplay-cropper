@@ -10,7 +10,8 @@ internal interface IPreviewContextResolver
 {
     /// <summary>
     /// Validates the request, authorizes the logical video, proves Media Source membership,
-    /// selects the exact generated metadata, and calculates the Frame Index.
+    /// derives the Selected Trickplay Resolution, selects the exact generated metadata,
+    /// and calculates the Frame Index.
     /// </summary>
     /// <param name="query">The normalized preview query.</param>
     /// <param name="principal">The current request principal.</param>
