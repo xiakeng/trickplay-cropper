@@ -1,0 +1,142 @@
+name: publish-release
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+# One release pull request is one release transaction: retries of the same pull request serialize,
+# while a pull request for the next version publishes independently.
+concurrency:
+  group: publish-release-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  BUILD_MANIFEST: src/Jellyfin.Plugin.TrickplayCropper/build.yaml
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  publish:
+    name: Publish the stable release
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event.pull_request.merged == true
+      && github.event.pull_request.title == 'auto-release new version'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Verify the release pull request merged without a merge commit
+        env:
+          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          parents="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${MERGE_COMMIT_SHA}" --jq '.parents | length')"
+          if [[ "${parents}" != "1" ]]; then
+            echo "::error::${MERGE_COMMIT_SHA} has ${parents} parents. A release pull request must be merged with squash or rebase so the merged build manifest stays the sole version source." >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "9.0.317"
+
+      - name: Restore locked dependencies
+        run: dotnet restore TrickplayCropper.sln --locked-mode
+
+      - name: Verify formatting
+        run: dotnet format TrickplayCropper.sln --verify-no-changes --no-restore
+
+      - name: Build Release
+        run: dotnet build TrickplayCropper.sln --configuration Release --no-restore
+
+      - name: Run unit tests
+        run: >-
+          dotnet test tests/Jellyfin.Plugin.TrickplayCropper.UnitTests/Jellyfin.Plugin.TrickplayCropper.UnitTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --collect:"XPlat Code Coverage"
+          --results-directory artifacts/coverage/unit
+
+      - name: Run component tests
+        run: >-
+          dotnet test tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/Jellyfin.Plugin.TrickplayCropper.ComponentTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --collect:"XPlat Code Coverage"
+          --results-directory artifacts/coverage/component
+
+      - name: Upload coverage for inspection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: coverage
+          if-no-files-found: error
+          path: artifacts/coverage/**/coverage.cobertura.xml
+
+      - name: Package production project with JPRM
+        id: package
+        uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
+        with:
+          path: src/Jellyfin.Plugin.TrickplayCropper
+          output: artifacts/package
+          dotnet-config: Release
+          dotnet-target: net9.0
+          verbosity: info
+
+      - name: Verify unique package output
+        env:
+          PACKAGE_PATH: ${{ steps.package.outputs.artifact }}
+        run: |
+          mapfile -d '' packages < <(find artifacts/package -type f -name '*.zip' -print0)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "Expected exactly one plugin ZIP, found ${#packages[@]}." >&2
+            exit 1
+          fi
+          if [[ "$(realpath -- "${packages[0]}")" != "$(realpath -- "$PACKAGE_PATH")" ]]; then
+            echo "The sole plugin ZIP does not match the JPRM artifact output." >&2
+            exit 1
+          fi
+
+      - name: Validate package
+        run: >-
+          dotnet run
+          --project tools/TrickplayCropper.PackageValidator/TrickplayCropper.PackageValidator.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --
+          "${{ steps.package.outputs.artifact }}"
+          src/Jellyfin.Plugin.TrickplayCropper/build.yaml
+
+      - name: Publish the stable release from the merged build manifest
+        env:
+          PACKAGE_PATH: ${{ steps.package.outputs.artifact }}
+          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.version' "${BUILD_MANIFEST}")"
+          jq -r '.changelog' "${BUILD_MANIFEST}" > "${RUNNER_TEMP}/release-notes.md"
+
+          if gh release view "v${version}" >/dev/null 2>&1; then
+            echo "Release v${version} already exists; reusing it instead of creating a duplicate."
+            gh release upload "v${version}" "${PACKAGE_PATH}" --clobber
+          else
+            gh release create "v${version}" "${PACKAGE_PATH}" \
+              --title "Trickplay Cropper ${version}" \
+              --notes-file "${RUNNER_TEMP}/release-notes.md" \
+              --target "${MERGE_COMMIT_SHA}"
+          fi
