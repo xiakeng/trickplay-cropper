@@ -924,7 +924,7 @@ public sealed class TrickplayPreviewHttpSpecs
             _ => throw new ArgumentOutOfRangeException(
                 nameof(condition),
                 condition,
-                "Unknown real-Kestrel frame probe condition."),
+                "Unknown real-Kestrel Trickplay Frame Probe condition."),
         };
     }
 

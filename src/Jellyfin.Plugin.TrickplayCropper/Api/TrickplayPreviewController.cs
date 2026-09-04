@@ -128,7 +128,7 @@ public sealed class TrickplayPreviewController : ControllerBase
             TrickplayFrameProbeOutcome.Forbidden => CreateBodylessResult(StatusCodes.Status403Forbidden),
             TrickplayFrameProbeOutcome.NotFound => CreateBodylessResult(StatusCodes.Status404NotFound),
             TrickplayFrameProbeOutcome.InternalError => CreateBodylessResult(StatusCodes.Status500InternalServerError),
-            _ => throw new InvalidOperationException($"Unknown frame probe outcome {outcome.GetType().Name}."),
+            _ => throw new InvalidOperationException($"Unknown Trickplay Frame Probe outcome {outcome.GetType().Name}."),
         };
     }
 
