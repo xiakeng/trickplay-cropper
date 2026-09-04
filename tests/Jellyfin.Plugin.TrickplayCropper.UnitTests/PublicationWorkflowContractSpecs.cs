@@ -96,16 +96,8 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationGrantsExactlyTheContentWriteScope()
     {
-        Assert.Equal(1, WorkflowFiles.CountBlocks(publication, "permissions:"));
-
-        string[] scopes = WorkflowFiles.ReadTopLevelBlock(publication, "permissions:")
-            .Split('\n')
-            .Select(scope => scope.Trim())
-            .Where(scope => scope.Length > 0)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(["contents: write"], scopes);
+        Assert.Equal(1, WorkflowFiles.CountHeaderLines(publication, "permissions:"));
+        Assert.Equal(["contents: write"], WorkflowFiles.ReadPermissionScopes(publication));
     }
 
     [Fact]
@@ -174,7 +166,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     [Fact]
     public void PublicationAddsNoPostBuildIdentityAttestation()
     {
-        Assert.DoesNotMatch(@"attest|provenance|sigstore|cosign|id-token", publication);
+        Assert.DoesNotMatch(@"(?i)attest|provenance|sigstore|cosign|id-token", publication);
     }
 
     [Fact]
@@ -189,7 +181,7 @@ public sealed partial class PublicationWorkflowContractSpecs
     public void OnlyThePublicationWorkflowCanPublishARelease()
     {
         string[] publishing = Directory
-            .EnumerateFiles(RepositoryFiles.GetPath(".github/workflows"), "*.yml")
+            .EnumerateFiles(RepositoryFiles.GetPath(".github/workflows"), "*.y*ml")
             .Where(path => File.ReadAllText(path).Contains("gh release", StringComparison.Ordinal))
             .Select(path => Path.GetRelativePath(RepositoryFiles.Root, path).Replace(Path.DirectorySeparatorChar, '/'))
             .ToArray();

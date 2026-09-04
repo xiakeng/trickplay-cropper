@@ -20,16 +20,11 @@ public sealed partial class ReleaseWorkflowContractSpecs
     [Fact]
     public void TheWorkflowGrantsExactlyTheTokenScopesItNeeds()
     {
-        Assert.Equal(1, WorkflowFiles.CountBlocks(workflow, "permissions:"));
-
-        string[] scopes = ReadTopLevelPermissions()
-            .Select(scope => $"{scope.Key}: {scope.Value}")
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        Assert.Equal(1, WorkflowFiles.CountHeaderLines(workflow, "permissions:"));
 
         Assert.Equal(
             ["contents: write", "pull-requests: write"],
-            scopes);
+            WorkflowFiles.ReadPermissionScopes(workflow));
     }
 
     [Fact]
@@ -118,25 +113,6 @@ public sealed partial class ReleaseWorkflowContractSpecs
     {
         Assert.Contains("RUNNER_TEMP", workflow, StringComparison.Ordinal);
         Assert.Contains("${RUNNER_TEMP}/changelog.md", workflow, StringComparison.Ordinal);
-    }
-
-    private static Dictionary<string, string> ReadTopLevelPermissions()
-    {
-        Dictionary<string, string> scopes = new(StringComparer.Ordinal);
-        foreach (string line in WorkflowFiles.ReadTopLevelBlock(workflow, "permissions:").Split('\n'))
-        {
-            string entry = line.Trim();
-            if (entry.Length == 0)
-            {
-                continue;
-            }
-
-            int colon = entry.IndexOf(':');
-            Assert.True(colon > 0, $"Unexpected permissions entry: '{line}'.");
-            scopes[entry[..colon].Trim()] = entry[(colon + 1)..].Trim();
-        }
-
-        return scopes;
     }
 
     [GeneratedRegex(@"git tag(?:\s+--list)?")]

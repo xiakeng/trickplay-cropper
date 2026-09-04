@@ -6,11 +6,30 @@ namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
 
 internal static partial class WorkflowFiles
 {
-    public static int CountBlocks(string workflow, string header)
+    public static int CountHeaderLines(string workflow, string header)
     {
         return workflow
             .Split('\n')
             .Count(line => line.Trim().StartsWith(header, StringComparison.Ordinal));
+    }
+
+    public static string[] ReadPermissionScopes(string workflow)
+    {
+        List<string> scopes = [];
+        foreach (string line in ReadTopLevelBlock(workflow, "permissions:").Split('\n'))
+        {
+            string entry = line.Trim();
+            if (entry.Length == 0)
+            {
+                continue;
+            }
+
+            int colon = entry.IndexOf(':');
+            Assert.True(colon > 0, $"Unexpected permissions entry: '{line}'.");
+            scopes.Add($"{entry[..colon].Trim()}: {entry[(colon + 1)..].Trim()}");
+        }
+
+        return scopes.Order(StringComparer.Ordinal).ToArray();
     }
 
     public static string ReadTopLevelBlock(string workflow, string header)
