@@ -62,10 +62,12 @@ public sealed class LocalJellyfin(HttpClient http)
     {
         ArgumentNullException.ThrowIfNull(input);
         await WaitForHealthAsync(cancellationToken).ConfigureAwait(false);
-        using JsonDocument plugins = await ReadJsonAsync("/Plugins", cancellationToken).ConfigureAwait(false);
+        Console.WriteLine("Health gate passed; waiting for plugin inventory readiness.");
+        using JsonDocument plugins = await ReadStartedPluginsAsync(cancellationToken).ConfigureAwait(false);
         Require(plugins.RootElement.EnumerateArray().Any(plugin => Guid.Parse(plugin.GetProperty("Id").GetString()!) == pluginId
             && plugin.GetProperty("Status").GetString() == "Active"
             && plugin.GetProperty("Version").GetString() == version), "The deployed plugin is not Active at its built version.");
+        Console.WriteLine("Load-Proof gate passed; requesting a real Preview JPEG.");
         DateTimeOffset since = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         using HttpResponseMessage preview = await http.GetAsync(
             $"/TrickplayCropper/Videos/{input.PlayableItems[0]:N}/Preview?PositionTicks=0", cancellationToken).ConfigureAwait(false);
@@ -73,7 +75,37 @@ public sealed class LocalJellyfin(HttpClient http)
         Require(preview.StatusCode == HttpStatusCode.OK && preview.Content.Headers.ContentType?.MediaType == "image/jpeg"
             && jpeg.Length > 3 && jpeg[0] == 0xff && jpeg[1] == 0xd8 && jpeg[^2] == 0xff && jpeg[^1] == 0xd9,
             "The deployment probe did not return a JPEG.");
+        Console.WriteLine("Preview JPEG passed; waiting for fresh structured Debug-Proof.");
         await WaitForDebugAsync(since, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<JsonDocument> ReadStartedPluginsAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(healthTimeout);
+        while (true)
+        {
+            try
+            {
+                using HttpResponseMessage response = await http.GetAsync("/Plugins", timeout.Token).ConfigureAwait(false);
+                // Startup can still interrupt connections or return 503 after /health returns 200.
+                if (response.StatusCode != HttpStatusCode.ServiceUnavailable)
+                {
+                    Require(response.StatusCode == HttpStatusCode.OK, "The plugin inventory endpoint rejected the request.");
+                    return JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // The host has not finished opening its API listener.
+            }
+            catch (OperationCanceledException) when (!timeout.IsCancellationRequested)
+            {
+                // Retain the overall deadline when a single HTTP request times out.
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), timeout.Token).ConfigureAwait(false);
+        }
     }
 
     private async Task ValidatePlayableAsync(Guid item, Guid user, CancellationToken cancellationToken)

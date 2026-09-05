@@ -153,7 +153,7 @@ def main(arguments):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     operation = HostOperation(pathlib.Path("/etc/jellyfin/logging.json"),
                               pathlib.Path("/var/lib/jellyfin/plugins"),
-                              pathlib.Path("/var/lib/jellyfin/temp/Jellyfin.Plugin.TrickplayCropper/preview-v1"), restart)
+                              pathlib.Path("/tmp/jellyfin/Jellyfin.Plugin.TrickplayCropper/preview-v1"), restart)
     if arguments == ["restore"]:
         return operation.restore()
     if len(arguments) == 3 and arguments[0] == "prepare":

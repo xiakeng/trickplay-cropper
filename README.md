@@ -77,7 +77,9 @@ with a password.
 
 Use the local native Jellyfin installation, Python 3 (standard library only),
 .NET SDK from `global.json`, and an unprivileged account with interactive sudo
-access. The harness uses fixed `/etc/jellyfin` and `/var/lib/jellyfin` paths. Its
+access. The harness uses fixed `/etc/jellyfin` and `/var/lib/jellyfin` paths, plus
+`/tmp/jellyfin/Jellyfin.Plugin.TrickplayCropper/preview-v1` for this native host's
+plugin Cache Tree (`IApplicationPaths.TempDirectory` is `/tmp/jellyfin`). Its
 Landlock-restricted read-only, exact-ID SQLite query proves the invisible Item exists independently
 of the user-scoped HTTP 404; the account must be able to read Jellyfin's database
 and existing WAL/shared memory. Linux Landlock ABI 3 or later is required: the
@@ -111,6 +113,8 @@ intact. The driver requires host health, the built version's Active status, a
 real JPEG GET, and a fresh structured plugin Debug event from the newest Jellyfin
 log. Existing event IDs and fields also travel in a JSON message envelope so
 ordinary text sinks preserve them without changing their configuration.
+Plugin inventory readiness has a bounded wait for startup 503 responses and
+connection interruptions, because `/health` can succeed before the API is ready.
 
 Privileged Phase 2 runs after successful, failed, or cancelled verification: it
 restores logging byte-for-byte and preserves metadata, removes the snapshot,
