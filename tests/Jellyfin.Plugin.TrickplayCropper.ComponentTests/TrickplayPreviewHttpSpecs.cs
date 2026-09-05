@@ -1017,6 +1017,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(TrickplayFrameProbeKestrelCondition.Success, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.MalformedInput, HttpStatusCode.BadRequest)]
     [InlineData(TrickplayFrameProbeKestrelCondition.UnauthenticatedSession, HttpStatusCode.Unauthorized)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied, HttpStatusCode.Forbidden)]
     [InlineData(TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.ConcealedResource, HttpStatusCode.NotFound)]
     [InlineData(TrickplayFrameProbeKestrelCondition.InvalidMetadata, HttpStatusCode.InternalServerError)]
@@ -1031,8 +1032,14 @@ public sealed class TrickplayPreviewHttpSpecs
             ? await fixture.HeadRawAsync(PreviewPath)
             : await fixture.HeadAsync();
 
-        Assert.Equal(expectedStatus, response.StatusCode);
-        await AssertBodylessAsync(response);
+        if (expectedStatus == HttpStatusCode.OK)
+        {
+            await AssertTrickplayFrameProbeSuccessAsync(response, 0);
+        }
+        else
+        {
+            await AssertBodylessTrickplayFrameProbeFailureAsync(response, expectedStatus);
+        }
     }
 
     [Fact]
@@ -1094,6 +1101,10 @@ public sealed class TrickplayPreviewHttpSpecs
             TrickplayFrameProbeKestrelCondition.UnauthenticatedSession => new PreviewScenario
             {
                 Authentication = AuthenticationState.Missing,
+            },
+            TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied => new PreviewScenario
+            {
+                DeniesDefaultAuthorizationPolicy = true,
             },
             TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser => new PreviewScenario
             {
@@ -2541,6 +2552,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Success,
         MalformedInput,
         UnauthenticatedSession,
+        DefaultPolicyDenied,
         ApiKeyWithoutCurrentUser,
         ConcealedResource,
         InvalidMetadata,

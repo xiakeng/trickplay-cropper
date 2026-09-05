@@ -68,7 +68,8 @@ truncated and the unreachable remainder.
 ## How a caller observes it
 
 An empty body and exactly two plugin-owned headers, whatever else is happening on the
-server. A probe during a scrub storm, a cold cache, or a busy disk returns in the same
-shape and at the same cost as one against a warm idle server — and if it ever does not,
-the isolation has been broken. The answer establishes calculation availability, not
-user visibility, playback permission, or preview deliverability.
+server. A probe never touches the Cache Tree or image work, whether the cache is cold or
+the disk is busy. Its full Media Source enumeration, dynamic providers, and generated
+metadata read can still perform I/O and affect latency; retained calculation caching is
+separate follow-up work. The answer establishes calculation availability, not user
+visibility, playback permission, or preview deliverability.

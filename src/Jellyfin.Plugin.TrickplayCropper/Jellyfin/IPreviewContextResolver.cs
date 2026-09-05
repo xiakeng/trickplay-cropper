@@ -4,7 +4,7 @@ using Jellyfin.Plugin.TrickplayCropper.Preview;
 namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 
 /// <summary>
-/// Resolves the Preview context that GET and the Trickplay Frame Probe share.
+/// Resolves the user-authorized Preview context used only by GET.
 /// </summary>
 internal interface IPreviewContextResolver
 {
@@ -16,7 +16,7 @@ internal interface IPreviewContextResolver
     /// <param name="query">The normalized preview query.</param>
     /// <param name="principal">The current request principal.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
-    /// <returns>The typed shared-context result.</returns>
+    /// <returns>The typed GET-context result.</returns>
     Task<PreviewContextResolution> ResolveAsync(
         PreviewQuery query,
         ClaimsPrincipal principal,
