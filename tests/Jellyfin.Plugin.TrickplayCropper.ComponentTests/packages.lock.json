@@ -440,6 +440,9 @@
           "Jellyfin.Model": "[10.11.11, )",
           "SkiaSharp": "[3.116.1, )"
         }
+      },
+      "trickplaycropper.integrationharness": {
+        "type": "Project"
       }
     }
   }

@@ -6,3 +6,6 @@ __pycache__/
 *.py[cod]
 .venv/
 .venv-jprm/
+
+# Human-supplied local Integration Harness credentials and subjects
+/harness.json
