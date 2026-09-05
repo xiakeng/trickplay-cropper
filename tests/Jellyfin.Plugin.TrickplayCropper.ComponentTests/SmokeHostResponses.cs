@@ -65,8 +65,9 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
     private HttpResponseMessage Preview(HttpRequestMessage request)
     {
         string route = request.RequestUri!.PathAndQuery;
-        bool start = route.EndsWith("PositionTicks=0", StringComparison.Ordinal);
-        int frame = start ? 0 : route.Contains(FirstItem, StringComparison.Ordinal) ? 6 : 4;
+        long ticks = long.Parse(request.RequestUri.Query.Split('=')[1], System.Globalization.CultureInfo.InvariantCulture);
+        int frame = (int)Math.Min(ticks / 25000000, route.Contains(FirstItem, StringComparison.Ordinal) ? 6 : 4);
+        string identity = (route.Contains(FirstItem, StringComparison.Ordinal) ? FirstItem : SecondItem) + "/" + frame;
         HttpResponseMessage response = new(HttpStatusCode.OK);
         response.Headers.CacheControl = new CacheControlHeaderValue { Private = true, NoCache = true };
         if (request.Method == HttpMethod.Head)
@@ -79,7 +80,7 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
             return response;
         }
 
-        bool repeat = cached.Contains(route);
+        bool repeat = cached.Contains(identity);
         using SKBitmap bitmap = new(fault == "get-dimensions" ? 318 : 320, 180);
         bitmap.Erase(fault == "repeat-bytes" && repeat ? SKColors.Red : SKColors.DarkBlue);
         using SKImage image = SKImage.FromBitmap(bitmap);
@@ -94,7 +95,7 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
         response.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline");
         response.Headers.ETag = new EntityTagHeaderValue(FormattableString.Invariant($"\"0123456789abcdef0123456789abcdef-f{frame:D10}\""));
-        response.Headers.Add("X-Trickplay-Cache", cached.Add(route) ? "MISS" : "HIT");
+        response.Headers.Add("X-Trickplay-Cache", cached.Add(identity) ? "MISS" : "HIT");
         response.Headers.Add("Server-Timing", "lookup;dur=1.000, cache;dur=1.000");
         if (fault == "timing")
         {

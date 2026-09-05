@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace TrickplayCropper.IntegrationHarness;
 
 /// <summary>Reads generated Jellyfin metadata independently of plugin responses and implementation types.</summary>
-internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int Count, long RuntimeTicks)
+internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int Count, long RuntimeTicks, int FramesPerSprite)
 {
     public long BeyondEndTicks => checked(RuntimeTicks + 1);
 
@@ -51,9 +51,11 @@ internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int
     private static PlaybackMetadata FromGeneratedMetadata(JsonElement metadata, int width, long runtime)
     {
         PlaybackMetadata result = new(metadata.GetProperty(nameof(Width)).GetInt32(), metadata.GetProperty(nameof(Height)).GetInt32(),
-            metadata.GetProperty(nameof(Interval)).GetInt32(), metadata.GetProperty("ThumbnailCount").GetInt32(), runtime);
+            metadata.GetProperty(nameof(Interval)).GetInt32(), metadata.GetProperty("ThumbnailCount").GetInt32(), runtime,
+            checked(metadata.GetProperty("TileWidth").GetInt32() * metadata.GetProperty("TileHeight").GetInt32()));
         if (result.Width != width || width <= 0 || result.Height <= 0 || result.Interval <= 0 || result.Count <= 0
-            || runtime <= 0 || runtime == long.MaxValue)
+            || metadata.GetProperty("TileWidth").GetInt32() <= 0 || metadata.GetProperty("TileHeight").GetInt32() <= 0
+            || result.FramesPerSprite <= 0 || runtime <= 0 || runtime == long.MaxValue)
         {
             throw new InvalidDataException("Generated Trickplay metadata or playback duration is invalid.");
         }

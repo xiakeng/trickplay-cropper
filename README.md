@@ -101,7 +101,7 @@ enumerate or provision media.
 dotnet restore TrickplayCropper.sln --locked-mode
 # Validate the supplied subjects only; no elevation, deployment, or restart.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --check
-# Deploy, run authentication/visibility/playback-boundary smoke cases, and restore.
+# Deploy, run all four smoke cases including Scrub Storm, and restore.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness
 # Exercise a deliberate assertion failure after the real smoke cases.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --verify-restoration
@@ -132,8 +132,9 @@ restarts Jellyfin, and independently waits for health. A started cycle has a
 two-restart budget; two separate normal/failure demonstrations therefore use
 four restarts. Exit zero requires verification, restoration, and final health.
 `--verify-restoration` deliberately exits nonzero, even when recovery succeeds.
-The retained state is the Debug plugin and the populated Cache Tree. No evidence,
-transcript, run-lock, or other state files are written. A partial snapshot,
+The retained state is the Debug plugin, the populated Cache Tree, and an English
+Markdown Scrub Storm report in repository-root `test-output/` (gitignored).
+No transcript, run-lock, or additional state files are written. A partial snapshot,
 SIGKILL, power loss, lost restoration privilege, or failed restart requires human
 recovery; inspect any surviving snapshot before starting again.
 
@@ -147,9 +148,41 @@ its status, exact plugin headers and empty body; GET checks inline JPEG type,
 complete decoding and metadata dimensions, content length, cache policy and
 disposition, timing, strong ETag Frame Index, and repeat HIT with identical bytes
 and ETag. Only ordinal subject labels and non-secret numeric results reach stdout.
-The harness writes no live evidence files; copy the safe results into the PR.
+After restoration, the harness prints and saves a unique `test-output/scrub-storm-*.md`
+report. Previous reports are retained. Report write failures produce a nonzero
+exit after restoration has already been attempted. `--check` writes no report.
 
-Scrub Storm remains #77. Other live gaps include playback-policy 403, alternate Media Sources,
+The fourth case runs a deterministic Scrub Storm (seed `0x5EEDC0DE`): two
+logical clients, three synchronized lanes per client, twelve positions per lane
+per playable Item, and two rounds each of random jumps, large-range fast sweeps,
+and small-range precise drags. Each round completes HEAD fan-out before GET
+fan-out, for 864 HEAD and 864 GET requests with ten-second request deadlines.
+It requires stable repeated JPEG bytes and ETags, a MISS-to-HIT transition, and
+exactly one canonical JPEG per requested Media Source/Frame Index within a
+thirty-second quiescence window, with no temporary publication residue.
+The newest server log must reconcile GET disposition counts and Frame Index /
+sprite index multiplicities. The stable protocol has no request correlation ID,
+so reconciliation is aggregate; unrelated Preview traffic or log rotation can
+make verification fail. Entry-lock, Cache Tree lease, and decode-permit waits
+are reported as `observed` or `not-observed`, with neither result determining
+pass/fail. All four cases plus restoration and post-restart health must pass
+for exit zero.
+
+The report records actual dispatched HEAD/GET counts, cache HIT/MISS response
+counts, the span from first to last dispatch, and wall-clock HTTP workload elapsed
+from first dispatch to last completion. A table gives sample count and minimum,
+maximum, median, and mean response times (milliseconds) for HEAD, GET cache MISS,
+and GET cache HIT. Timing uses a monotonic clock through complete HTTP response
+buffering, before local JPEG decoding and assertions; inter-request scheduling
+gaps contribute to workload elapsed but not individual response time. Metadata,
+deployment, quiescence, log/cache verification, and restoration are excluded from
+HTTP workload elapsed. Only HTTP 200 responses enter timing groups, and GET needs
+an exact HIT/MISS disposition. Other responses and transport failures/cancellations
+are counted separately. Partial runs retain their measurements; empty groups are
+`N/A`, and both Scrub Storm and final harness outcomes are explicit. Reports omit
+credentials and media identifiers. Timing values remain diagnostics, not thresholds.
+
+Other live gaps include playback-policy 403, alternate Media Sources,
 every 500 shape, source-width clamping, multiple targets, media-side Source
 Sprites, absent metadata/thumbnails/sprites, cleanup, Cache Tree seeding and lease
 contention. Debug DLL deployment does not verify the shippable ZIP; CI's Package

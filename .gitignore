@@ -9,3 +9,6 @@ __pycache__/
 
 # Human-supplied local Integration Harness credentials and subjects
 /harness.json
+
+# Generated local Scrub Storm reports
+/test-output/
