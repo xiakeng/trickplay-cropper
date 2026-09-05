@@ -18,6 +18,32 @@ public sealed class DebugEventReaderSpecs
             Log.Replace("Jellyfin.Plugin.TrickplayCropper", "Unrelated.Plugin", StringComparison.Ordinal), since));
     }
 
+    [Fact]
+    public void RetainsStableEventMultiplicityAndRejectsLookalikes()
+    {
+        const string Log = """
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1002,"EventName":"TrickplayPreviewFrameSelected","FrameIndex":103,"SpriteIndex":1}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1002,"EventName":"TrickplayPreviewFrameSelected","FrameIndex":103,"SpriteIndex":1}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1003,"EventName":"TrickplayPreviewCacheDisposition","CacheDisposition":"Miss"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1003,"EventName":"TrickplayPreviewCacheDisposition","CacheDisposition":"Hit"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1004,"EventName":"TrickplayPreviewEntryLockWaiting"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1005,"EventName":"TrickplayPreviewEntryLockOwned"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1006,"EventName":"TrickplayPreviewCacheTreeLeaseWaiting"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1007,"EventName":"TrickplayPreviewDecodePermitWaiting"}
+            [2026-09-05 09:00:00.000 +08:00] [INF] TrickplayDebug {"EventId":1007,"EventName":"TrickplayPreviewDecodePermitWaiting"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1006,"EventName":"TrickplayPreviewDecodePermitWaiting"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1003,"EventName":"TrickplayPreviewCacheDisposition","CacheDisposition":"Unknown"}
+            [2026-09-05 09:00:00.000 +08:00] [DBG] TrickplayDebug {"EventId":1002,"EventName":"TrickplayPreviewFrameSelected","FrameIndex":2147483648,"SpriteIndex":1}
+            """;
+        IReadOnlyList<DebugEventReader.ProtocolEvent> events = DebugEventReader.Read(Log, since);
+        int[] expectedIds = [1002, 1002, 1003, 1003, 1004, 1005, 1006, 1007];
+        Assert.Equal(expectedIds, events.Select(value => value.EventId));
+        Assert.Equal(103, events[0].FrameIndex);
+        Assert.Equal(1, events[0].SpriteIndex);
+        Assert.Equal("MISS", events[2].Disposition);
+        Assert.Equal("HIT", events[3].Disposition);
+    }
+
     [Theory]
     [InlineData("1002", "TrickplayPreviewFrameSelected", "0", true)]
     [InlineData("1003", "TrickplayPreviewFrameSelected", "0", false)]

@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace TrickplayCropper.IntegrationHarness;
 
-/// <summary>Runs the manual deployment and first three smoke cases using only source-defined local host settings.</summary>
+/// <summary>Runs the manual deployment and exactly four smoke cases using only source-defined local host settings.</summary>
 internal sealed class HarnessApplication
 {
     private const string AssemblyName = "Jellyfin.Plugin.TrickplayCropper";
@@ -91,7 +91,7 @@ internal sealed class HarnessApplication
             },
             () => RestoreAsync(host)).ConfigureAwait(false);
         Console.WriteLine(success
-            ? "Smoke cases #76 passed and restoration is healthy. Debug plugin and Cache Tree retained; Scrub Storm #77 is not included."
+            ? "All four smoke cases passed and restoration is healthy. Debug plugin and populated Cache Tree retained."
             : "Integration Harness failed; see the last verification stage and restoration result above.");
         return success ? 0 : 1;
     }
@@ -136,6 +136,8 @@ internal sealed class HarnessApplication
     {
         Console.WriteLine("Health, Load-Proof, and fresh structured Debug-Proof gates passed.");
         await new SmokeCases(http, Console.Out).RunAsync(input, cancellationToken).ConfigureAwait(false);
+        await new ScrubStorm(http, Console.Out, "/tmp/jellyfin/Jellyfin.Plugin.TrickplayCropper/preview-v1")
+            .RunAsync(input, cancellationToken).ConfigureAwait(false);
         if (mode == "--verify-restoration")
         {
             Console.WriteLine("Injecting an assertion failure after the real smoke cases to exercise unconditional restoration.");

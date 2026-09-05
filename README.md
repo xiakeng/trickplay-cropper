@@ -101,7 +101,7 @@ enumerate or provision media.
 dotnet restore TrickplayCropper.sln --locked-mode
 # Validate the supplied subjects only; no elevation, deployment, or restart.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --check
-# Deploy, run authentication/visibility/playback-boundary smoke cases, and restore.
+# Deploy, run all four smoke cases including Scrub Storm, and restore.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness
 # Exercise a deliberate assertion failure after the real smoke cases.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --verify-restoration
@@ -149,7 +149,23 @@ disposition, timing, strong ETag Frame Index, and repeat HIT with identical byte
 and ETag. Only ordinal subject labels and non-secret numeric results reach stdout.
 The harness writes no live evidence files; copy the safe results into the PR.
 
-Scrub Storm remains #77. Other live gaps include playback-policy 403, alternate Media Sources,
+The fourth case runs a deterministic Scrub Storm (seed `0x5EEDC0DE`): two
+logical clients, three synchronized lanes per client, twelve positions per lane
+per playable Item, and two rounds each of random jumps, large-range fast sweeps,
+and small-range precise drags. Each round completes HEAD fan-out before GET
+fan-out, for 864 HEAD and 864 GET requests with ten-second request deadlines.
+It requires stable repeated JPEG bytes and ETags, a MISS-to-HIT transition, and
+exactly one canonical JPEG per requested Media Source/Frame Index within a
+thirty-second quiescence window, with no temporary publication residue.
+The newest server log must reconcile GET disposition counts and Frame Index /
+sprite index multiplicities. The stable protocol has no request correlation ID,
+so reconciliation is aggregate; unrelated Preview traffic or log rotation can
+make verification fail. Entry-lock, Cache Tree lease, and decode-permit waits
+are reported as `observed` or `not-observed`, with neither result determining
+pass/fail. All four cases plus restoration and post-restart health must pass
+for exit zero.
+
+Other live gaps include playback-policy 403, alternate Media Sources,
 every 500 shape, source-width clamping, multiple targets, media-side Source
 Sprites, absent metadata/thumbnails/sprites, cleanup, Cache Tree seeding and lease
 contention. Debug DLL deployment does not verify the shippable ZIP; CI's Package

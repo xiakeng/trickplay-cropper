@@ -128,14 +128,7 @@ public sealed class LocalJellyfin(HttpClient http)
         timeout.CancelAfter(debugTimeout);
         while (true)
         {
-            using JsonDocument logs = await ReadJsonAsync("/System/Logs", timeout.Token).ConfigureAwait(false);
-            string newest = logs.RootElement.EnumerateArray()
-                .Where(log => IsServerLog(log.GetProperty("Name").GetString()!))
-                .OrderByDescending(log => log.GetProperty("DateModified").GetDateTimeOffset())
-                .ThenBy(log => log.GetProperty("Name").GetString(), StringComparer.Ordinal)
-                .First().GetProperty("Name").GetString()!;
-            string text = await http.GetStringAsync(
-                $"/System/Logs/Log?name={Uri.EscapeDataString(newest)}", timeout.Token).ConfigureAwait(false);
+            string text = await ReadNewestLogAsync(timeout.Token).ConfigureAwait(false);
             if (DebugEventReader.HasFrameSelection(text, since))
             {
                 return;
@@ -143,6 +136,19 @@ public sealed class LocalJellyfin(HttpClient http)
 
             await Task.Delay(TimeSpan.FromMilliseconds(200), timeout.Token).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Reads only the newest server log, excluding encoder and other diagnostic logs.</summary>
+    public async Task<string> ReadNewestLogAsync(CancellationToken cancellationToken)
+    {
+        using JsonDocument logs = await ReadJsonAsync("/System/Logs", cancellationToken).ConfigureAwait(false);
+        string newest = logs.RootElement.EnumerateArray()
+            .Where(log => IsServerLog(log.GetProperty("Name").GetString()!))
+            .OrderByDescending(log => log.GetProperty("DateModified").GetDateTimeOffset())
+            .ThenBy(log => log.GetProperty("Name").GetString(), StringComparer.Ordinal)
+            .First().GetProperty("Name").GetString()!;
+        return await http.GetStringAsync(
+            $"/System/Logs/Log?name={Uri.EscapeDataString(newest)}", cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<JsonDocument> ReadJsonAsync(string route, CancellationToken cancellationToken)
