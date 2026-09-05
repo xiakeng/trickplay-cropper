@@ -4,7 +4,8 @@
 
 No caller reads a partially written entry, two callers asking for the same frame pay
 for one generation, emptying the Cache Tree never disturbs a request in flight, and a
-caller that gives up leaves nothing held behind.
+caller that gives up leaves nothing held behind. An older generated-metadata read never
+overwrites a newer observation merely because it completes later.
 
 ## What breaks without it
 
@@ -19,6 +20,8 @@ caller that gives up leaves nothing held behind.
   deadlock; a stream of requests can starve the run that is supposed to bound the tree.
 - **Leaked holds.** A caller that disconnects mid-wait, still holding a lock, blocks
   every later caller for that entry until the process restarts.
+- **Completion order reverses metadata history.** A slow read begun before deletion or
+  invalid data can finish later and resurrect an observation that the newer read removed.
 
 ## Why this shape
 
@@ -71,6 +74,18 @@ while someone holds or waits on it, and is discarded when the count reaches zero
 alternative — keeping a lock per path forever — would make the registry a second,
 unbounded cache of every path ever requested, which is its own leak.
 
+**Metadata reads are ordered without being serialized.** Each issued host read receives
+an order at its authoritative start. Same-key and different-width reads may run at once;
+publication compares their start order, not completion time. A caller that cancels stops
+waiting, while the non-cancellable host query remains observed so its ordering record is
+not discarded underneath an older completion. Tombstones and active-read bookkeeping are
+removed once no in-progress publication can need them.
+
+**Metadata and JPEG coordination make different promises.** Metadata misses are not
+coalesced, so concurrent requests may issue concurrent host queries. Preview Cache Entry
+misses remain single-flight because duplicate JPEG decoding is the expensive work this
+chapter promises to avoid. Neither rule is generalized into a global lock.
+
 **Paths are re-checked, and reparse points are refused.** The tree lives in storage the
 plugin does not control, and entry paths are built from values derived from server
 state. A symbolic link planted in the tree would otherwise redirect a write outside it,
@@ -89,7 +104,8 @@ cancellation behaviour are verified by component tests instead.
 ## Where it is enforced
 
 [Cache coordination](../lifecycle/cache-coordination.md), which draws the acquisition
-order, the two-caller case, and the publication race.
+order, the two-caller case, and the representation publication race. Generated-metadata
+publication order is enforced in [source resolution](../lifecycle/source-resolution.md).
 
 ## How a caller observes it
 

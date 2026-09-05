@@ -20,8 +20,15 @@ The probe runs its user-independent source path and the shared calculation. It r
 - the logical Item's full playback Media Source enumeration, without a user and with
   explicit media probing disabled,
 - the server's current Trickplay Resolution Targets,
-- the generated trickplay metadata for the effective Source Video,
+- a current generated-metadata observation for the effective Source Video and Selected
+  Trickplay Resolution, reused from memory or loaded from Jellyfin,
 - and computes the Frame Index from the position and the generation interval.
+
+Usable positive metadata remains current for 30 minutes from its authoritative read start;
+whole-source and selected-width absence remains current for 5 minutes. Probe hits and Frame
+Index calculations do not renew those absolute ages. A cold or expired observation issues
+a host metadata query, but a warm one performs no metadata database read. The Item and Media
+Source checks above still run on every probe; source-input caching is a separate concern.
 
 The enumeration retains Jellyfin's supported default, local alternate, linked and
 eligible dynamic source forms. The requested GUID must be a member of that enumeration,
@@ -72,7 +79,8 @@ flowchart TD
     In["HEAD: Item, optional<br/>Media Source, position"] --> Policy["Jellyfin ordinary<br/>endpoint policy"]
     Policy --> Source["Unscoped Item and full<br/>Media Source membership"]
     Source --> Res["Selected Trickplay<br/>Resolution"]
-    Res --> Sel["Frame Selection"]
+    Res --> Metadata["Current generated-metadata<br/>observation"]
+    Metadata --> Sel["Frame Selection"]
     Sel --> Out["X-Trickplay-Frame-Index<br/>Cache-Control: private, no-cache"]
 
     Policy -->|"refused"| FailAuth["401 / 403"]
@@ -101,6 +109,7 @@ error. `TrickplayFrameProbe` implements `ITrickplayFrameProbe` and returns the c
 `NotModified`. It resolves source facts through
 `JellyfinTrickplayFrameProbeContextResolver`; that resolver and the GET-only
 `JellyfinPreviewContextResolver` both delegate calculation to
-`JellyfinTrickplayFrameCalculationResolver`. It never takes a lock, writes state, or
-retries. The HTTP shape is recorded normatively in
+`JellyfinTrickplayFrameCalculationResolver`; `TrickplayMetadataCache` owns the bounded
+in-memory observations and their ordered publication. The probe never takes a
+representation lock or retries. The HTTP shape is recorded normatively in
 [the HEAD endpoint research note](../../research/head-endpoint-contract.md).

@@ -69,9 +69,12 @@ public sealed class PreviewContextBoundarySpecs
         Type implementation = Assert.Single(CollectImplementations<ITrickplayFrameCalculationResolver>());
 
         Type[] exposedTypes = CollectExposedTypes([implementation]);
+        Type[] cacheExposedTypes = CollectExposedTypes([typeof(TrickplayMetadataCache)]);
 
-        Assert.Contains(typeof(ITrickplayManager), exposedTypes);
+        Assert.Contains(typeof(TrickplayMetadataCache), exposedTypes);
+        Assert.Contains(typeof(ITrickplayManager), cacheExposedTypes);
         Assert.All(exposedTypes, AssertSharedType);
+        Assert.All(cacheExposedTypes, AssertSharedType);
     }
 
     [Fact]

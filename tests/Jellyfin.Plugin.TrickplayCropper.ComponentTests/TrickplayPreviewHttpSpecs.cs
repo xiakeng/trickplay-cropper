@@ -729,6 +729,530 @@ public sealed class TrickplayPreviewHttpSpecs
         await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
+    [Fact]
+    public async Task ReusesPositiveGeneratedMetadataForThirtyMinutesWithoutSliding()
+    {
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initial, 3);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        scenario.Time.Advance(TimeSpan.FromMinutes(29));
+        using HttpResponseMessage sustainedHit = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(sustainedHit, 3);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 1);
+        Assert.Equal(2, scenario.MetadataReadCount);
+        Assert.Equal(3, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task CalculatesEachPositionFromTheSameMetadataObservation()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage firstPosition = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(firstPosition, 0);
+
+        scenario.RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond;
+        using HttpResponseMessage laterPosition = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(laterPosition, 3);
+        Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task ReusesWholeSourceAbsenceForFiveMinutesAfterCurrentGetAuthorization()
+    {
+        var scenario = new PreviewScenario
+        {
+            Metadata = MetadataAvailability.GeneratedMetadataMissing,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(initial, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(59));
+        using HttpResponseMessage sustainedHit = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(sustainedHit, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        fixture.SetPlaybackAccess(false);
+        using HttpResponseMessage forbidden = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        fixture.SetPlaybackAccess(true);
+        using HttpResponseMessage cachedAbsence = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, cachedAbsence.StatusCode);
+        Assert.Equal(1, scenario.MetadataReadCount);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+
+        scenario.Metadata = MetadataAvailability.Available;
+        scenario.Time.Advance(TimeSpan.FromSeconds(1));
+        using HttpResponseMessage refreshed = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task GetRefreshesPositiveMetadataForImageHitsAndConditionalRequests()
+    {
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage generated = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, generated.StatusCode);
+        Assert.Equal("MISS", generated.Headers.GetValues("X-Trickplay-Cache").Single());
+        string entityTag = Assert.IsType<string>(generated.Headers.ETag?.Tag);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(10));
+        using HttpResponseMessage imageHit = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, imageHit.StatusCode);
+        Assert.Equal("HIT", imageHit.Headers.GetValues("X-Trickplay-Cache").Single());
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(10));
+        using HttpResponseMessage conditional = await fixture.GetConditionalAsync(entityTag);
+        Assert.Equal(HttpStatusCode.NotModified, conditional.StatusCode);
+        Assert.Equal(3, scenario.MetadataReadCount);
+
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        scenario.Time.Advance(TimeSpan.FromMinutes(29));
+        using HttpResponseMessage renewedHead = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(renewedHead, 3);
+        Assert.Equal(3, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage expiredHead = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(expiredHead, 1);
+        Assert.Equal(4, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task GetPublishesItsCurrentFrameIndexOverAnOlderHeadObservation()
+    {
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage oldHead = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(oldHead, 3);
+
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        using HttpResponseMessage stillOldHead = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(stillOldHead, 3);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        using HttpResponseMessage currentGet = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, currentGet.StatusCode);
+        Assert.Equal("1", currentGet.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        using HttpResponseMessage currentHead = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(currentHead, 1);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task MissingWidthDerivedFromAPositiveObservationKeepsTheOriginalFiveMinuteAge()
+    {
+        int[] configuredTargets = [640];
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = configuredTargets,
+            Metadata = MetadataAvailability.ExactWidthMissing,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage availableWidth = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(availableWidth, 0);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(4));
+        configuredTargets[0] = 320;
+        using HttpResponseMessage derivedAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(derivedAbsence, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        scenario.Metadata = MetadataAvailability.Available;
+        scenario.Time.Advance(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage refreshedWidth = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshedWidth, 0);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task NewerAbsenceCannotBeOverwrittenByAnOlderPositiveRead()
+    {
+        var scenario = new PreviewScenario();
+        MetadataReadPlan older = scenario.QueueMetadataRead(
+            MetadataAvailability.Available,
+            waitsForRelease: true);
+        scenario.QueueMetadataRead(MetadataAvailability.GeneratedMetadataMissing);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> olderRequest = fixture.HeadAsync();
+        await older.Started.WaitAsync(TimeSpan.FromSeconds(10));
+
+        using HttpResponseMessage newerResponse = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, newerResponse.StatusCode);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        older.Release();
+        using HttpResponseMessage olderResponse = await olderRequest;
+        await AssertTrickplayFrameProbeSuccessAsync(olderResponse, 0);
+
+        using HttpResponseMessage retainedNewerAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(
+            retainedNewerAbsence,
+            HttpStatusCode.NotFound);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task DifferentSelectedWidthsCanReadIndependently()
+    {
+        int[] configuredTargets = [320];
+        var scenario = new PreviewScenario { ConfiguredWidthResolutions = configuredTargets };
+        MetadataReadPlan first = scenario.QueueMetadataRead(
+            MetadataAvailability.Available,
+            waitsForRelease: true);
+        scenario.QueueMetadataRead(MetadataAvailability.ExactWidthMissing);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> width320 = fixture.HeadAsync();
+        await first.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        configuredTargets[0] = 640;
+
+        using HttpResponseMessage width640 = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(width640, 0);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        first.Release();
+        using HttpResponseMessage completedWidth320 = await width320;
+        await AssertTrickplayFrameProbeSuccessAsync(completedWidth320, 0);
+    }
+
+    [Fact]
+    public async Task InvalidGetMetadataRemovesAnOlderPositiveObservation()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initial, 0);
+
+        scenario.Metadata = MetadataAvailability.FrameWidthZero;
+        using HttpResponseMessage invalid = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.InternalServerError, invalid.StatusCode);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        using HttpResponseMessage recovered = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(recovered, 0);
+        Assert.Equal(3, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task CanceledMetadataReadPublishesWhenTheIssuedHostQueryLaterSucceeds()
+    {
+        var scenario = new PreviewScenario();
+        MetadataReadPlan pending = scenario.QueueMetadataRead(
+            MetadataAvailability.Available,
+            waitsForRelease: true);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<HttpResponseMessage> canceledRequest = fixture.HeadAsync(cancellation.Token);
+        await pending.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRequest);
+
+        pending.Release();
+        await pending.Completed.WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Yield();
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+
+        using HttpResponseMessage cached = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(cached, 0);
+        Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task DoesNotServeOrPublishMetadataThatExpiresBeforeItsReadCompletes()
+    {
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+        };
+        MetadataReadPlan pending = scenario.QueueMetadataRead(
+            MetadataAvailability.Available,
+            waitsForRelease: true);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> expiredRequest = fixture.HeadAsync();
+        await pending.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        scenario.Time.Advance(TimeSpan.FromMinutes(30));
+        pending.Release();
+
+        using HttpResponseMessage expired = await expiredRequest;
+        await AssertBodylessTrickplayFrameProbeFailureAsync(expired, HttpStatusCode.InternalServerError);
+
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 1);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task OperationalGetFailureDoesNotRenewAnOlderPositiveObservation()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initial, 0);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(29));
+        scenario.QueueMetadataFailure();
+        using HttpResponseMessage failedGet = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.InternalServerError, failedGet.StatusCode);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        using HttpResponseMessage retainedHead = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedHead, 0);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage refreshedHead = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshedHead, 0);
+        Assert.Equal(3, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task SelectedWidthAbsenceKeepsAnotherObservedResolutionUsable()
+    {
+        int[] configuredTargets = [320];
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = configuredTargets,
+            Metadata = MetadataAvailability.ExactWidthMissing,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage missing320 = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(missing320, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        configuredTargets[0] = 640;
+        using HttpResponseMessage available640 = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(available640, 0);
+        Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task KeepsGeneratedMetadataSeparateForEachEffectiveSourceVideo()
+    {
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage defaultSource = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(defaultSource, 3);
+
+        scenario.UsesAlternateSource = true;
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        using HttpResponseMessage alternateSource = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(alternateSource, 1);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        scenario.UsesAlternateSource = false;
+        using HttpResponseMessage retainedDefaultSource = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedDefaultSource, 3);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task WholeSourceAbsenceAppliesAcrossSelectedWidths()
+    {
+        int[] configuredTargets = [320];
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = configuredTargets,
+            Metadata = MetadataAvailability.GeneratedMetadataMissing,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage missing320 = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(missing320, HttpStatusCode.NotFound);
+        configuredTargets[0] = 640;
+
+        using HttpResponseMessage missing640 = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(missing640, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task NewerWholeSourceAbsenceReplacesAnOlderPositiveAtAnotherWidth()
+    {
+        int[] configuredTargets = [640];
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = configuredTargets,
+            Metadata = MetadataAvailability.ExactWidthMissing,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage positive640 = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(positive640, 0);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(5));
+        configuredTargets[0] = 320;
+        scenario.Metadata = MetadataAvailability.GeneratedMetadataMissing;
+        using HttpResponseMessage deletedSource = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, deletedSource.StatusCode);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        configuredTargets[0] = 640;
+        using HttpResponseMessage retainedAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(retainedAbsence, HttpStatusCode.NotFound);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task SourceWideAbsenceRemainsUsableWhileAnOlderWidthReadIsInProgress()
+    {
+        int[] configuredTargets = [640];
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = configuredTargets,
+            Metadata = MetadataAvailability.ExactWidthMissing,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage positive640 = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(positive640, 0);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(5));
+        configuredTargets[0] = 320;
+        MetadataReadPlan older = scenario.QueueMetadataRead(
+            MetadataAvailability.Available,
+            waitsForRelease: true);
+        scenario.QueueMetadataRead(MetadataAvailability.GeneratedMetadataMissing);
+        Task<HttpResponseMessage> olderWidthRead = fixture.HeadAsync();
+        await older.Started.WaitAsync(TimeSpan.FromSeconds(10));
+
+        using HttpResponseMessage newerAbsence = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, newerAbsence.StatusCode);
+        Assert.Equal(3, scenario.MetadataReadCount);
+
+        configuredTargets[0] = 640;
+        using HttpResponseMessage currentAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(currentAbsence, HttpStatusCode.NotFound);
+        Assert.Equal(3, scenario.MetadataReadCount);
+
+        older.Release();
+        using HttpResponseMessage olderResponse = await olderWidthRead;
+        await AssertTrickplayFrameProbeSuccessAsync(olderResponse, 0);
+    }
+
+    [Theory]
+    [InlineData(MetadataAvailability.NoThumbnails)]
+    [InlineData(MetadataAvailability.NegativeThumbnails)]
+    public async Task ReusesSelectedWidthNoThumbnailsForFiveMinutes(
+        MetadataAvailability unavailableMetadata)
+    {
+        var scenario = new PreviewScenario { Metadata = unavailableMetadata };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(initial, HttpStatusCode.NotFound);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(4));
+        scenario.Metadata = MetadataAvailability.Available;
+        using HttpResponseMessage cached = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(cached, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 0);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task NewerInvalidObservationPreventsAnOlderReadFromResurrectingMetadata()
+    {
+        var scenario = new PreviewScenario();
+        MetadataReadPlan older = scenario.QueueMetadataRead(
+            MetadataAvailability.Available,
+            waitsForRelease: true);
+        scenario.QueueMetadataRead(MetadataAvailability.FrameWidthZero);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> olderRequest = fixture.HeadAsync();
+        await older.Started.WaitAsync(TimeSpan.FromSeconds(10));
+
+        using HttpResponseMessage newerInvalid = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.InternalServerError, newerInvalid.StatusCode);
+
+        older.Release();
+        using HttpResponseMessage olderResponse = await olderRequest;
+        await AssertTrickplayFrameProbeSuccessAsync(olderResponse, 0);
+
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 0);
+        Assert.Equal(3, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task FailedRegenerationAfterDeletionNeverFallsBackToOldPositiveMetadata()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage generated = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(generated, 0);
+
+        scenario.Metadata = MetadataAvailability.GeneratedMetadataMissing;
+        using HttpResponseMessage deleted = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, deleted.StatusCode);
+
+        using HttpResponseMessage retainedDeletion = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(retainedDeletion, HttpStatusCode.NotFound);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(5));
+        scenario.QueueMetadataFailure();
+        using HttpResponseMessage failedRegeneration = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(
+            failedRegeneration,
+            HttpStatusCode.InternalServerError);
+        Assert.Equal(3, scenario.MetadataReadCount);
+    }
+
     [Theory]
     [InlineData(0L, 0)]
     [InlineData(9_999L, 0)]
@@ -798,6 +1322,10 @@ public sealed class TrickplayPreviewHttpSpecs
 
         using HttpResponseMessage getResponse = await fixture.GetAsync();
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+
+        using HttpResponseMessage retainedProbeResponse = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedProbeResponse, 0);
+        Assert.Equal(2, scenario.MetadataReadCount);
     }
 
     [Theory]
@@ -873,6 +1401,7 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage previewResponse = await fixture.GetAsync();
         Assert.Equal(HttpStatusCode.Forbidden, previewResponse.StatusCode);
         await AssertAuthorizationErrorResponseAsync(previewResponse);
+        Assert.Equal(1, scenario.MetadataReadCount);
     }
 
     [Fact]
@@ -920,6 +1449,7 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage previewResponse = await fixture.GetAsync();
         Assert.Equal(HttpStatusCode.NotFound, previewResponse.StatusCode);
         await AssertProblemDetailsResponseAsync(previewResponse);
+        Assert.Equal(1, scenario.MetadataReadCount);
     }
 
     [Theory]
@@ -1583,7 +2113,12 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public Task<HttpResponseMessage> HeadAsync()
         {
-            return SendAsync(HttpMethod.Head, null, null, CancellationToken.None);
+            return HeadAsync(CancellationToken.None);
+        }
+
+        public Task<HttpResponseMessage> HeadAsync(CancellationToken cancellationToken)
+        {
+            return SendAsync(HttpMethod.Head, null, null, cancellationToken);
         }
 
         public Task<HttpResponseMessage> HeadConditionalAsync(string ifNoneMatch)
@@ -1713,6 +2248,7 @@ public sealed class TrickplayPreviewHttpSpecs
             IApplicationPaths applicationPaths,
             PreviewHostContext context)
         {
+            services.AddSingleton<TimeProvider>(context.Scenario.Time);
             var registrator = new PluginServiceRegistrator();
             registrator.RegisterServices(services, InterfaceMock.Create<IServerApplicationHost>().Service);
 
@@ -1768,30 +2304,27 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 Id = scenario.LogicalItemId,
                 Name = scenario.LogicalTitle,
-                Path = scenario.UsesAlternateSource
-                    ? "/media/component-logical-video.mkv"
-                    : scenario.SelectedMediaPath,
+                Path = scenario.SelectedMediaPath,
             };
-            Video selectedVideo = scenario.UsesAlternateSource
-                ? new Video
-                {
-                    Id = scenario.ReturnsMismatchedSourceIdentity ? otherItemId : scenario.SelectedSourceId,
-                    Name = scenario.SelectedTitle,
-                    Path = scenario.SelectedMediaPath,
-                }
-                : logicalVideo;
+            var alternateVideo = new Video
+            {
+                Id = scenario.ReturnsMismatchedSourceIdentity ? otherItemId : alternateSourceId,
+                Name = scenario.SelectedTitle,
+                Path = scenario.SelectedMediaPath,
+            };
             var context = new VideoLookupContext
             {
+                AlternateVideo = alternateVideo,
                 LogicalVideo = logicalVideo,
                 Scenario = scenario,
-                SelectedVideo = selectedVideo,
                 User = user,
             };
 
             InterfaceMockSpecs<ILibraryManager> mock = InterfaceMock.Create<ILibraryManager>();
             mock.Handle("GetItemById", arguments => ResolveVideoLookup(arguments, context));
             mock.Handle("GetLibraryOptions", arguments =>
-                ReferenceEquals(arguments?[0], context.SelectedVideo)
+                ReferenceEquals(arguments?[0], context.LogicalVideo)
+                    || ReferenceEquals(arguments?[0], context.AlternateVideo)
                     ? new LibraryOptions { SaveTrickplayWithMedia = false }
                     : throw new InvalidOperationException("Library options were requested for the wrong video."));
             return mock.Service;
@@ -1824,7 +2357,7 @@ public sealed class TrickplayPreviewHttpSpecs
                     isUserScoped);
             }
 
-            if (requestedId != context.Scenario.SelectedSourceId)
+            if (requestedId != alternateSourceId)
             {
                 return null;
             }
@@ -1835,7 +2368,7 @@ public sealed class TrickplayPreviewHttpSpecs
             }
 
             return ResolveVisibleVideo(
-                context.SelectedVideo,
+                context.AlternateVideo,
                 context.Scenario.SelectedVideo,
                 isUserScoped);
         }
@@ -1951,31 +2484,64 @@ public sealed class TrickplayPreviewHttpSpecs
 
         private static ITrickplayManager CreateTrickplayManager(PreviewHostContext context)
         {
-            TrickplayInfo metadata = CreateMetadata(context.Scenario);
-            Dictionary<int, TrickplayInfo> resolutions = context.Scenario.Metadata switch
-            {
-                MetadataAvailability.ExactWidthMissing => new Dictionary<int, TrickplayInfo> { [640] = metadata },
-                MetadataAvailability.GeneratedMetadataMissing => new Dictionary<int, TrickplayInfo>(),
-                _ => new Dictionary<int, TrickplayInfo> { [320] = metadata },
-            };
-
             InterfaceMockSpecs<ITrickplayManager> mock = InterfaceMock.Create<ITrickplayManager>();
             mock.Handle("GetTrickplayResolutions", arguments =>
             {
+                context.Scenario.RecordMetadataRead();
+                MetadataReadPlan? plan = context.Scenario.BeginMetadataRead();
                 if (context.Scenario.MutatesConfiguredTargetsDuringMetadataRead)
                 {
                     context.Scenario.ConfiguredWidthResolutions![0] = 640;
                 }
 
                 return Equals(arguments?[0], context.Scenario.SelectedSourceId)
-                    ? Task.FromResult(resolutions)
+                    ? ReadResolutionsAsync(context.Scenario, plan)
                     : Task.FromResult(new Dictionary<int, TrickplayInfo>());
             });
             mock.Handle("GetTrickplayTilePathAsync", arguments => ResolveSourceSpritePath(arguments, context));
             return mock.Service;
         }
 
-        private static TrickplayInfo CreateMetadata(PreviewScenario scenario)
+        private static async Task<Dictionary<int, TrickplayInfo>> ReadResolutionsAsync(
+            PreviewScenario scenario,
+            MetadataReadPlan? plan)
+        {
+            try
+            {
+                if (plan is not null)
+                {
+                    await plan.WaitForReleaseAsync();
+                    if (plan.Fails)
+                    {
+                        throw new IOException("The scripted metadata read failed.");
+                    }
+                }
+
+                MetadataAvailability availability = plan?.Availability ?? scenario.Metadata;
+                return CreateResolutions(scenario, availability);
+            }
+            finally
+            {
+                plan?.MarkCompleted();
+            }
+        }
+
+        private static Dictionary<int, TrickplayInfo> CreateResolutions(
+            PreviewScenario scenario,
+            MetadataAvailability availability)
+        {
+            TrickplayInfo metadata = CreateMetadata(scenario, availability);
+            return availability switch
+            {
+                MetadataAvailability.ExactWidthMissing => new Dictionary<int, TrickplayInfo> { [640] = metadata },
+                MetadataAvailability.GeneratedMetadataMissing => new Dictionary<int, TrickplayInfo>(),
+                _ => new Dictionary<int, TrickplayInfo> { [320] = metadata },
+            };
+        }
+
+        private static TrickplayInfo CreateMetadata(
+            PreviewScenario scenario,
+            MetadataAvailability availability)
         {
             var metadata = new TrickplayInfo
             {
@@ -1987,11 +2553,17 @@ public sealed class TrickplayPreviewHttpSpecs
                 ThumbnailCount = 4,
                 Interval = 10_000,
             };
-            switch (scenario.Metadata)
+            switch (availability)
             {
                 case MetadataAvailability.Available:
                 case MetadataAvailability.GeneratedMetadataMissing:
                     {
+                        break;
+                    }
+
+                case MetadataAvailability.ChangedInterval:
+                    {
+                        metadata.Interval = 20_000;
                         break;
                     }
 
@@ -2078,7 +2650,7 @@ public sealed class TrickplayPreviewHttpSpecs
                     {
                         throw new ArgumentOutOfRangeException(
                             nameof(scenario),
-                            scenario.Metadata,
+                            availability,
                             "Unknown metadata scenario.");
                     }
             }
@@ -2409,17 +2981,19 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private sealed class VideoLookupContext
     {
+        public required Video AlternateVideo { get; init; }
+
         public required Video LogicalVideo { get; init; }
 
         public required PreviewScenario Scenario { get; init; }
-
-        public required Video SelectedVideo { get; init; }
 
         public required User User { get; init; }
     }
 
     private sealed class PreviewScenario
     {
+        private int metadataReadCount;
+        private readonly Queue<MetadataReadPlan> metadataReadPlans = [];
         private int sourceSpritePathRequests;
         private int userIndependentLibraryLookups;
         private int userIndependentSourceEnumerations;
@@ -2458,11 +3032,13 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public SourceMembership Membership { get; init; } = SourceMembership.Member;
 
-        public MetadataAvailability Metadata { get; init; } = MetadataAvailability.Available;
+        public MetadataAvailability Metadata { get; set; } = MetadataAvailability.Available;
+
+        public int MetadataReadCount => Volatile.Read(ref metadataReadCount);
 
         public bool MutatesConfiguredTargetsDuringMetadataRead { get; init; }
 
-        public long RequestPositionTicks { get; init; }
+        public long RequestPositionTicks { get; set; }
 
         public bool ReturnsMismatchedSourceIdentity { get; init; }
 
@@ -2478,11 +3054,14 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public int SourceSpritePathRequests => Volatile.Read(ref sourceSpritePathRequests);
 
+        public ManualTimeProvider Time { get; } = new(
+            new DateTimeOffset(2026, 9, 6, 0, 0, 0, TimeSpan.Zero));
+
         public int? SourceVideoWidth { get; init; }
 
         public Guid UserId { get; init; } = userId;
 
-        public bool UsesAlternateSource { get; init; }
+        public bool UsesAlternateSource { get; set; }
 
         public int UserIndependentLibraryLookups => Volatile.Read(ref userIndependentLibraryLookups);
 
@@ -2497,6 +3076,41 @@ public sealed class TrickplayPreviewHttpSpecs
         public void RecordSourceSpritePathRequest()
         {
             Interlocked.Increment(ref sourceSpritePathRequests);
+        }
+
+        public void RecordMetadataRead()
+        {
+            Interlocked.Increment(ref metadataReadCount);
+        }
+
+        public MetadataReadPlan QueueMetadataRead(
+            MetadataAvailability availability,
+            bool waitsForRelease = false)
+        {
+            var plan = new MetadataReadPlan(availability, waitsForRelease, fails: false);
+            lock (metadataReadPlans)
+            {
+                metadataReadPlans.Enqueue(plan);
+            }
+
+            return plan;
+        }
+
+        public void QueueMetadataFailure()
+        {
+            var plan = new MetadataReadPlan(MetadataAvailability.Available, waitsForRelease: false, fails: true);
+            lock (metadataReadPlans)
+            {
+                metadataReadPlans.Enqueue(plan);
+            }
+        }
+
+        public MetadataReadPlan? BeginMetadataRead()
+        {
+            lock (metadataReadPlans)
+            {
+                return metadataReadPlans.Count > 0 ? metadataReadPlans.Dequeue() : null;
+            }
         }
 
         public void RecordUserIndependentLibraryLookup()
@@ -2566,9 +3180,10 @@ public sealed class TrickplayPreviewHttpSpecs
         WrongType,
     }
 
-    private enum MetadataAvailability
+    public enum MetadataAvailability
     {
         Available,
+        ChangedInterval,
         ContradictoryFrameWidth,
         CropBottomOverflow,
         CropRightOverflow,
@@ -2583,6 +3198,73 @@ public sealed class TrickplayPreviewHttpSpecs
         NoThumbnails,
         TileHeightZero,
         TileWidthZero,
+    }
+
+    private sealed class MetadataReadPlan
+    {
+        private readonly TaskCompletionSource completed = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource started = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public MetadataReadPlan(
+            MetadataAvailability availability,
+            bool waitsForRelease,
+            bool fails)
+        {
+            Availability = availability;
+            Fails = fails;
+            if (!waitsForRelease)
+            {
+                release.TrySetResult();
+            }
+        }
+
+        public MetadataAvailability Availability { get; }
+
+        public Task Completed => completed.Task;
+
+        public bool Fails { get; }
+
+        public Task Started => started.Task;
+
+        public void Release()
+        {
+            release.TrySetResult();
+        }
+
+        public async Task WaitForReleaseAsync()
+        {
+            started.TrySetResult();
+            await release.Task;
+        }
+
+        public void MarkCompleted()
+        {
+            completed.TrySetResult();
+        }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long utcTicks;
+
+        public ManualTimeProvider(DateTimeOffset initialTime)
+        {
+            utcTicks = initialTime.UtcTicks;
+        }
+
+        public void Advance(TimeSpan duration)
+        {
+            Interlocked.Add(ref utcTicks, duration.Ticks);
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return new DateTimeOffset(Volatile.Read(ref utcTicks), TimeSpan.Zero);
+        }
     }
 
     public enum InternalFailureCondition

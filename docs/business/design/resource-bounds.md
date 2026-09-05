@@ -95,12 +95,27 @@ rather than refuse data the server considers good. The bound covers host CPU as 
 disk: it is a statement about the whole cost of being a tenant in the server process, not
 only about the bytes written to the tree.
 
+## Generated-metadata state is reclaimed, not capacity-bounded
+
+The in-memory metadata module removes expired observations, obsolete publication
+tombstones, completed-read tracking, and empty per-source state after no in-progress older
+read needs them. This prevents ordinary expiry and cancellation history from becoming
+permanent bookkeeping.
+
+It deliberately adds no entry capacity, admission queue, load-concurrency limit, overload
+status, or same-key coalescing. Those are not implied by the 30-minute positive and
+5-minute negative lifetimes: enough distinct sources can still consume memory within one
+lifetime, and enough concurrent misses can still issue concurrent host queries. This
+ticket chooses freshness and correct ordering without inventing an unapproved overload
+contract.
+
 ## Where it is enforced
 
 [Scheduled cleanup](../lifecycle/scheduled-cleanup.md), which draws the run: cutoff,
 discovery, classification, re-check, deletion, pruning. The decode permit bound is
 enforced in [preview generation](../lifecycle/preview-generation.md), as the first step
-before a sprite is opened.
+before a sprite is opened. Metadata-state reclamation is part of
+[source resolution](../lifecycle/source-resolution.md).
 
 ## How a caller observes it
 

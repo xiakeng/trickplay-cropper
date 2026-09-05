@@ -60,7 +60,9 @@ internal sealed class JellyfinTrickplayFrameProbeContextResolver : ITrickplayFra
             return Concealed();
         }
 
-        return await calculationResolver.ResolveAsync(query, matchedSource.VideoStream?.Width).ConfigureAwait(false);
+        return await calculationResolver
+            .ResolveForProbeAsync(query, matchedSource.VideoStream?.Width, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static TrickplayFrameCalculationResolution.NotFound Concealed()

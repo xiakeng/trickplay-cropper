@@ -72,10 +72,10 @@ Once the effective Source Video is known:
    [Jellyfin Server](../participants/jellyfin-server.md). The result of applying it here
    is the **Selected Trickplay Resolution** — source-specific, because the rule depends
    on the video.
-3. **Require the generated metadata to match it exactly.** The recorded metadata for the
+3. **Resolve one coherent generated-metadata observation.** The recorded metadata for the
    effective Source Video must contain an entry at precisely the Selected Trickplay
    Resolution, with positive height, interval, tile width, tile height, and thumbnail
-   count.
+   count. HEAD may reuse a current observation; GET follows the refresh rules below.
 
 There is **no fallback**: no default width, no alternate target, no nearest resolution,
 and no treating recorded metadata as authoritative in place of selection.
@@ -92,10 +92,43 @@ The exact-match rule knowingly refuses data that is servable; why that trade is
 deliberate — and what gets logged so the mismatch is diagnosable — is in
 [resolution exactness](../design/resolution-exactness.md).
 
-Each request copies the current target array before selection, then reads generated
-metadata once. It does not retain either value or retry if state changes underneath it:
-the race resolves into an ordinary outcome above, and the next request observes current
-state.
+Each request copies the current target array before selection. The copy, normalization
+width, position, user and Source Sprite facts remain request-local and never enter metadata
+identity.
+
+## Resolving generated metadata
+
+The metadata module keeps independently validated rows by effective Source Video and exact
+Selected Trickplay Resolution. A positive row is current for 30 minutes from the start of
+its host read. An empty source dictionary, a missing selected width, or a selected row with
+no thumbnails is current for 5 minutes from that same point. HEAD access and Frame Index
+calculation do not renew either age.
+
+HEAD consults this state only after the user-independent Item, membership, Source Video,
+current target, and normalization steps above. A current positive or applicable negative
+answers the metadata step; a miss or expired fact issues a host metadata query.
+
+GET completes all five user-scoped gates and current target selection first. A current
+whole-source or selected-width negative then ends GET with `404`, before another metadata
+read, Source Sprite path lookup, JPEG access, or conditional success. Otherwise GET always
+issues a host metadata query, including when the eventual representation is a Preview Cache
+Entry HIT or `304`. It validates and publishes the returned rows, calculates from that same
+observation, and gives changed or unchanged checked metadata a new read-start age. It does
+not renew Source Sprite or other source facts.
+
+An empty dictionary replaces older rows source-wide. Missing-width and no-thumbnail
+observations replace only their width; other checked rows remain usable. Invalid selected
+metadata removes that retained width and returns `500` without retaining the error. An
+operational failure publishes nothing, and neither failure nor an expired negative can fall
+back to an older positive. Authorization refusal, Source Sprite absence, and cancellation
+are not metadata negatives.
+
+Every host read receives a start order. Reads overlap without same-key coalescing, but an
+older-started completion cannot overwrite newer positive or negative state or resurrect a
+value removed after newer invalid data. Jellyfin's metadata query cannot be cancelled once
+issued; if its caller cancels, the query remains observed through settlement and its result
+still follows the same age and publication rules. Expired values and obsolete ordering
+state are removed after no in-progress older publication needs them.
 
 For a preview request only, one further gate follows: the Source Sprite for the selected
 width and sprite index must actually resolve and exist. Metadata does not prove a file is
@@ -132,7 +165,8 @@ flowchart TD
     Targets -->|"One or more"| Min["Select the minimum target"]
     Min --> Normalize["Normalize for this Media Source<br/>by Jellyfin's rule"]
     Normalize --> Selected["Selected Trickplay Resolution"]
-    Selected --> Match{"Metadata matches it exactly,<br/>is consistent, and has frames?"}
+    Selected --> Observe["Resolve a current metadata observation"]
+    Observe --> Match{"Metadata matches it exactly,<br/>is consistent, and has frames?"}
     Match -->|"Inconsistent"| B3["500"]
     Match -->|"No exact match, or no frames"| B4["404"]
     Match -->|"Yes"| Done["Proceed to Frame Selection"]
@@ -143,7 +177,8 @@ flowchart TD
 `JellyfinPreviewContextResolver` owns GET's user-scoped gates;
 `JellyfinTrickplayFrameProbeContextResolver` owns HEAD's user-independent source facts.
 Both delegate target, metadata, and Frame Index calculation to
-`JellyfinTrickplayFrameCalculationResolver`. `TrickplayResolutionSelector` implements
+`JellyfinTrickplayFrameCalculationResolver`; `TrickplayMetadataCache` owns observation
+freshness, scope, ordering, and reclamation. `TrickplayResolutionSelector` implements
 the minimum-target choice and Jellyfin's normalization rule; `PreviewQuery` carries the
 requested Item, optional Media Source, and position; the closed resolution types carry
 only the facts appropriate to each path. `TrickplayMetadata` holds the matched generated

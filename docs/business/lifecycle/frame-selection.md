@@ -17,9 +17,15 @@ generated the trickplay data, plus the requested position:
 | Tile width, tile height | how many frames sit in one Source Sprite, as columns and rows |
 | Frame width, frame height | the size of one frame inside a sprite, which is the Selected Trickplay Resolution and its matching height |
 
-All five recorded values must be positive. If any is not, the metadata does not
-describe a usable sequence and the request fails as invalid Jellyfin metadata
-rather than being estimated around.
+Frame width, frame height, interval, tile width, and tile height must be positive. A
+nonpositive thumbnail count remains the established no-thumbnails `404` classification;
+other nonpositive values make the selected metadata invalid and return `500` rather than
+being estimated around.
+
+One request performs this arithmetic from one immutable metadata observation. Equal
+position and observation values produce the same Frame Index. A request crossing a
+metadata refresh may use a different coherent observation and therefore return a different
+index without mixing fields from the two reads.
 
 ## The derivation
 
