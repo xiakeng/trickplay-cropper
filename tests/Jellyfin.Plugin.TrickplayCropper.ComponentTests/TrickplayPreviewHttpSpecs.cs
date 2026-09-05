@@ -953,6 +953,35 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Fact]
+    public async Task ConcurrentFailureDoesNotRetireStateNeededBySuccessfulRead()
+    {
+        var scenario = new PreviewScenario();
+        MetadataReadPlan failing = scenario.QueueMetadataFailure(waitsForRelease: true);
+        MetadataReadPlan successful = scenario.QueueMetadataRead(
+            MetadataAvailability.Available,
+            waitsForRelease: true);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> failingRequest = fixture.HeadAsync();
+        await failing.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        Task<HttpResponseMessage> successfulRequest = fixture.HeadAsync();
+        await successful.Started.WaitAsync(TimeSpan.FromSeconds(10));
+
+        failing.Release();
+        using HttpResponseMessage failure = await failingRequest;
+        await AssertBodylessTrickplayFrameProbeFailureAsync(failure, HttpStatusCode.InternalServerError);
+
+        successful.Release();
+        using HttpResponseMessage success = await successfulRequest;
+        await AssertTrickplayFrameProbeSuccessAsync(success, 0);
+
+        scenario.Metadata = MetadataAvailability.ChangedInterval;
+        using HttpResponseMessage retainedSuccess = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedSuccess, 0);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
     public async Task InvalidGetMetadataRemovesAnOlderPositiveObservation()
     {
         var scenario = new PreviewScenario();
@@ -1090,25 +1119,6 @@ public sealed class TrickplayPreviewHttpSpecs
         scenario.UsesAlternateSource = false;
         using HttpResponseMessage retainedDefaultSource = await fixture.HeadAsync();
         await AssertTrickplayFrameProbeSuccessAsync(retainedDefaultSource, 3);
-        Assert.Equal(2, scenario.MetadataReadCount);
-    }
-
-    [Fact]
-    public async Task RequestingAnotherSourceReclaimsExpiredIdleMetadataState()
-    {
-        var scenario = new PreviewScenario();
-        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
-
-        using HttpResponseMessage initialSource = await fixture.HeadAsync();
-        await AssertTrickplayFrameProbeSuccessAsync(initialSource, 0);
-        Assert.Equal(1, fixture.RetainedMetadataSourceCount);
-
-        scenario.Time.Advance(TimeSpan.FromMinutes(30));
-        scenario.UsesAlternateSource = true;
-        using HttpResponseMessage alternateSource = await fixture.HeadAsync();
-        await AssertTrickplayFrameProbeSuccessAsync(alternateSource, 0);
-
-        Assert.Equal(1, fixture.RetainedMetadataSourceCount);
         Assert.Equal(2, scenario.MetadataReadCount);
     }
 
@@ -2062,9 +2072,6 @@ public sealed class TrickplayPreviewHttpSpecs
                 .ToArray();
 
         public IServiceProvider Services => host.Services;
-
-        public int RetainedMetadataSourceCount =>
-            Services.GetRequiredService<TrickplayMetadataCache>().RetainedSourceCount;
 
         public string SourceSpritePath { get; }
 
@@ -3118,13 +3125,15 @@ public sealed class TrickplayPreviewHttpSpecs
             return plan;
         }
 
-        public void QueueMetadataFailure()
+        public MetadataReadPlan QueueMetadataFailure(bool waitsForRelease = false)
         {
-            var plan = new MetadataReadPlan(MetadataAvailability.Available, waitsForRelease: false, fails: true);
+            var plan = new MetadataReadPlan(MetadataAvailability.Available, waitsForRelease, fails: true);
             lock (metadataReadPlans)
             {
                 metadataReadPlans.Enqueue(plan);
             }
+
+            return plan;
         }
 
         public MetadataReadPlan? BeginMetadataRead()

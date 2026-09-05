@@ -14,14 +14,11 @@ internal sealed class TrickplayMetadataCache
     private static readonly TimeSpan negativeLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan positiveLifetime = TimeSpan.FromMinutes(30);
 
-    private readonly object readIssuanceGate = new();
     private readonly ConcurrentDictionary<Guid, SourceState> sources = new();
     private readonly TimeProvider timeProvider;
     private readonly ITrickplayManager trickplayManager;
     private long nextObservationSequence;
     private long nextReclamationUtcTicks;
-
-    internal int RetainedSourceCount => sources.Count;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayMetadataCache"/> class.
@@ -110,23 +107,20 @@ internal sealed class TrickplayMetadataCache
 
     private IssuedRead IssueRead(MetadataLookup.Missed lookup, MetadataRequest request)
     {
-        lock (readIssuanceGate)
+        var stamp = new ObservationStamp(
+            timeProvider.GetUtcNow(),
+            Interlocked.Increment(ref nextObservationSequence));
+        Task<Dictionary<int, TrickplayInfo>> query;
+        try
         {
-            var stamp = new ObservationStamp(
-                timeProvider.GetUtcNow(),
-                Interlocked.Increment(ref nextObservationSequence));
-            Task<Dictionary<int, TrickplayInfo>> query;
-            try
-            {
-                query = trickplayManager.GetTrickplayResolutions(request.SourceVideoId);
-            }
-            catch (Exception failure)
-            {
-                query = Task.FromException<Dictionary<int, TrickplayInfo>>(failure);
-            }
-
-            return new IssuedRead(lookup.Registration, stamp, query);
+            query = trickplayManager.GetTrickplayResolutions(request.SourceVideoId);
         }
+        catch (Exception failure)
+        {
+            query = Task.FromException<Dictionary<int, TrickplayInfo>>(failure);
+        }
+
+        return new IssuedRead(lookup.Registration, stamp, query);
     }
 
     private async Task<ReadOutcome> ReadAndPublishAsync(
@@ -324,7 +318,9 @@ internal sealed class TrickplayMetadataCache
 
     private sealed record ObservationStamp(DateTimeOffset ReadStartedAt, long Sequence);
 
-    private sealed record ReadRegistration;
+    private sealed class ReadRegistration
+    {
+    }
 
     private sealed record IssuedRead(
         ReadRegistration Registration,
