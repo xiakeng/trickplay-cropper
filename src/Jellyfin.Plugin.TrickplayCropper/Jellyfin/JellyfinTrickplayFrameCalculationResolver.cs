@@ -1,7 +1,5 @@
-using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
 using MediaBrowser.Controller.Configuration;
-using MediaBrowser.Controller.Trickplay;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 
@@ -10,47 +8,96 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// </summary>
 internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFrameCalculationResolver
 {
-    private readonly ITrickplayManager trickplayManager;
+    private readonly TrickplayMetadataCache metadataCache;
     private readonly IServerConfigurationManager serverConfigurationManager;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JellyfinTrickplayFrameCalculationResolver"/> class.
     /// </summary>
-    /// <param name="trickplayManager">Reads generated Trickplay metadata.</param>
+    /// <param name="metadataCache">Resolves generated Trickplay metadata with request-appropriate freshness.</param>
     /// <param name="serverConfigurationManager">Reads the current Trickplay Resolution Targets.</param>
     public JellyfinTrickplayFrameCalculationResolver(
-        ITrickplayManager trickplayManager,
+        TrickplayMetadataCache metadataCache,
         IServerConfigurationManager serverConfigurationManager)
     {
-        this.trickplayManager = trickplayManager;
+        this.metadataCache = metadataCache;
         this.serverConfigurationManager = serverConfigurationManager;
     }
 
     /// <inheritdoc />
-    public async Task<TrickplayFrameCalculationResolution> ResolveAsync(
+    public Task<TrickplayFrameCalculationResolution> ResolveForPreviewAsync(
         PreviewQuery query,
-        int? normalizationSourceWidth)
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken)
+    {
+        var request = new CalculationRequest(query, normalizationSourceWidth, MetadataAccess.Preview);
+        return ResolveAsync(request, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<TrickplayFrameCalculationResolution> ResolveForProbeAsync(
+        PreviewQuery query,
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken)
+    {
+        var request = new CalculationRequest(query, normalizationSourceWidth, MetadataAccess.Probe);
+        return ResolveAsync(request, cancellationToken);
+    }
+
+    private async Task<TrickplayFrameCalculationResolution> ResolveAsync(
+        CalculationRequest request,
+        CancellationToken cancellationToken)
     {
         int[]? configuredTargets = serverConfigurationManager.Configuration?
             .TrickplayOptions?
             .WidthResolutions?
             .ToArray();
-        int? selectedResolution = SelectResolution(configuredTargets, normalizationSourceWidth);
+        int? selectedResolution = SelectResolution(configuredTargets, request.NormalizationSourceWidth);
         if (selectedResolution is null)
         {
             return new TrickplayFrameCalculationResolution.NotFound(
                 PreviewUnavailableReason.NoConfiguredTarget);
         }
 
-        Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
-            .GetTrickplayResolutions(query.ResolvedMediaSourceId)
-            .ConfigureAwait(false);
-        var observation = new CalculationObservation(
+        PreviewConfigurationDiagnostics configuration = CreateConfiguration(
             configuredTargets!,
-            normalizationSourceWidth,
-            selectedResolution.Value,
-            resolutions);
-        return SelectFrame(query, observation);
+            request.NormalizationSourceWidth,
+            selectedResolution.Value);
+        try
+        {
+            TrickplayMetadataResolution metadata = await ResolveMetadataAsync(
+                request,
+                selectedResolution.Value,
+                cancellationToken).ConfigureAwait(false);
+            return SelectFrame(request.Query, metadata);
+        }
+        catch (InvalidTrickplayMetadataException failure)
+        {
+            failure.Configuration = configuration with
+            {
+                GeneratedKeys = failure.Configuration?.GeneratedKeys,
+            };
+            throw;
+        }
+    }
+
+    private Task<TrickplayMetadataResolution> ResolveMetadataAsync(
+        CalculationRequest request,
+        int selectedResolution,
+        CancellationToken cancellationToken)
+    {
+        return request.Access switch
+        {
+            MetadataAccess.Preview => metadataCache.GetForPreviewAsync(
+                request.Query.ResolvedMediaSourceId,
+                selectedResolution,
+                cancellationToken),
+            MetadataAccess.Probe => metadataCache.GetForProbeAsync(
+                request.Query.ResolvedMediaSourceId,
+                selectedResolution,
+                cancellationToken),
+            _ => throw new InvalidOperationException($"Unknown metadata access {request.Access}."),
+        };
     }
 
     private static int? SelectResolution(int[]? configuredTargets, int? normalizationSourceWidth)
@@ -70,77 +117,44 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         }
     }
 
+    private static PreviewConfigurationDiagnostics CreateConfiguration(
+        int[] configuredTargets,
+        int? normalizationSourceWidth,
+        int selectedResolution)
+    {
+        return new PreviewConfigurationDiagnostics
+        {
+            ConfiguredTargets = configuredTargets,
+            ChosenTarget = configuredTargets.Min(),
+            SelectedResolution = selectedResolution,
+            NormalizationSourceWidth = normalizationSourceWidth,
+        };
+    }
+
     private static TrickplayFrameCalculationResolution SelectFrame(
         PreviewQuery query,
-        CalculationObservation observation)
+        TrickplayMetadataResolution metadataResolution)
     {
-        if (observation.Resolutions.Count == 0)
+        return metadataResolution switch
         {
-            return new TrickplayFrameCalculationResolution.NotFound(
-                PreviewUnavailableReason.NoGeneratedMetadata);
-        }
-
-        if (!observation.Resolutions.TryGetValue(observation.SelectedResolution, out TrickplayInfo? info))
-        {
-            return new TrickplayFrameCalculationResolution.NotFound(
-                PreviewUnavailableReason.SelectedResolutionMissing);
-        }
-
-        if (info.ThumbnailCount <= 0)
-        {
-            return new TrickplayFrameCalculationResolution.NotFound(
-                PreviewUnavailableReason.NoThumbnails);
-        }
-
-        var metadata = new TrickplayMetadata(
-            info.Width,
-            info.Height,
-            info.Interval,
-            info.TileWidth,
-            info.TileHeight,
-            info.ThumbnailCount);
-        var configuration = new PreviewConfigurationDiagnostics
-        {
-            ConfiguredTargets = observation.ConfiguredTargets,
-            ChosenTarget = observation.ConfiguredTargets.Min(),
-            SelectedResolution = observation.SelectedResolution,
-            NormalizationSourceWidth = observation.NormalizationSourceWidth,
+            TrickplayMetadataResolution.Available available => new TrickplayFrameCalculationResolution.Selected(
+                available.Metadata,
+                available.Metadata.SelectFrameIndex(query.PositionTicks)),
+            TrickplayMetadataResolution.NotFound notFound => new TrickplayFrameCalculationResolution.NotFound(
+                notFound.Reason),
+            _ => throw new InvalidOperationException(
+                $"Unknown Trickplay metadata resolution {metadataResolution.GetType().Name}."),
         };
-        ValidateMetadata(metadata, observation, configuration);
-        return new TrickplayFrameCalculationResolution.Selected(
-            metadata,
-            metadata.SelectFrameIndex(query.PositionTicks));
     }
 
-    private static void ValidateMetadata(
-        TrickplayMetadata metadata,
-        CalculationObservation observation,
-        PreviewConfigurationDiagnostics configuration)
+    private enum MetadataAccess
     {
-        try
-        {
-            metadata.Validate();
-            if (metadata.FrameWidth != observation.SelectedResolution)
-            {
-                throw new InvalidTrickplayMetadataException(
-                    metadata,
-                    "FrameWidthMatchesResolutionKey",
-                    metadata.FrameWidth);
-            }
-        }
-        catch (InvalidTrickplayMetadataException failure)
-        {
-            failure.Configuration = configuration with
-            {
-                GeneratedKeys = observation.Resolutions.Keys.Order().ToArray(),
-            };
-            throw;
-        }
+        Preview,
+        Probe,
     }
 
-    private sealed record CalculationObservation(
-        int[] ConfiguredTargets,
+    private sealed record CalculationRequest(
+        PreviewQuery Query,
         int? NormalizationSourceWidth,
-        int SelectedResolution,
-        IReadOnlyDictionary<int, TrickplayInfo> Resolutions);
+        MetadataAccess Access);
 }

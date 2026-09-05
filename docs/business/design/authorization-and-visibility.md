@@ -45,6 +45,11 @@ the authorization; asking twice produces refusals that look like bugs and are no
 does not distinguish them for anyone. The distinctions exist internally, in logs, and
 nowhere in the response.
 
+**Cached metadata is never cached authority.** GET completes its current-user visibility,
+playback, membership, Source Video, and target checks before an applicable cached absence
+can end the request. A metadata cache warmed by HEAD, an API key, or another user cannot
+skip those checks or make a representation available.
+
 ## Where it is enforced
 
 [Source resolution](../lifecycle/source-resolution.md), in the five gates and their

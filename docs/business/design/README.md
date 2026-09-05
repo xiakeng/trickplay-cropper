@@ -16,7 +16,7 @@ that answers *why not something else*.
 | The width served is one the server was configured to produce, exactly | [Resolution exactness](resolution-exactness.md) | [Source resolution](../lifecycle/source-resolution.md) | `404`, never a substitute |
 | One position always selects one frame, and no position is out of range | [Frame determinism](frame-determinism.md) | [Frame Selection](../lifecycle/frame-selection.md) | `X-Trickplay-Frame-Index`, the ETag |
 | Asking which frame never costs image work, and never promises delivery | [Probe isolation](probe-isolation.md) | [Trickplay Frame Probe](../lifecycle/frame-probe.md) | Two headers, no body |
-| A cached preview is served only while it belongs to its source version | [Cache identity and freshness](cache-identity-and-freshness.md) | [Preview Cache Entry](../lifecycle/preview-cache.md) | The ETag, `X-Trickplay-Cache` |
+| Cached bytes keep source identity and reused metadata keeps bounded age | [Cache identity and freshness](cache-identity-and-freshness.md) | [Source resolution](../lifecycle/source-resolution.md), [Preview Cache Entry](../lifecycle/preview-cache.md) | The Frame Index, ETag, `X-Trickplay-Cache` |
 | Nobody reads a partial entry, and one frame costs one generation | [Concurrency safety](concurrency-safety.md) | [Cache coordination](../lifecycle/cache-coordination.md) | `Server-Timing` |
 | The Cache Tree stays bounded, and emptying it disturbs nobody | [Resource bounds](resource-bounds.md) | [Scheduled cleanup](../lifecycle/scheduled-cleanup.md) | Nothing — no caller can observe this |
 
@@ -24,7 +24,8 @@ that answers *why not something else*.
 flowchart TD
     G["GET authorization and visibility<br/>carries: authorization and visibility"] --> S2["Resolution selection<br/>carries: resolution exactness"]
     H["HEAD source facts<br/>carries: probe non-authority"] --> S2
-    S2 --> S3["Frame Selection<br/>carries: frame determinism"]
+    S2 --> M["Metadata observation<br/>carries: bounded freshness"]
+    M --> S3["Frame Selection<br/>carries: frame determinism"]
     S3 --> P["The probe stops here<br/>carries: probe isolation"]
     S3 --> S4["Cache lookup and generation<br/>carries: cache identity,<br/>concurrency safety"]
     S4 --> S5["The Cache Tree over time<br/>carries: resource bounds"]
@@ -48,6 +49,9 @@ guarantee:
 - **No client cache lifetime.** The plugin supplies identity and freshness and
   prescribes no key, expiry, or invalidation rule. See
   [the client](../participants/client.md).
+- **No metadata capacity or load-admission guarantee.** Absolute lifetimes reclaim stale
+  observations but do not cap distinct current sources or concurrent host reads. See
+  [resource bounds](resource-bounds.md).
 - **No repair of Jellyfin-owned data.** A wrong, stale, or missing Source Sprite is
   the server's to fix. See [Jellyfin Server](../participants/jellyfin-server.md).
 - **No persistence of anything derived.** The whole Cache Tree is reclaimable at any

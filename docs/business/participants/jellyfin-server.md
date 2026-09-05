@@ -34,6 +34,9 @@ left implicit:
   interval, geometry, and counts describe what was generated then.
 - **Metadata does not prove a file exists.** Recorded data can outlive the sprite
   it describes, and a sprite can exist without a row.
+- **An issued metadata query cannot be cancelled through its public interface.** Caller
+  cancellation can stop waiting for the result, but the query itself still settles and
+  must remain observed by the plugin.
 
 None of this is a defect to work around; it is the operating condition. The plugin's
 response to it — one exact Selected Trickplay Resolution with no fallback, and an

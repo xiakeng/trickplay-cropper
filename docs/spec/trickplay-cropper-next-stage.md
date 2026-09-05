@@ -1,7 +1,8 @@
 # Trickplay Cropper Next-Stage Specification
 
-- Status: Approved in GitHub issue #56; Frame Probe authorization and GET
-  response amendments approved in GitHub issues #90 and #92
+- Status: Approved in GitHub issue #56; Frame Probe authorization, GET
+  response, and metadata-freshness amendments approved in GitHub issues
+  #90, #92, and #93
 - Source map: GitHub issue #43
 - Implementation tracker: GitHub issue #64
 - Baseline: v1.0.0.0
@@ -16,6 +17,7 @@ stage of Trickplay Cropper. It extends the completed v1 server plugin with:
 - source-specific adaptive selection from Jellyfin's current Trickplay
   Resolution Targets;
 - a HEAD-based Trickplay Frame Probe on the existing Preview route;
+- bounded-lifetime generated-metadata observations shared with GET;
 - stable, structured Debug observability for cache and concurrency behavior;
 - a three-layer Business Documentation set;
 - human-gated GitHub Release and Jellyfin repository-manifest automation; and
@@ -63,14 +65,15 @@ operation after Jellyfin's ordinary endpoint policy accepts the request.
 GET and the Trickplay Frame Probe use separate request contexts. They converge only
 for target, metadata, and Frame Index calculation. The shared calculation accepts
 validated source identity and normalization width as data; it does not authorize a
-caller, resolve a current user, or retain state between requests.
+caller or resolve a current user. It may reuse only the bounded, immutable generated
+metadata observations defined in section 4.4.
 
 The common calculation owns, in order:
 
 1. request parsing and non-negative position validation;
 2. one copied current Trickplay configuration snapshot;
 3. Trickplay Resolution Target selection and source-specific normalization;
-4. one generated-resolution metadata lookup;
+4. one applicable generated-metadata observation, loaded when freshness policy requires;
 5. exact metadata validation; and
 6. Frame Index calculation and end clamping.
 
@@ -186,14 +189,66 @@ Both the metadata dictionary key and the metadata `Width` must equal the
 Selected Trickplay Resolution. No metadata, no exact key, or no thumbnails is
 unavailable content. Non-positive `Height`, `Interval`, `TileWidth`, or
 `TileHeight`, contradictory selected metadata, and checked-arithmetic failure
-are internal errors. `Bandwidth` and all unselected entries are ignored.
+are internal errors. `Bandwidth` is ignored. Unselected rows may be independently
+validated and retained under their own width, but never substitute for the selected row.
 
-One request uses one configuration snapshot and one generated-resolution
-dictionary read. A concurrent configuration or generation change may therefore
-produce an ordinary not-found or internal-error outcome; the next request reads
-current state.
+One request uses one configuration snapshot and one coherent generated-metadata
+observation. A concurrent configuration or generation change may therefore produce an
+ordinary not-found or internal-error outcome. Whether the observation is loaded or
+reused follows the policy below.
 
-### 4.4 Frame Index
+### 4.4 Generated metadata observation freshness
+
+Cache immutable generated metadata by effective Source Video GUID and exact Selected
+Trickplay Resolution. Configuration arrays, normalization inputs, request position,
+authorization state, mutable host objects, Source Sprite facts, and Preview Cache Entry
+identity do not belong to this cache identity. Each request still copies the current
+target array and applies current target selection before consulting metadata state.
+
+Usable positive metadata has a 30-minute absolute lifetime. Whole-source
+`NoGeneratedMetadata`, and selected-width `SelectedResolutionMissing` or `NoThumbnails`,
+have a 5-minute absolute lifetime. Age starts immediately before the authoritative host
+metadata query. HEAD cache hits, calculated Frame Indexes, and ordinary access do not
+renew it. Missing-width evidence derived from a positive dictionary keeps that
+dictionary's original read start, so it can expire while another positive row remains
+usable for 30 minutes. A load that has already reached its applicable lifetime when it
+settles is neither served nor published as fresh.
+
+HEAD may reuse a current positive or negative observation after its user-independent
+Item, membership, Source Video, configuration, and selected-width checks. GET keeps its
+current user, visibility, playback, membership, Source Video, and target-selection gates
+first. An applicable current negative then returns `404` without another metadata query,
+Source Sprite lookup, conditional success, or Preview Cache Entry access. Otherwise GET
+always reads current generated metadata, including a JPEG HIT and a conditional request.
+A successful GET publishes changed checked metadata or renews unchanged checked metadata
+from that read's start; it calculates and returns the Frame Index from that same coherent
+observation. Metadata verification does not renew Source Sprite or other source facts.
+
+Whole-source absence replaces older rows for that source. A missing width or nonpositive
+thumbnail count replaces only that width; other independently checked resolutions remain
+usable. Empty configuration, authorization or visibility refusal, source membership or
+Source Sprite absence, invalid metadata, operational failure, and cancellation are not
+shared negative observations. Invalid selected metadata removes the affected older fact
+without retaining the error. Operational failure renews nothing, and an expired value is
+never a fallback. Cancellation does not invalidate state already known to be current.
+
+Authoritative reads are ordered by their start, including reads that begin at the same
+clock value. An older-started read may answer its own request from its coherent result,
+but it cannot overwrite a newer positive, negative, or invalid publication or resurrect
+data removed by one. Reads for the same or different selected widths are not coalesced
+and may execute independently. The public Jellyfin metadata query cannot cancel an issued
+read, so caller cancellation stops that caller's wait while the plugin observes the host
+task through settlement and applies the same publication rules. Expired facts, coverage,
+publication tombstones, completed-read tracking, and empty source state are reclaimed
+when no in-progress publication still needs their ordering evidence. Request traffic may
+perform cross-source reclamation at most once per negative lifetime; no internal timer is
+required.
+
+This slice adds no capacity limit, load queue or concurrency bound, overload status,
+same-key coalescing, configuration/library event invalidation, or filesystem polling.
+Source-input caching is outside this contract.
+
+### 4.5 Frame Index
 
 Calculate the zero-based Frame Index from `PositionTicks` and the selected
 metadata interval using checked arithmetic. Clamp a position at or beyond the
@@ -214,13 +269,13 @@ Map calculation, operation-specific, and GET-only outcomes as follows:
 | `404 Not Found` | GET-concealed or otherwise unavailable item, non-member source, no current target, no exact metadata, no thumbnails, or GET-only Source Sprite absence |
 | `500 Internal Server Error` | Invalid configuration, contradictory metadata, arithmetic failure, operational failure, cache-safety failure, or encode failure |
 
-Unavailable and concealed cases must not expose internal distinctions to the
-client. Pass the request cancellation token to asynchronous Jellyfin manager
-calls. The shared calculation and Trickplay Frame Probe add no explicit
-cancellation checkpoints, do not convert cancellation into a closed probe
-outcome, and do not log cancellation as a probe failure. Cancellation follows
-the host's existing behavior rather than becoming a successful or cacheable
-outcome.
+Unavailable and concealed cases must not expose internal distinctions to the client.
+Pass the request cancellation token to asynchronous Jellyfin manager calls that accept
+one. Jellyfin's generated-metadata query accepts no cancellation token: once issued it is
+allowed to settle under observation while the caller's wait remains cancellable. The
+shared calculation and Trickplay Frame Probe do not convert caller cancellation into a
+closed probe outcome or log it as a probe failure. Cancellation is neither a successful
+result nor a retained negative.
 
 ## 6. GET Preview contract
 
@@ -288,10 +343,10 @@ The Trickplay Frame Probe must not resolve a current user, perform user-scoped I
 lookup, invoke playback authorization, resolve or inspect a Source Sprite, create
 Preview Identity, evaluate conditional GET, access the Cache Tree, acquire a
 decode permit, snapshot the filesystem, calculate sprite/cell/row/column/crop
-geometry, take a lock, write state, retry, or invoke the encoder. The shared
-calculation also has no dependency on authorization or these GET-only facilities. GET alone computes
-sprite index, cell, row, column, and crop geometry after Source Sprite
-resolution.
+geometry, acquire a representation lock, retry, or invoke the encoder. The shared
+calculation may read and publish only the bounded generated-metadata observations in
+section 4.4; it has no dependency on authorization or any GET-only facility. GET alone
+computes sprite index, cell, row, column, and crop geometry after Source Sprite resolution.
 
 Unsupported methods advertise `Allow: GET, HEAD`.
 
@@ -799,7 +854,8 @@ must not be implemented as the chosen design.
 
 ADR 0001 and ADR 0002 remain authoritative. ADR 0003 records the approved
 observability tradeoff. ADR 0004 records the separate HEAD and GET authorization
-contexts and their shared calculation. Integration Harness terms such as Privileged Phase,
+contexts and their shared calculation. ADR 0005 records the generated-metadata lifetime,
+scope, and ordered-publication policy. Integration Harness terms such as Privileged Phase,
 Restart Budget, Load-Proof Gate, Logging Snapshot, Retained End State,
 Debug-Proof Gate, and Scrub Storm deliberately remain outside `CONTEXT.md`; the
 domain glossary continues to contain product vocabulary only.

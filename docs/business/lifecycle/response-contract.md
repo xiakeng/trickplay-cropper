@@ -49,7 +49,7 @@ HEAD does not. Only GET can fail on a missing sprite, because only it looks.
 | `404` | No Trickplay Resolution Target, no exact metadata match, or no available frames | yes | yes |
 | `404` | Source Sprite unavailable | no | yes |
 | `405` | Method not supported; `Allow` advertises `GET, HEAD` | — | — |
-| `500` | Configuration unreadable or inconsistent, invalid recorded metadata, or an operational failure during generation | yes | yes |
+| `500` | Configuration unreadable or inconsistent, invalid or already-expired loaded metadata, or an operational failure | yes | yes |
 
 Two things this table does not distinguish, on purpose:
 
@@ -60,6 +60,9 @@ Two things this table does not distinguish, on purpose:
 - **A successful probe does not predict a successful preview.** The probe stops before the
   sprite availability gate, so the `404` in the second-to-last row can follow a `200` probe
   for the same position. See [Trickplay Frame Probe](frame-probe.md).
+- **A cached metadata absence does not skip GET authority.** GET reaches an applicable
+  5-minute negative only after current user, visibility, playback, membership, Source Video,
+  and target checks. The shared `404` reveals no cache distinction.
 
 ## Anchors
 

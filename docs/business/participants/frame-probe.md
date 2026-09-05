@@ -8,6 +8,8 @@ position select?*
 - **The Frame Index answer.** Given a position, an Item, and an optional Media
   Source, the probe owns the arithmetic that turns them into a Frame Index. How it
   derives it is in [Frame Selection](../lifecycle/frame-selection.md).
+- **Bounded calculation reuse.** It may reuse generated metadata only as calculation
+  evidence, never as user authority or proof that image bytes exist.
 - **The decision to stop.** The probe owns the boundary between answering the cheap
   question and doing the expensive work, and never crosses it.
 

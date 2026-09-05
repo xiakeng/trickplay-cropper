@@ -15,6 +15,10 @@ modifies, or repairs that data. What it adds on top:
   frame does this position select?* for an Item and real Media Source accepted by
   Jellyfin's ordinary endpoint policy, then stops before user-scoped preview
   authorization or any image work.
+- **Bounded generated-metadata reuse.** HEAD can reuse immutable positive metadata for
+  30 minutes and scoped absence for 5 minutes, while GET preserves current authorization
+  and refreshes every non-negative-short-circuited metadata observation — including JPEG
+  HITs and conditional requests.
 - **User-scoped authorization with concealment.** Frames reach only callers who
   may play the logical video; GET makes hidden Items answer exactly like absent
   ones, and does not treat a server API key as a user.

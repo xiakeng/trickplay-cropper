@@ -24,6 +24,10 @@ _Avoid_: Configured Trickplay Resolution, configured width
 The source-specific even width derived from the chosen Trickplay Resolution Target and required to match generated Trickplay metadata exactly.
 _Avoid_: Effective resolution, normalized width
 
+**Generated Metadata Observation**:
+An immutable read of Jellyfin's generated trickplay metadata for one effective Source Video, with read-start age and ordered publication; positive rows and scoped absence may be reused only for their defined lifetimes.
+_Avoid_: Metadata cache entry, calculation cache, metadata version
+
 **Frame Index**:
 The zero-based ordinal of the preview frame a playback position selects from the generated trickplay sequence, clamped to the last available frame.
 _Avoid_: Frame number, thumbnail index, frame position

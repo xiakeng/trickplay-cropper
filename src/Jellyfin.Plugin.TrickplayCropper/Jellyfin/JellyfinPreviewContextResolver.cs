@@ -121,7 +121,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         }
 
         TrickplayFrameCalculationResolution calculation = await calculationResolver
-            .ResolveAsync(query, matchedSource.VideoStream?.Width)
+            .ResolveForPreviewAsync(query, matchedSource.VideoStream?.Width, cancellationToken)
             .ConfigureAwait(false);
         return calculation switch
         {

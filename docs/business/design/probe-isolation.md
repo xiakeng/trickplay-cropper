@@ -49,8 +49,14 @@ comparing it, trusting it. The two headers it does return identify the frame and
 nothing about the image.
 
 **No conditional behaviour, for the same reason.** Honouring `If-None-Match` on a
-probe would mean comparing something the probe never obtained. A probe answers
-freshly every time, which is also what makes it safe to ask repeatedly.
+probe would mean comparing something the probe never obtained. A probe answers with a
+Frame Index every time it succeeds and ignores representation conditions.
+
+**Metadata reuse does not cross the image boundary.** The in-memory observation contains
+only generated interval, geometry, count, width, and scoped absence. It has no Source
+Sprite path or fingerprint, Preview Cache Entry, ETag, user, or authorization state. A
+warm probe may therefore avoid a metadata database query while remaining structurally
+unable to touch image work.
 
 **The non-promise is stated, not left to be discovered.** "A successful probe is not
 proof a preview can be served" is uncomfortable to document and worse to omit. The
@@ -69,7 +75,7 @@ truncated and the unreachable remainder.
 
 An empty body and exactly two plugin-owned headers, whatever else is happening on the
 server. A probe never touches the Cache Tree or image work, whether the cache is cold or
-the disk is busy. Its full Media Source enumeration, dynamic providers, and generated
-metadata read can still perform I/O and affect latency; retained calculation caching is
-separate follow-up work. The answer establishes calculation availability, not user
-visibility, playback permission, or preview deliverability.
+the disk is busy. Its current Item and Media Source checks, full source enumeration, and
+a cold or expired metadata observation can still perform I/O and affect latency. The
+answer establishes calculation availability, not user visibility, playback permission,
+or preview deliverability.

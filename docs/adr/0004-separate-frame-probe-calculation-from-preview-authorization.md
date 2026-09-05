@@ -9,9 +9,10 @@ Jellyfin's ordinary endpoint policy accepts the request. It therefore resolves e
 and Source Video identities without a user, proves membership through the full playback
 Media Source enumeration with explicit media probing disabled, and makes no visibility or
 playback decision. A userless API key may consequently receive a successful HEAD while
-the corresponding GET remains forbidden. The two paths share one request-local target,
-metadata, and Frame Index calculation whose inputs contain no identity or authorization
-state; neither path retains configuration or metadata across requests. Every successful
-GET `200` or `304` carries that final Frame Index in `X-Trickplay-Frame-Index`, independent
+the corresponding GET remains forbidden. The two paths share one request-local target and
+Frame Index calculation whose inputs contain no identity or authorization state.
+Configuration remains request-local; generated metadata follows the bounded observation
+policy in ADR 0005. Every successful GET `200` or `304` carries that final Frame Index in
+`X-Trickplay-Frame-Index`, independent
 of the representation ETag. This split keeps HEAD structurally unable to become permission
 evidence while preserving one deterministic calculation for both operations.

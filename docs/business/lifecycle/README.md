@@ -11,7 +11,8 @@ cropped from trickplay data Jellyfin already generated. Two operations share one
 calculation but deliberately use different request fronts:
 
 - The **Trickplay Frame Probe** answers *which frame does this position select?* It reads
-  configuration and metadata, computes a Frame Index, and stops. It never touches an image.
+  current configuration, reuses or loads a bounded metadata observation, computes a Frame
+  Index, and stops. It never touches an image.
 - The **Trickplay Preview** request answers *give me that frame.* It first establishes
   the current user's visibility and playback authority, then looks the calculated frame
   up in the Cache Tree and crops it from a Source Sprite if it is not there.
@@ -33,7 +34,8 @@ flowchart TD
     subgraph Pipeline["Shared calculation"]
         direction TB
         Resolution["Selected Trickplay Resolution"]
-        Resolution --> Selection["Frame Selection"]
+        Resolution --> Metadata["Bounded generated-metadata observation"]
+        Metadata --> Selection["Frame Selection"]
     end
 
     Selection -->|"Frame Index only"| ProbeAnswer["X-Trickplay-Frame-Index<br/>Cache-Control: private, no-cache"]
@@ -48,7 +50,7 @@ flowchart TD
     Resolution -->|"no exact metadata match"| RefusedResolution["404"]
 ```
 
-The operations converge only for target, metadata, and Frame Index calculation. HEAD
+The operations converge only for target, metadata observation, and Frame Index calculation. HEAD
 does not establish user visibility or playback authority, while GET must establish both
 before it can return bytes or validate an ETag. A successful HEAD is therefore neither
 permission evidence nor a promise that GET can serve the frame.
