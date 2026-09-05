@@ -36,16 +36,16 @@ timeout, not a detection scheme, just never taking them the other way round. The
 order itself, and every path that takes the locks, is drawn in
 [cache coordination](../lifecycle/cache-coordination.md).
 
-**Shared by default, exclusive only for shape changes.** Requests take the tree lease
-shared, so they never wait for each other at that level. Only removing an orphaned
-temporary file or pruning an empty directory takes it exclusively, because those are
-the operations that change what paths exist. Everything else is a file operation on a
-path that already means something.
+**Shared by default, exclusive only for shape changes.** Waiting should be caused by
+genuinely conflicting work, never by unrelated work that merely touches the same tree.
+That is why ordinary requests never exclude each other at the tree level and only
+operations that change what paths exist take the exclusive lease; which operations
+those are is listed in [cache coordination](../lifecycle/cache-coordination.md).
 
-**Writer-preferred, so the run cannot starve.** Once a maintenance operation waits for
-the exclusive lease, new requests queue behind it instead of streaming past. Without
-preference, a busy server would defer cleanup indefinitely, and the tree would grow
-for exactly as long as it was being used — the opposite of the intent.
+**Writer-preferred, so the run cannot starve.** Without preference, a busy server
+would defer cleanup indefinitely, and the tree would grow for exactly as long as it
+was being used — the opposite of the intent. Fairness here is a promise to the
+administrator, not a throughput optimization.
 
 **Buffer before release.** This looks like an inefficiency and is the load-bearing
 rule: once the entry lock is released, the maintenance run is free to delete that

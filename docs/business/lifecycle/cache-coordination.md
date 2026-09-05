@@ -17,6 +17,7 @@ they do not wait for each other. Only operations that change the tree's shape â€
 removing an orphaned temporary entry, pruning an empty directory â€” take it
 *exclusively*. The lease is writer-preferred: once a maintenance operation is
 waiting, new requests queue behind it rather than streaming past and starving it.
+Why that preference exists is in [concurrency safety](../design/concurrency-safety.md).
 
 **The entry lock** guards one Preview Cache Entry, keyed by its path. Callers
 asking for different frames take different entry locks and never meet. Only
