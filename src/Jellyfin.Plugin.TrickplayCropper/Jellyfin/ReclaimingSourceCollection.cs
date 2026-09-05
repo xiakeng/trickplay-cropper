@@ -11,7 +11,7 @@ internal sealed class ReclaimingSourceCollection<TState>
 {
     private readonly TimeSpan reclamationInterval;
     private readonly Func<TState, DateTimeOffset, bool> shouldReclaim;
-    private readonly ConcurrentDictionary<Guid, TState> sources = new();
+    private readonly ConcurrentDictionary<Guid, SourceEntry> sources = new();
     private readonly TimeProvider timeProvider;
     private long nextReclamationUtcTicks;
 
@@ -52,7 +52,10 @@ internal sealed class ReclaimingSourceCollection<TState>
     {
         ArgumentNullException.ThrowIfNull(stateFactory);
         ReclaimExpiredSources(timeProvider.GetUtcNow());
-        return sources.GetOrAdd(sourceVideoId, stateFactory);
+        SourceEntry entry = sources.GetOrAdd(
+            sourceVideoId,
+            sourceId => new SourceEntry(stateFactory(sourceId)));
+        return entry.State;
     }
 
     /// <summary>
@@ -64,7 +67,9 @@ internal sealed class ReclaimingSourceCollection<TState>
     public bool TryRemove(Guid sourceVideoId, TState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return sources.TryRemove(new KeyValuePair<Guid, TState>(sourceVideoId, state));
+        return sources.TryGetValue(sourceVideoId, out SourceEntry? entry)
+            && ReferenceEquals(entry.State, state)
+            && TryRemove(sourceVideoId, entry);
     }
 
     private void ReclaimExpiredSources(DateTimeOffset now)
@@ -81,12 +86,34 @@ internal sealed class ReclaimingSourceCollection<TState>
             return;
         }
 
-        foreach ((Guid sourceVideoId, TState state) in sources)
+        foreach ((Guid sourceVideoId, SourceEntry entry) in sources)
         {
-            if (shouldReclaim(state, now))
+            if (shouldReclaim(entry.State, now))
             {
-                TryRemove(sourceVideoId, state);
+                TryRemove(sourceVideoId, entry);
             }
         }
+    }
+
+    private bool TryRemove(Guid sourceVideoId, SourceEntry entry)
+    {
+        return sources.TryRemove(new KeyValuePair<Guid, SourceEntry>(sourceVideoId, entry));
+    }
+
+    private sealed class SourceEntry
+    {
+        /// <summary>
+        /// Initializes a new reference-identity wrapper for retained state.
+        /// </summary>
+        /// <param name="state">The retained state.</param>
+        public SourceEntry(TState state)
+        {
+            State = state;
+        }
+
+        /// <summary>
+        /// Gets the retained state.
+        /// </summary>
+        public TState State { get; }
     }
 }

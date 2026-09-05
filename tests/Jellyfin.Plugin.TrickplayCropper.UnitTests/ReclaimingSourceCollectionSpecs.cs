@@ -28,6 +28,27 @@ public sealed class ReclaimingSourceCollectionSpecs
         Assert.Same(replacement, sources.GetOrAdd(idleSourceId, _ => replacement));
     }
 
+    [Fact]
+    public void OldStateCannotRemoveAValueEqualReplacementInstance()
+    {
+        var time = new ManualTimeProvider(
+            new DateTimeOffset(2026, 9, 6, 0, 0, 0, TimeSpan.Zero));
+        var sources = new ReclaimingSourceCollection<ExpiringState>(
+            time,
+            TimeSpan.FromMinutes(5),
+            static (state, now) => state.ExpiresAt <= now);
+        Guid sourceVideoId = Guid.NewGuid();
+        var oldState = new ExpiringState(time.GetUtcNow().AddMinutes(30));
+        var replacement = new ExpiringState(oldState.ExpiresAt);
+
+        Assert.Same(oldState, sources.GetOrAdd(sourceVideoId, _ => oldState));
+        Assert.True(sources.TryRemove(sourceVideoId, oldState));
+        Assert.Same(replacement, sources.GetOrAdd(sourceVideoId, _ => replacement));
+
+        Assert.False(sources.TryRemove(sourceVideoId, oldState));
+        Assert.Same(replacement, sources.GetOrAdd(sourceVideoId, _ => oldState));
+    }
+
     private sealed record ExpiringState(DateTimeOffset ExpiresAt);
 
     private sealed class ManualTimeProvider : TimeProvider
