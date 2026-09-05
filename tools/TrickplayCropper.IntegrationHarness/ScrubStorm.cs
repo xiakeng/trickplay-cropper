@@ -9,6 +9,9 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
     private static readonly TimeSpan quiescenceTimeout = TimeSpan.FromSeconds(30);
     private static readonly string[] shapes = ["random-jump", "large-range fast-sweep", "small-range precise-drag"];
 
+    /// <summary>Gets this case's HTTP measurements, including any partial run before an assertion fails.</summary>
+    public ScrubStormReport Report { get; } = new();
+
     /// <summary>Runs two replay rounds for each approved shape and enforces every hard acceptance condition.</summary>
     public async Task RunAsync(HarnessInput input, CancellationToken cancellationToken)
     {
@@ -31,6 +34,7 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
         observations.VerifyTransition();
         output.WriteLine("Scrub Storm HTTP passed: 864 HEAD and 864 GET; stable repeated JPEG bytes/ETags and MISS-to-HIT observed.");
         await VerifyQuiescenceAsync(observations, since, cancellationToken).ConfigureAwait(false);
+        Report.MarkPassed();
         output.WriteLine($"PASS Scrub Storm: {observations.IdentityCount} distinct Preview identities; canonical JPEGs and no temporary residue.");
     }
 
@@ -107,7 +111,7 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
         using HttpRequestMessage request = new(lane.Method, preview.Route);
         request.Headers.Add("X-Trickplay-Harness-Client", (lane.Index / ScrubStormPlan.LanesPerClient + 1)
             .ToString(System.Globalization.CultureInfo.InvariantCulture));
-        using HttpResponseMessage response = await http.SendAsync(request, timeout.Token).ConfigureAwait(false);
+        using HttpResponseMessage response = await Report.SendAsync(http, request, timeout.Token).ConfigureAwait(false);
         if (response.StatusCode != HttpStatusCode.OK)
         {
             throw new InvalidDataException("Every Scrub Storm request must return 200.");

@@ -132,8 +132,9 @@ restarts Jellyfin, and independently waits for health. A started cycle has a
 two-restart budget; two separate normal/failure demonstrations therefore use
 four restarts. Exit zero requires verification, restoration, and final health.
 `--verify-restoration` deliberately exits nonzero, even when recovery succeeds.
-The retained state is the Debug plugin and the populated Cache Tree. No evidence,
-transcript, run-lock, or other state files are written. A partial snapshot,
+The retained state is the Debug plugin, the populated Cache Tree, and an English
+Markdown Scrub Storm report in repository-root `test-output/` (gitignored).
+No transcript, run-lock, or additional state files are written. A partial snapshot,
 SIGKILL, power loss, lost restoration privilege, or failed restart requires human
 recovery; inspect any surviving snapshot before starting again.
 
@@ -147,7 +148,9 @@ its status, exact plugin headers and empty body; GET checks inline JPEG type,
 complete decoding and metadata dimensions, content length, cache policy and
 disposition, timing, strong ETag Frame Index, and repeat HIT with identical bytes
 and ETag. Only ordinal subject labels and non-secret numeric results reach stdout.
-The harness writes no live evidence files; copy the safe results into the PR.
+After restoration, the harness prints and saves a unique `test-output/scrub-storm-*.md`
+report. Previous reports are retained. Report write failures produce a nonzero
+exit after restoration has already been attempted. `--check` writes no report.
 
 The fourth case runs a deterministic Scrub Storm (seed `0x5EEDC0DE`): two
 logical clients, three synchronized lanes per client, twelve positions per lane
@@ -164,6 +167,20 @@ make verification fail. Entry-lock, Cache Tree lease, and decode-permit waits
 are reported as `observed` or `not-observed`, with neither result determining
 pass/fail. All four cases plus restoration and post-restart health must pass
 for exit zero.
+
+The report records actual dispatched HEAD/GET counts, cache HIT/MISS response
+counts, the span from first to last dispatch, and wall-clock HTTP workload elapsed
+from first dispatch to last completion. A table gives sample count and minimum,
+maximum, median, and mean response times (milliseconds) for HEAD, GET cache MISS,
+and GET cache HIT. Timing uses a monotonic clock through complete HTTP response
+buffering, before local JPEG decoding and assertions; inter-request scheduling
+gaps contribute to workload elapsed but not individual response time. Metadata,
+deployment, quiescence, log/cache verification, and restoration are excluded from
+HTTP workload elapsed. Only HTTP 200 responses enter timing groups, and GET needs
+an exact HIT/MISS disposition. Other responses and transport failures/cancellations
+are counted separately. Partial runs retain their measurements; empty groups are
+`N/A`, and both Scrub Storm and final harness outcomes are explicit. Reports omit
+credentials and media identifiers. Timing values remain diagnostics, not thresholds.
 
 Other live gaps include playback-policy 403, alternate Media Sources,
 every 500 shape, source-width clamping, multiple targets, media-side Source

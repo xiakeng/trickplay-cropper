@@ -22,8 +22,15 @@ public sealed class ScrubStormSpecs : IDisposable
         using HttpClient http = CreateClient(handler);
         using StringWriter output = new();
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
-        await new ScrubStorm(http, output, root).RunAsync(Input, timeout.Token);
+        ScrubStorm storm = new(http, output, root);
+        await storm.RunAsync(Input, timeout.Token);
 
+        string report = storm.Report.ToMarkdown(true);
+        Assert.Contains("Scrub Storm outcome: **Passed**", report, StringComparison.Ordinal);
+        Assert.Contains("HEAD requests dispatched: **864**", report, StringComparison.Ordinal);
+        Assert.Contains("GET requests dispatched: **864**", report, StringComparison.Ordinal);
+        Assert.Contains("Cache HIT responses: **852**", report, StringComparison.Ordinal);
+        Assert.Contains("Cache MISS responses: **12**", report, StringComparison.Ordinal);
         Assert.Equal(1728, handler.Requests.Count);
         Assert.Equal(864, handler.Requests.Count(request => request.StartsWith("HEAD ", StringComparison.Ordinal)));
         Assert.Equal(864, handler.Requests.Count(request => request.Contains(" 1 ", StringComparison.Ordinal)));
@@ -69,10 +76,12 @@ public sealed class ScrubStormSpecs : IDisposable
         using StringWriter output = new();
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
         bool restored = false;
+        ScrubStorm storm = new(http, output, root);
         bool passed = await new DeploymentCycle(output).RunAsync(() => Task.FromResult(0),
-            () => new ScrubStorm(http, output, root).RunAsync(Input, timeout.Token),
+            () => storm.RunAsync(Input, timeout.Token),
             () => { restored = true; return Task.CompletedTask; });
 
+        Assert.Contains("Scrub Storm outcome: **Failed or cancelled**", storm.Report.ToMarkdown(passed), StringComparison.Ordinal);
         Assert.False(passed);
         Assert.True(restored);
         Assert.False(timeout.IsCancellationRequested);

@@ -82,14 +82,25 @@ internal sealed class HarnessApplication
         string version = await BuildAsync().ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         DeploymentCycle cycle = new(Console.Out);
+        ScrubStorm storm = new(http, Console.Out, "/tmp/jellyfin/Jellyfin.Plugin.TrickplayCropper/preview-v1");
         bool success = await cycle.RunAsync(
             () => PrepareAsync(version),
             async () =>
             {
                 await host.VerifyDeploymentAsync(input, version, cancellationToken).ConfigureAwait(false);
-                await VerifyAsync(http, input, mode, cancellationToken).ConfigureAwait(false);
+                Console.WriteLine("Health, Load-Proof, and fresh structured Debug-Proof gates passed.");
+                await new SmokeCases(http, Console.Out).RunAsync(input, cancellationToken).ConfigureAwait(false);
+                await storm.RunAsync(input, cancellationToken).ConfigureAwait(false);
+                if (mode == "--verify-restoration")
+                {
+                    Console.WriteLine("Injecting an assertion failure after the real smoke cases to exercise unconditional restoration.");
+                    throw new InvalidOperationException("Intentional restoration verification failure.");
+                }
             },
             () => RestoreAsync(host)).ConfigureAwait(false);
+        string reportPath = await storm.Report.WriteAsync(Path.Combine(root, "test-output"), success).ConfigureAwait(false);
+        Console.WriteLine(storm.Report.ToMarkdown(success));
+        Console.WriteLine($"Scrub Storm report written to: {reportPath}");
         Console.WriteLine(success
             ? "All four smoke cases passed and restoration is healthy. Debug plugin and populated Cache Tree retained."
             : "Integration Harness failed; see the last verification stage and restoration result above.");
@@ -129,20 +140,6 @@ internal sealed class HarnessApplication
 
         // Restoration health has its own deadline and survives cancellation of verification.
         await host.WaitForHealthAsync(CancellationToken.None).ConfigureAwait(false);
-    }
-
-    private static async Task VerifyAsync(HttpClient http, HarnessInput input, string mode,
-        CancellationToken cancellationToken)
-    {
-        Console.WriteLine("Health, Load-Proof, and fresh structured Debug-Proof gates passed.");
-        await new SmokeCases(http, Console.Out).RunAsync(input, cancellationToken).ConfigureAwait(false);
-        await new ScrubStorm(http, Console.Out, "/tmp/jellyfin/Jellyfin.Plugin.TrickplayCropper/preview-v1")
-            .RunAsync(input, cancellationToken).ConfigureAwait(false);
-        if (mode == "--verify-restoration")
-        {
-            Console.WriteLine("Injecting an assertion failure after the real smoke cases to exercise unconditional restoration.");
-            throw new InvalidOperationException("Intentional restoration verification failure.");
-        }
     }
 
     private string BuildDirectory => Path.Combine(root, "src", AssemblyName, "bin/Debug/net9.0");
