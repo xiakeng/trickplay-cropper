@@ -176,11 +176,13 @@ policy applies that normalization, selects the minimum target, and requires one
 exact Selected Trickplay Resolution match without fallback. [Selection
 policy][selection-policy]
 
-Under the separately approved lightweight HEAD contract, HEAD stops after
-authorization, selection, metadata validation, and Frame Index calculation; GET
-continues through Source Sprite resolution and inspection. That operation split
-comes from the HEAD contract, not from Jellyfin's resolution model established by
-this note. [HEAD contract][head-contract]
+Under the amended lightweight HEAD contract, HEAD stops after ordinary endpoint
+policy, user-independent source identity and membership, selection, metadata
+validation, and Frame Index calculation; GET keeps its separate current-user
+authorization before continuing through Source Sprite resolution and inspection.
+That operation split comes from the HEAD contract, not from Jellyfin's resolution
+model established by this note. [HEAD contract][head-contract]
+[Probe source enumeration][probe-source-enumeration]
 
 [package-pins]: ../../Directory.Packages.props
 [jellyfin-release-tag]: https://github.com/jellyfin/jellyfin/releases/tag/v10.11.11
@@ -210,6 +212,7 @@ this note. [HEAD contract][head-contract]
 [eligibility-check]: https://github.com/jellyfin/jellyfin/blob/1fbd8739292cce610231be93daf43368733edf63/Jellyfin.Server.Implementations/Trickplay/TrickplayManager.cs#L463-L491
 [selection-policy]: https://github.com/xiakeng/trickplay-cropper/issues/49#issuecomment-5507410034
 [head-contract]: ./head-endpoint-contract.md
+[probe-source-enumeration]: ./jellyfin-10.11.11-frame-probe-source-enumeration-contract.md
 [source-resolver]: ../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinPreviewSourceResolver.cs
 [source-encoder]: ../../src/Jellyfin.Plugin.TrickplayCropper/Imaging/TrickplayPreviewEncoder.cs
 [source-sprite-adr]: ../adr/0002-trust-jellyfin-source-sprites-without-plugin-caps.md

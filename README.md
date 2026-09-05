@@ -12,11 +12,12 @@ modifies, or repairs that data. What it adds on top:
   target, Jellyfin's own normalization rule for the Media Source, and an exact
   generated-metadata match. No fallback width, no nearest substitute.
 - **The Trickplay Frame Probe.** A bodyless HTTP HEAD operation answers *which
-  frame does this position select?* through the same authorization and selection
-  pipeline as GET, then stops before any image work.
+  frame does this position select?* for an Item and real Media Source accepted by
+  Jellyfin's ordinary endpoint policy, then stops before user-scoped preview
+  authorization or any image work.
 - **User-scoped authorization with concealment.** Frames reach only callers who
-  may play the logical video; hidden Items answer exactly like absent ones, and a
-  server API key is not a user.
+  may play the logical video; GET makes hidden Items answer exactly like absent
+  ones, and does not treat a server API key as a user.
 - **A per-entry cache.** One Preview Cache Entry per derived artifact under the
   plugin-owned Cache Tree, coordinated by tree leases and entry locks, kept honest
   by a source version stamp, and emptied by a Jellyfin scheduled task.
@@ -116,7 +117,7 @@ GitHub Release, and CI's Package Validator is the package-install contract.
 
 The Integration Harness is a manually invoked, no-mock `net9.0` console program
 that deploys a Debug build of the plugin to the local Jellyfin host, runs four
-fixed smoke cases (invalid token, concealed Item, playback boundaries, Scrub
+fixed smoke cases (invalid token, GET concealment, playback boundaries, Scrub
 Storm), and restores the host logging configuration afterwards. It targets the
 local native Jellyfin installation at `http://localhost:8096` with fixed
 `/etc/jellyfin` and `/var/lib/jellyfin` paths, and requires Python 3 plus an
@@ -128,6 +129,11 @@ administrator **user access token** (not a server API key), exactly two playable
 video Item IDs, and one Item that exists but is invisible to that user. Keep the
 file private (`chmod 600 harness.json`); it grants the user's administrator
 access and is only ever sent to localhost in an HTTP authorization header.
+
+The concealed-Item case is a GET authorization assertion only. A successful HEAD
+is calculation availability, not permission evidence. Successful GET responses,
+including `304 Not Modified`, expose the selected Frame Index in
+`X-Trickplay-Frame-Index`; the ETag remains the independent representation identity.
 
 ```sh
 # Validate the supplied subjects only; no elevation, deployment, or restart.

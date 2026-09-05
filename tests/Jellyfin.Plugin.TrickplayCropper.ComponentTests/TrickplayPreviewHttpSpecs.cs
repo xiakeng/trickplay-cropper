@@ -63,6 +63,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoCache);
         Assert.Equal(ExpectedDefaultEntityTag, response.Headers.ETag?.Tag);
+        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
         Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
         Assert.False(response.Headers.Contains("X-Trickplay-Cache-File"));
         Assert.Contains("lookup;dur=", response.Headers.GetValues("Server-Timing").Single(), StringComparison.Ordinal);
@@ -123,6 +124,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal("image/jpeg", cachedResponse.Content.Headers.ContentType?.MediaType);
         Assert.Equal("inline", cachedResponse.Content.Headers.ContentDisposition?.DispositionType);
         Assert.Equal(ExpectedDefaultEntityTag, cachedResponse.Headers.ETag?.Tag);
+        Assert.Equal("0", cachedResponse.Headers.GetValues("X-Trickplay-Frame-Index").Single());
         Assert.True(cachedResponse.Headers.CacheControl?.Private);
         Assert.True(cachedResponse.Headers.CacheControl?.NoCache);
         Assert.Equal("HIT", cachedResponse.Headers.GetValues("X-Trickplay-Cache").Single());
@@ -147,6 +149,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
         Assert.Equal(entityTag, response.Headers.ETag?.Tag);
+        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoCache);
         Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
@@ -177,6 +180,7 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage response = await fixture.GetConditionalAsync(condition);
 
         Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
+        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
         Assert.Equal(1, fixture.Cache.CallCount);
     }
 
@@ -192,6 +196,7 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage response = await fixture.GetConditionalAsync(originalEntityTag);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
         Assert.NotEqual(originalEntityTag, response.Headers.ETag?.Tag);
         Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
         Assert.Equal(2, fixture.Cache.CallCount);
@@ -349,6 +354,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(NotFoundCondition.SelectedSourceNotMember)]
     [InlineData(NotFoundCondition.SelectedSourceMembershipMalformed)]
     [InlineData(NotFoundCondition.SelectedVideoMissing)]
+    [InlineData(NotFoundCondition.SelectedVideoIdentityMismatch)]
     [InlineData(NotFoundCondition.SelectedVideoHidden)]
     [InlineData(NotFoundCondition.SelectedItemWrongType)]
     [InlineData(NotFoundCondition.NoConfiguredTarget)]
@@ -527,6 +533,28 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(320, log.Properties["SelectedResolution"]);
         Assert.Equal(640, log.Properties["NormalizationSourceWidth"]);
         Assert.Equal("320", log.Properties["GeneratedKeys"]);
+    }
+
+    [Fact]
+    public async Task UsesTheCopiedConfigurationSnapshotWhenTheHostArrayChangesDuringMetadataRead()
+    {
+        int[] configuredTargets = [320];
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = configuredTargets,
+            Metadata = MetadataAvailability.ContradictoryFrameWidth,
+            MutatesConfiguredTargetsDuringMetadataRead = true,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(640, configuredTargets[0]);
+        RecordedLog log = Assert.Single(fixture.ErrorLogs);
+        Assert.Equal("320", log.Properties["ConfiguredTargets"]);
+        Assert.Equal(320, log.Properties["ChosenTarget"]);
+        Assert.Equal(320, log.Properties["SelectedResolution"]);
     }
 
     [Fact]
@@ -735,6 +763,30 @@ public sealed class TrickplayPreviewHttpSpecs
         await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
+    [Theory]
+    [InlineData(HostSourceKind.Default)]
+    [InlineData(HostSourceKind.LocalAlternate)]
+    [InlineData(HostSourceKind.LinkedAlternate)]
+    [InlineData(HostSourceKind.EligibleDynamic)]
+    public async Task ProbesEverySupportedSourceKindReturnedByFullHostEnumeration(HostSourceKind sourceKind)
+    {
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = [640],
+            HostSource = sourceKind,
+            SourceVideoWidth = 321,
+            UsesAlternateSource = sourceKind != HostSourceKind.Default,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.HeadAsync();
+
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
+        Assert.Equal(0, scenario.UserLookups);
+        Assert.Equal(0, scenario.UserScopedSourceEnumerations);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+    }
+
     [Fact]
     public async Task SucceedsTrickplayFrameProbeWithoutAResolvableSourceSprite()
     {
@@ -802,7 +854,7 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Fact]
-    public async Task ForbidsTrickplayFrameProbeApiKeyWithoutCurrentUser()
+    public async Task AllowsApiKeyWithoutCurrentUserToProbeButNotFetchThePreview()
     {
         var scenario = new PreviewScenario
         {
@@ -810,9 +862,17 @@ public sealed class TrickplayPreviewHttpSpecs
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
-        using HttpResponseMessage response = await fixture.HeadAsync();
+        using HttpResponseMessage probeResponse = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(probeResponse, 0);
+        Assert.Equal(0, scenario.UserLookups);
+        Assert.Equal(0, scenario.UserScopedLibraryLookups);
+        Assert.Equal(0, scenario.UserScopedSourceEnumerations);
+        Assert.Equal(2, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
 
-        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        using HttpResponseMessage previewResponse = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.Forbidden, previewResponse.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(previewResponse);
     }
 
     [Fact]
@@ -827,24 +887,48 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Fact]
-    public async Task ForbidsTrickplayFrameProbeLogicalVideoPlaybackDenial()
+    public async Task AllowsPlaybackDeniedUserToProbeButNotFetchThePreview()
     {
         var scenario = new PreviewScenario { DeniesLogicalVideoPlayback = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
-        using HttpResponseMessage response = await fixture.HeadAsync();
+        using HttpResponseMessage probeResponse = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(probeResponse, 0);
+        Assert.Equal(0, scenario.UserLookups);
+        Assert.Equal(0, scenario.UserScopedLibraryLookups);
+        Assert.Equal(0, scenario.UserScopedSourceEnumerations);
 
-        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        using HttpResponseMessage previewResponse = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.Forbidden, previewResponse.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(previewResponse);
+    }
+
+    [Theory]
+    [InlineData(NotFoundCondition.LogicalVideoHidden)]
+    [InlineData(NotFoundCondition.SelectedVideoHidden)]
+    public async Task AllowsInvisibleGeneratedMediaToBeProbedButNotFetched(NotFoundCondition condition)
+    {
+        PreviewScenario scenario = CreateNotFoundScenario(condition);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage probeResponse = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(probeResponse, 0);
+        Assert.Equal(0, scenario.UserLookups);
+        Assert.Equal(0, scenario.UserScopedLibraryLookups);
+        Assert.Equal(0, scenario.UserScopedSourceEnumerations);
+
+        using HttpResponseMessage previewResponse = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, previewResponse.StatusCode);
+        await AssertProblemDetailsResponseAsync(previewResponse);
     }
 
     [Theory]
     [InlineData(NotFoundCondition.LogicalVideoMissing)]
-    [InlineData(NotFoundCondition.LogicalVideoHidden)]
     [InlineData(NotFoundCondition.LogicalItemWrongType)]
     [InlineData(NotFoundCondition.SelectedSourceNotMember)]
     [InlineData(NotFoundCondition.SelectedSourceMembershipMalformed)]
     [InlineData(NotFoundCondition.SelectedVideoMissing)]
-    [InlineData(NotFoundCondition.SelectedVideoHidden)]
+    [InlineData(NotFoundCondition.SelectedVideoIdentityMismatch)]
     [InlineData(NotFoundCondition.SelectedItemWrongType)]
     [InlineData(NotFoundCondition.NoConfiguredTarget)]
     [InlineData(NotFoundCondition.GeneratedMetadataMissing)]
@@ -908,7 +992,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         fixture.SetPlaybackAccess(false);
         using HttpResponseMessage deniedResponse = await fixture.HeadConditionalAsync(entityTag);
-        await AssertBodylessTrickplayFrameProbeFailureAsync(deniedResponse, HttpStatusCode.Forbidden);
+        await AssertTrickplayFrameProbeSuccessAsync(deniedResponse, 0);
     }
 
     [Theory]
@@ -933,7 +1017,7 @@ public sealed class TrickplayPreviewHttpSpecs
     [InlineData(TrickplayFrameProbeKestrelCondition.Success, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.MalformedInput, HttpStatusCode.BadRequest)]
     [InlineData(TrickplayFrameProbeKestrelCondition.UnauthenticatedSession, HttpStatusCode.Unauthorized)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.Forbidden)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.ConcealedResource, HttpStatusCode.NotFound)]
     [InlineData(TrickplayFrameProbeKestrelCondition.InvalidMetadata, HttpStatusCode.InternalServerError)]
     public async Task ProvesBodylessTrickplayFrameProbeOutcomesOverRealKestrel(
@@ -949,6 +1033,42 @@ public sealed class TrickplayPreviewHttpSpecs
 
         Assert.Equal(expectedStatus, response.StatusCode);
         await AssertBodylessAsync(response);
+    }
+
+    [Fact]
+    public async Task ProvesApiKeyProbeAndPreviewAuthorizationSplitOverRealKestrel()
+    {
+        var scenario = new PreviewScenario
+        {
+            Authentication = AuthenticationState.ApiKeyWithoutCurrentUser,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(scenario);
+
+        using HttpResponseMessage probeResponse = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(probeResponse, 0);
+
+        using HttpResponseMessage previewResponse = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.Forbidden, previewResponse.StatusCode);
+        await AssertAuthorizationErrorResponseAsync(previewResponse);
+    }
+
+    [Fact]
+    public async Task ReturnsTheSelectedGetFrameIndexOverRealKestrelForImageAndConditionalSuccess()
+    {
+        var scenario = new PreviewScenario
+        {
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(scenario);
+
+        using HttpResponseMessage imageResponse = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, imageResponse.StatusCode);
+        Assert.Equal("3", imageResponse.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        string entityTag = Assert.IsType<string>(imageResponse.Headers.ETag?.Tag);
+
+        using HttpResponseMessage conditionalResponse = await fixture.GetConditionalAsync(entityTag);
+        Assert.Equal(HttpStatusCode.NotModified, conditionalResponse.StatusCode);
+        Assert.Equal("3", conditionalResponse.Headers.GetValues("X-Trickplay-Frame-Index").Single());
     }
 
     public static TheoryData<string> MalformedPreviewRequestPaths => new()
@@ -1073,6 +1193,11 @@ public sealed class TrickplayPreviewHttpSpecs
                 UsesAlternateSource = true,
             },
             NotFoundCondition.SelectedVideoMissing => CreateSelectedAvailabilityScenario(ItemAvailability.Missing),
+            NotFoundCondition.SelectedVideoIdentityMismatch => new PreviewScenario
+            {
+                ReturnsMismatchedSourceIdentity = true,
+                UsesAlternateSource = true,
+            },
             NotFoundCondition.SelectedVideoHidden => CreateSelectedAvailabilityScenario(ItemAvailability.Hidden),
             NotFoundCondition.SelectedItemWrongType => CreateSelectedAvailabilityScenario(ItemAvailability.WrongType),
             NotFoundCondition.NoConfiguredTarget => new PreviewScenario
@@ -1289,6 +1414,7 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Null(response.Content.Headers.ContentType);
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
         Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
+        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
     }
 
     private static async Task AssertTrickplayFrameProbeSuccessAsync(HttpResponseMessage response, int expectedFrameIndex)
@@ -1329,6 +1455,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
     private static async Task AssertProblemDetailsResponseAsync(HttpResponseMessage response)
     {
+        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         await using Stream content = await response.Content.ReadAsStreamAsync(CancellationToken.None);
         using JsonDocument problem = await JsonDocument.ParseAsync(content, cancellationToken: CancellationToken.None);
@@ -1562,7 +1689,7 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             User user = CreateUser(context.Scenario);
             services.AddSingleton(user);
-            services.AddSingleton(CreateUserManager(user));
+            services.AddSingleton(CreateUserManager(context.Scenario, user));
             services.AddSingleton(CreateLibraryManager(context.Scenario, user));
             services.AddSingleton(CreateMediaSourceManager(context.Scenario, user));
             services.AddSingleton(CreateServerConfigurationManager(context.Scenario));
@@ -1613,11 +1740,14 @@ public sealed class TrickplayPreviewHttpSpecs
             return user;
         }
 
-        private static IUserManager CreateUserManager(User user)
+        private static IUserManager CreateUserManager(PreviewScenario scenario, User user)
         {
             InterfaceMockSpecs<IUserManager> mock = InterfaceMock.Create<IUserManager>();
             mock.Handle("GetUserById", arguments =>
-                Equals(arguments?[0], user.Id) ? user : null);
+            {
+                scenario.RecordUserLookup();
+                return Equals(arguments?[0], user.Id) ? user : null;
+            });
             return mock.Service;
         }
 
@@ -1627,13 +1757,18 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 Id = scenario.LogicalItemId,
                 Name = scenario.LogicalTitle,
+                Path = scenario.UsesAlternateSource
+                    ? "/media/component-logical-video.mkv"
+                    : scenario.SelectedMediaPath,
             };
-            var selectedVideo = new Video
-            {
-                Id = scenario.SelectedSourceId,
-                Name = scenario.SelectedTitle,
-                Path = scenario.SelectedMediaPath,
-            };
+            Video selectedVideo = scenario.UsesAlternateSource
+                ? new Video
+                {
+                    Id = scenario.ReturnsMismatchedSourceIdentity ? otherItemId : scenario.SelectedSourceId,
+                    Name = scenario.SelectedTitle,
+                    Path = scenario.SelectedMediaPath,
+                }
+                : logicalVideo;
             var context = new VideoLookupContext
             {
                 LogicalVideo = logicalVideo,
@@ -1653,17 +1788,29 @@ public sealed class TrickplayPreviewHttpSpecs
 
         private static Video? ResolveVideoLookup(object?[]? arguments, VideoLookupContext context)
         {
-            if (arguments?.Length != 2
-                || !ReferenceEquals(arguments[1], context.User)
-                || arguments[0] is not Guid requestedId)
+            bool isUserScoped = arguments?.Length == 2 && ReferenceEquals(arguments[1], context.User);
+            bool isUserIndependent = arguments?.Length == 1;
+            if ((!isUserScoped && !isUserIndependent) || arguments?[0] is not Guid requestedId)
             {
-                throw new InvalidOperationException("The video lookup did not use the current user-scoped overload.");
+                throw new InvalidOperationException("The video lookup did not use a supported Jellyfin overload.");
             }
 
             context.Scenario.LibraryLookupIds.Add(requestedId);
-            if (context.Scenario.LibraryLookupIds.Count == 1)
+            if (isUserScoped)
             {
-                return context.Scenario.LogicalVideo == ItemAvailability.Available ? context.LogicalVideo : null;
+                context.Scenario.RecordUserScopedLibraryLookup();
+            }
+            else
+            {
+                context.Scenario.RecordUserIndependentLibraryLookup();
+            }
+
+            if (requestedId == context.Scenario.LogicalItemId)
+            {
+                return ResolveVisibleVideo(
+                    context.LogicalVideo,
+                    context.Scenario.LogicalVideo,
+                    isUserScoped);
             }
 
             if (requestedId != context.Scenario.SelectedSourceId)
@@ -1671,12 +1818,34 @@ public sealed class TrickplayPreviewHttpSpecs
                 return null;
             }
 
-            if (context.Scenario.DeniesSelectedVideoPlayback)
+            if (isUserScoped && context.Scenario.DeniesSelectedVideoPlayback)
             {
                 SetPlaybackPermission(context.User, false);
             }
 
-            return context.Scenario.SelectedVideo == ItemAvailability.Available ? context.SelectedVideo : null;
+            return ResolveVisibleVideo(
+                context.SelectedVideo,
+                context.Scenario.SelectedVideo,
+                isUserScoped);
+        }
+
+        private static Video? ResolveVisibleVideo(
+            Video video,
+            ItemAvailability availability,
+            bool isUserScoped)
+        {
+            return availability switch
+            {
+                ItemAvailability.Available => video,
+                ItemAvailability.Hidden when !isUserScoped => video,
+                ItemAvailability.Hidden => null,
+                ItemAvailability.Missing => null,
+                ItemAvailability.WrongType => null,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(availability),
+                    availability,
+                    "Unknown Item availability."),
+            };
         }
 
         private static IMediaSourceManager CreateMediaSourceManager(PreviewScenario scenario, User user)
@@ -1686,10 +1855,32 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 if (arguments?.Length != 5
                     || arguments[0] is not Video video
-                    || video.Id != scenario.LogicalItemId
-                    || !ReferenceEquals(arguments[1], user))
+                    || video.Id != scenario.LogicalItemId)
                 {
-                    throw new InvalidOperationException("Playback sources were not enumerated for the current user.");
+                    throw new InvalidOperationException("Playback sources were not enumerated for the logical video.");
+                }
+
+                if (ReferenceEquals(arguments[1], user))
+                {
+                    if (!Equals(arguments[2], true) || !Equals(arguments[3], false))
+                    {
+                        throw new InvalidOperationException("GET changed its Jellyfin source-enumeration contract.");
+                    }
+
+                    scenario.RecordUserScopedSourceEnumeration();
+                }
+                else if (arguments[1] is null)
+                {
+                    if (!Equals(arguments[2], false) || !Equals(arguments[3], false))
+                    {
+                        throw new InvalidOperationException("The probe did not explicitly disable host media probing.");
+                    }
+
+                    scenario.RecordUserIndependentSourceEnumeration();
+                }
+                else
+                {
+                    throw new InvalidOperationException("Playback sources used an unexpected Jellyfin user.");
                 }
 
                 string memberId = scenario.Membership switch
@@ -1699,7 +1890,19 @@ public sealed class TrickplayPreviewHttpSpecs
                     SourceMembership.Malformed => "not-a-guid",
                     _ => throw new InvalidOperationException("Unknown source-membership scenario."),
                 };
-                var mediaSource = new MediaSourceInfo { Id = memberId };
+                var mediaSource = new MediaSourceInfo
+                {
+                    Id = memberId,
+                    OpenToken = scenario.HostSource == HostSourceKind.EligibleDynamic
+                        ? "component-provider-token"
+                        : null,
+                    Path = scenario.HostSource switch
+                    {
+                        HostSourceKind.LinkedAlternate => "/media/resolved-linked-target.mkv",
+                        HostSourceKind.EligibleDynamic => "https://provider.invalid/dynamic-stream",
+                        _ => scenario.SelectedMediaPath,
+                    },
+                };
                 if (scenario.SourceVideoWidth is int sourceVideoWidth)
                 {
                     mediaSource.MediaStreams =
@@ -1747,9 +1950,16 @@ public sealed class TrickplayPreviewHttpSpecs
 
             InterfaceMockSpecs<ITrickplayManager> mock = InterfaceMock.Create<ITrickplayManager>();
             mock.Handle("GetTrickplayResolutions", arguments =>
-                Equals(arguments?[0], context.Scenario.SelectedSourceId)
+            {
+                if (context.Scenario.MutatesConfiguredTargetsDuringMetadataRead)
+                {
+                    context.Scenario.ConfiguredWidthResolutions![0] = 640;
+                }
+
+                return Equals(arguments?[0], context.Scenario.SelectedSourceId)
                     ? Task.FromResult(resolutions)
-                    : Task.FromResult(new Dictionary<int, TrickplayInfo>()));
+                    : Task.FromResult(new Dictionary<int, TrickplayInfo>());
+            });
             mock.Handle("GetTrickplayTilePathAsync", arguments => ResolveSourceSpritePath(arguments, context));
             return mock.Service;
         }
@@ -2200,6 +2410,11 @@ public sealed class TrickplayPreviewHttpSpecs
     private sealed class PreviewScenario
     {
         private int sourceSpritePathRequests;
+        private int userIndependentLibraryLookups;
+        private int userIndependentSourceEnumerations;
+        private int userLookups;
+        private int userScopedLibraryLookups;
+        private int userScopedSourceEnumerations;
 
         public AuthenticationState Authentication { get; init; } = AuthenticationState.UserSession;
 
@@ -2218,6 +2433,8 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public bool FailsCacheAccess { get; init; }
 
+        public HostSourceKind HostSource { get; init; } = HostSourceKind.Default;
+
         public List<Guid> LibraryLookupIds { get; } = [];
 
         public Guid LogicalItemId { get; init; } = itemId;
@@ -2232,7 +2449,11 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public MetadataAvailability Metadata { get; init; } = MetadataAvailability.Available;
 
+        public bool MutatesConfiguredTargetsDuringMetadataRead { get; init; }
+
         public long RequestPositionTicks { get; init; }
+
+        public bool ReturnsMismatchedSourceIdentity { get; init; }
 
         public ItemAvailability SelectedVideo { get; init; } = ItemAvailability.Available;
 
@@ -2252,9 +2473,44 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public bool UsesAlternateSource { get; init; }
 
+        public int UserIndependentLibraryLookups => Volatile.Read(ref userIndependentLibraryLookups);
+
+        public int UserIndependentSourceEnumerations => Volatile.Read(ref userIndependentSourceEnumerations);
+
+        public int UserLookups => Volatile.Read(ref userLookups);
+
+        public int UserScopedLibraryLookups => Volatile.Read(ref userScopedLibraryLookups);
+
+        public int UserScopedSourceEnumerations => Volatile.Read(ref userScopedSourceEnumerations);
+
         public void RecordSourceSpritePathRequest()
         {
             Interlocked.Increment(ref sourceSpritePathRequests);
+        }
+
+        public void RecordUserIndependentLibraryLookup()
+        {
+            Interlocked.Increment(ref userIndependentLibraryLookups);
+        }
+
+        public void RecordUserIndependentSourceEnumeration()
+        {
+            Interlocked.Increment(ref userIndependentSourceEnumerations);
+        }
+
+        public void RecordUserLookup()
+        {
+            Interlocked.Increment(ref userLookups);
+        }
+
+        public void RecordUserScopedLibraryLookup()
+        {
+            Interlocked.Increment(ref userScopedLibraryLookups);
+        }
+
+        public void RecordUserScopedSourceEnumeration()
+        {
+            Interlocked.Increment(ref userScopedSourceEnumerations);
         }
     }
 
@@ -2331,6 +2587,14 @@ public sealed class TrickplayPreviewHttpSpecs
         CropBottomOverflow,
     }
 
+    public enum HostSourceKind
+    {
+        Default,
+        LocalAlternate,
+        LinkedAlternate,
+        EligibleDynamic,
+    }
+
     public enum NotFoundCondition
     {
         LogicalVideoMissing,
@@ -2339,6 +2603,7 @@ public sealed class TrickplayPreviewHttpSpecs
         SelectedSourceNotMember,
         SelectedSourceMembershipMalformed,
         SelectedVideoMissing,
+        SelectedVideoIdentityMismatch,
         SelectedVideoHidden,
         SelectedItemWrongType,
         NoConfiguredTarget,

@@ -95,6 +95,7 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
         response.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline");
         response.Headers.ETag = new EntityTagHeaderValue(FormattableString.Invariant($"\"0123456789abcdef0123456789abcdef-f{frame:D10}\""));
+        response.Headers.Add("X-Trickplay-Frame-Index", frame.ToString(System.Globalization.CultureInfo.InvariantCulture));
         response.Headers.Add("X-Trickplay-Cache", cached.Add(identity) ? "MISS" : "HIT");
         response.Headers.Add("Server-Timing", "lookup;dur=1.000, cache;dur=1.000");
         if (fault == "timing")
@@ -140,6 +141,10 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
     {
         switch (fault)
         {
+            case "get-header-frame":
+                response.Headers.Remove("X-Trickplay-Frame-Index");
+                response.Headers.Add("X-Trickplay-Frame-Index", "99");
+                break;
             case "get-frame":
                 response.Headers.ETag = new EntityTagHeaderValue("\"fedcba9876543210fedcba9876543210-f0000000099\"");
                 break;

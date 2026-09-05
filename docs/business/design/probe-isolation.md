@@ -29,11 +29,12 @@ logic around a distinction the product never made.
 ## Why this shape
 
 **The isolation is structural, not disciplined.** The probe's path has no route to a
-sprite, to the Cache Tree, or to the encoder — not a route it declines to take. A
-guarantee that depends on a code path choosing not to call something is a guarantee
-that the next change can silently break; one that depends on there being nothing to
-call is not. This is why the probe shares the pipeline's front and diverges at a
-point, rather than being a preview request with a flag.
+current-user resolver, a user-scoped Item lookup, playback authorization, a sprite,
+the Cache Tree, or the encoder — not routes it declines to take. A guarantee that
+depends on a code path choosing not to call something is a guarantee that the next
+change can silently break; one that depends on there being nothing to call is not.
+The probe and preview share only the resolution and Frame Index calculation, rather
+than sharing a request context or turning preview behavior off with flags.
 
 **The rejected alternative was the framework default.** An HTTP framework will
 typically answer HEAD by running the GET handler and discarding the body. That is
@@ -66,7 +67,8 @@ truncated and the unreachable remainder.
 
 ## How a caller observes it
 
-An empty body and exactly two headers, whatever else is happening on the server. A
-probe during a scrub storm, a cold cache, or a busy disk returns in the same shape and
-at the same cost as one against a warm idle server — and if it ever does not, the
-isolation has been broken.
+An empty body and exactly two plugin-owned headers, whatever else is happening on the
+server. A probe during a scrub storm, a cold cache, or a busy disk returns in the same
+shape and at the same cost as one against a warm idle server — and if it ever does not,
+the isolation has been broken. The answer establishes calculation availability, not
+user visibility, playback permission, or preview deliverability.

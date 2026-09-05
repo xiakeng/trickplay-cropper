@@ -105,7 +105,7 @@ public sealed class PreviewOutcomeSpecs
         Type expectedOutcomeType,
         int expectedCacheCalls)
     {
-        PreviewContext context = CreateContext();
+        PreviewContext context = CreateContext(frameIndex: 3);
         ResolvedPreviewSource source = CreateSource(context);
         var contextResolver = new StubResolver(new PreviewContextResolution.Resolved(context));
         var sourceResolver = new StubSourceResolver(new PreviewSourceResolution.Found(source));
@@ -120,6 +120,13 @@ public sealed class PreviewOutcomeSpecs
             CancellationToken.None);
 
         Assert.IsType(expectedOutcomeType, outcome);
+        int actualFrameIndex = outcome switch
+        {
+            PreviewOutcome.Ok ok => ok.FrameIndex,
+            PreviewOutcome.NotModified notModified => notModified.FrameIndex,
+            _ => throw new InvalidOperationException("The conditional request did not produce a success outcome."),
+        };
+        Assert.Equal(3, actualFrameIndex);
         Assert.Equal(expectedCacheCalls, cache.CallCount);
     }
 
@@ -337,13 +344,13 @@ public sealed class PreviewOutcomeSpecs
             logger ?? NullLogger<TrickplayPreview>.Instance);
     }
 
-    private static PreviewContext CreateContext()
+    private static PreviewContext CreateContext(int frameIndex = 0)
     {
         return new PreviewContext(
             itemId,
             new Video { Id = itemId },
             new TrickplayMetadata(320, 180, 10_000, 2, 2, 4),
-            0);
+            frameIndex);
     }
 
     private static ResolvedPreviewSource CreateSource(PreviewContext context)

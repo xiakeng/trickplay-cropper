@@ -133,7 +133,10 @@ internal sealed class TrickplayPreview : ITrickplayPreview
         if (MatchesConditionalEntityTag(identity.EntityTag, conditionalEntityTags))
         {
             var notModifiedTelemetry = new PreviewTelemetry.Conditional(lookupDuration);
-            return new PreviewOutcome.NotModified(identity.EntityTag, notModifiedTelemetry);
+            return new PreviewOutcome.NotModified(
+                identity.EntityTag,
+                source.Selection.FrameIndex,
+                notModifiedTelemetry);
         }
 
         long cacheStarted = Stopwatch.GetTimestamp();
@@ -144,7 +147,11 @@ internal sealed class TrickplayPreview : ITrickplayPreview
         TimeSpan cacheDuration = Stopwatch.GetElapsedTime(cacheStarted);
         PreviewDebugProtocol.LogCacheDisposition(logger, cacheResult.Disposition);
         var telemetry = new PreviewTelemetry.CacheAccess(lookupDuration, cacheDuration, cacheResult);
-        return new PreviewOutcome.Ok(cacheResult.Content, identity.EntityTag, telemetry);
+        return new PreviewOutcome.Ok(
+            cacheResult.Content,
+            identity.EntityTag,
+            source.Selection.FrameIndex,
+            telemetry);
     }
 
     private static bool MatchesConditionalEntityTag(
