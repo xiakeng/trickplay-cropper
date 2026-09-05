@@ -120,7 +120,8 @@ public sealed class SmokeCases(HttpClient http, TextWriter output)
         Require(Regex.IsMatch(tag, "^\"[0-9a-f]{32}-f[0-9]{10}\"$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
             && tag.EndsWith(suffix, StringComparison.Ordinal), "GET strong ETag Frame Index disagrees with independently read metadata.");
         byte[] bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-        Require(response.Content.Headers.ContentLength == bytes.Length, "GET Content-Length must match the JPEG bytes.");
+        Require(response.Content.Headers.Contains("Content-Length") && response.Content.Headers.ContentLength == bytes.Length,
+            "GET must declare Content-Length matching the JPEG bytes.");
         VerifyDecodedJpeg(bytes, boundary.Metadata);
         return bytes;
     }

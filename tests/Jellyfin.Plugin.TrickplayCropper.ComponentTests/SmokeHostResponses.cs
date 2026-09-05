@@ -84,18 +84,18 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
         bitmap.Erase(fault == "repeat-bytes" && repeat ? SKColors.Red : SKColors.DarkBlue);
         using SKImage image = SKImage.FromBitmap(bitmap);
         using SKData jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
-        response.Content = new ByteArrayContent(jpeg.ToArray());
-        response.Content.Headers.ContentLength = jpeg.Size;
+        response.Content = fault == "missing-length"
+            ? new UndeclaredLengthContent(jpeg.ToArray()) : new ByteArrayContent(jpeg.ToArray());
+        // Match a chunked network body: neither a declared length nor a computable length before buffering.
+        if (fault != "missing-length")
+        {
+            response.Content.Headers.ContentLength = jpeg.Size;
+        }
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
         response.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline");
         response.Headers.ETag = new EntityTagHeaderValue(FormattableString.Invariant($"\"0123456789abcdef0123456789abcdef-f{frame:D10}\""));
         response.Headers.Add("X-Trickplay-Cache", cached.Add(route) ? "MISS" : "HIT");
         response.Headers.Add("Server-Timing", "lookup;dur=1.000, cache;dur=1.000");
-        if (fault == "missing-length")
-        {
-            response.Content.Headers.Remove("Content-Length");
-        }
-
         if (fault == "timing")
         {
             response.Headers.Remove("Server-Timing");
@@ -140,8 +140,11 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
         switch (fault)
         {
             case "get-frame":
-            case "repeat-tag" when repeat:
                 response.Headers.ETag = new EntityTagHeaderValue("\"fedcba9876543210fedcba9876543210-f0000000099\"");
+                break;
+            case "repeat-tag" when repeat:
+                response.Headers.ETag = new EntityTagHeaderValue(response.Headers.ETag!.Tag.Replace(
+                    "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210", StringComparison.Ordinal));
                 break;
             case "get-weak-tag":
                 response.Headers.ETag = new EntityTagHeaderValue(response.Headers.ETag!.Tag, true);
@@ -166,4 +169,17 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
                 break;
         }
     }
+
+    private sealed class UndeclaredLengthContent(byte[] bytes) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(bytes).AsTask();
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
 }
