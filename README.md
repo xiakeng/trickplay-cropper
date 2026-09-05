@@ -112,55 +112,24 @@ sha256sum artifacts/package/trickplay-cropper_1.0.0.0.zip
 Generated package outputs are never committed; the installable ZIP lives on the
 GitHub Release, and CI's Package Validator is the package-install contract.
 
-## Release workflow
-
-No push publishes anything on its own. Every push to `main` — code, tests, tools,
-documentation, or workflow-only — has the `auto-release` workflow open or update
-one pending pull request titled `auto-release new version`. Its body carries the
-proposed changelog from the previous Release tag to the current `HEAD` and the
-computed next four-component version; routine releases increment the third
-component, and the committed but unpublished `1.0.0.0` is the floor, so the first
-automatic Release is `1.0.1.0`. A maintainer may edit major or minor components in
-the Release Pull Request before merge.
-
-Publication happens only when a human approves and merges that Release Pull
-Request. The `publish-release` workflow then runs the same locked restore,
-formatting, Release build, unit and component tests, JPRM packaging, and package
-validation as ordinary changes, and publishes the ZIP as the stable GitHub
-Release described above, reusing an existing Release or same-named asset on a
-workflow retry rather than recreating it.
-
-After publication, the same workflow submits a second pull request that updates
-the Jellyfin repository manifest from the actual published ZIP. That manifest pull
-request passes the same required checks, review, and merge protections as any
-other change and merges as a distinct automated actor without triggering another
-release cycle.
-
 ## Manual local Integration Harness
 
-The Integration Harness is a manually invoked `net9.0` console program. It
-validates a human-supplied administrator **user access token** (not a server API
-key), exactly two playable video Item IDs, and one existing Item concealed from
-that user. Copy `harness.example.json` to the gitignored root `harness.json` and
-fill it in. Keep this file private (`chmod 600 harness.json`); it grants the
-user's administrator access and is sent only in an HTTP authorization header to
-`http://localhost:8096`. The harness never prints its contents or authenticates
-with a password.
+The Integration Harness is a manually invoked, no-mock `net9.0` console program
+that deploys a Debug build of the plugin to the local Jellyfin host, runs four
+fixed smoke cases (invalid token, concealed Item, playback boundaries, Scrub
+Storm), and restores the host logging configuration afterwards. It targets the
+local native Jellyfin installation at `http://localhost:8096` with fixed
+`/etc/jellyfin` and `/var/lib/jellyfin` paths, and requires Python 3 plus an
+unprivileged account with interactive sudo. Each run crosses exactly two `sudo`
+boundaries and performs exactly two Jellyfin restarts.
 
-Use the local native Jellyfin installation, Python 3 (standard library only),
-.NET SDK from `global.json`, and an unprivileged account with interactive sudo
-access. The harness uses fixed `/etc/jellyfin` and `/var/lib/jellyfin` paths, plus
-`/tmp/jellyfin/Jellyfin.Plugin.TrickplayCropper/preview-v1` for this native host's
-plugin Cache Tree (`IApplicationPaths.TempDirectory` is `/tmp/jellyfin`). Its
-Landlock-restricted read-only, exact-ID SQLite query proves the invisible Item exists independently
-of the user-scoped HTTP 404; the account must be able to read Jellyfin's database
-and existing WAL/shared memory. Linux Landlock ABI 3 or later is required: the
-query child denies all file writes, creation, deletion, and truncation even if
-the account could otherwise write to the database directory. It does not
-enumerate or provision media.
+Copy `harness.example.json` to the gitignored root `harness.json` and fill in an
+administrator **user access token** (not a server API key), exactly two playable
+video Item IDs, and one Item that exists but is invisible to that user. Keep the
+file private (`chmod 600 harness.json`); it grants the user's administrator
+access and is only ever sent to localhost in an HTTP authorization header.
 
 ```sh
-dotnet restore TrickplayCropper.sln --locked-mode
 # Validate the supplied subjects only; no elevation, deployment, or restart.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --check
 # Deploy, run all four smoke cases including Scrub Storm, and restore.
@@ -169,84 +138,11 @@ dotnet run --project tools/TrickplayCropper.IntegrationHarness
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --verify-restoration
 ```
 
-Each cycle builds the Debug plugin, then crosses exactly two `sudo` boundaries.
-Sudo may reuse its normal timestamp; there is no unattended elevation or extra
-confirmation prompt. Privileged Phase 1 atomically creates the single sibling
-`logging.json.bak` snapshot, preserving logging bytes and metadata. Acquiring the
-snapshot before destructive work prevents concurrent runs from both passing a
-check and then overwriting each other's recovery data. An existing snapshot
-blocks all mutation and requires human inspection before removal.
-
-Phase 1 deletes only installations whose `meta.json` GUID matches this plugin,
-empties only its `preview-v1` Cache Tree, deploys only the Debug DLL and PDB as
-`jellyfin:jellyfin` (`0755` directory, `0644` files), adds only the plugin's Debug
-logging override, and restarts Jellyfin. It leaves logging defaults and sinks
-intact. The driver requires host health, the built version's Active status, a
-real JPEG GET, and a fresh structured plugin Debug event from the newest Jellyfin
-log. Existing event IDs and fields also travel in a JSON message envelope so
-ordinary text sinks preserve them without changing their configuration.
-Plugin inventory readiness has a bounded wait for startup 503 responses and
-connection interruptions, because `/health` can succeed before the API is ready.
-
-Privileged Phase 2 runs after successful, failed, or cancelled verification: it
-restores logging byte-for-byte and preserves metadata, removes the snapshot,
-restarts Jellyfin, and independently waits for health. A started cycle has a
-two-restart budget; two separate normal/failure demonstrations therefore use
-four restarts. Exit zero requires verification, restoration, and final health.
-`--verify-restoration` deliberately exits nonzero, even when recovery succeeds.
-The retained state is the Debug plugin, the populated Cache Tree, and an English
-Markdown Scrub Storm report in repository-root `test-output/` (gitignored).
-No transcript, run-lock, or additional state files are written. A partial snapshot,
-SIGKILL, power loss, lost restoration privilege, or failed restart requires human
-recovery; inspect any surviving snapshot before starting again.
-
-The first three smoke cases verify invented invalid-token HEAD/GET responses
-(401), concealed-Item HEAD/GET responses (404), and start/beyond-end playback
-positions for both supplied Items. Expected Frame Index values come independently
-from Jellyfin's user-scoped playback information, current resolution targets,
-and generated Trickplay metadata, never from plugin responses or product helpers.
-The beyond-end position is one tick after the Media Source runtime. HEAD checks
-its status, exact plugin headers and empty body; GET checks inline JPEG type,
-complete decoding and metadata dimensions, content length, cache policy and
-disposition, timing, strong ETag Frame Index, and repeat HIT with identical bytes
-and ETag. Only ordinal subject labels and non-secret numeric results reach stdout.
-After restoration, the harness prints and saves a unique `test-output/scrub-storm-*.md`
-report. Previous reports are retained. Report write failures produce a nonzero
-exit after restoration has already been attempted. `--check` writes no report.
-
-The fourth case runs a deterministic Scrub Storm (seed `0x5EEDC0DE`): two
-logical clients, three synchronized lanes per client, twelve positions per lane
-per playable Item, and two rounds each of random jumps, large-range fast sweeps,
-and small-range precise drags. Each round completes HEAD fan-out before GET
-fan-out, for 864 HEAD and 864 GET requests with ten-second request deadlines.
-It requires stable repeated JPEG bytes and ETags, a MISS-to-HIT transition, and
-exactly one canonical JPEG per requested Media Source/Frame Index within a
-thirty-second quiescence window, with no temporary publication residue.
-The newest server log must reconcile GET disposition counts and Frame Index /
-sprite index multiplicities. The stable protocol has no request correlation ID,
-so reconciliation is aggregate; unrelated Preview traffic or log rotation can
-make verification fail. Entry-lock, Cache Tree lease, and decode-permit waits
-are reported as `observed` or `not-observed`, with neither result determining
-pass/fail. All four cases plus restoration and post-restart health must pass
-for exit zero.
-
-The report records actual dispatched HEAD/GET counts, cache HIT/MISS response
-counts, the span from first to last dispatch, and wall-clock HTTP workload elapsed
-from first dispatch to last completion. A table gives sample count and minimum,
-maximum, median, and mean response times (milliseconds) for HEAD, GET cache MISS,
-and GET cache HIT. Timing uses a monotonic clock through complete HTTP response
-buffering, before local JPEG decoding and assertions; inter-request scheduling
-gaps contribute to workload elapsed but not individual response time. Metadata,
-deployment, quiescence, log/cache verification, and restoration are excluded from
-HTTP workload elapsed. Only HTTP 200 responses enter timing groups, and GET needs
-an exact HIT/MISS disposition. Other responses and transport failures/cancellations
-are counted separately. Partial runs retain their measurements; empty groups are
-`N/A`, and both Scrub Storm and final harness outcomes are explicit. Reports omit
-credentials and media identifiers. Timing values remain diagnostics, not thresholds.
-
-Other live gaps include playback-policy 403, alternate Media Sources,
-every 500 shape, source-width clamping, multiple targets, media-side Source
-Sprites, absent metadata/thumbnails/sprites, cleanup, Cache Tree seeding and lease
-contention. Debug DLL deployment does not verify the shippable ZIP; CI's Package
-Validator owns that check. Default CI compiles the harness and runs its isolated
-component checks, but never executes the live harness or uses sudo.
+Output goes to two places: stdout carries only ordinal subject labels and
+non-secret numeric results (never the token or Item IDs), and every full run
+writes an English Markdown Scrub Storm report to the gitignored
+`test-output/scrub-storm-*.md`, keeping previous reports (`--check` writes none).
+Exit code zero means all four cases plus restoration and final health passed;
+`--verify-restoration` deliberately exits nonzero even when recovery succeeds.
+After the run the Debug plugin and the populated Cache Tree remain in place —
+only logging configuration is restored.
