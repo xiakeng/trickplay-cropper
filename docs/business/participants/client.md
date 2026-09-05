@@ -54,10 +54,10 @@ sequenceDiagram
     else the client needs the frame
         C->>P: GET preview, with If-None-Match if it holds an ETag
         alt the entry is unchanged
-            P-->>C: 304, no body
+            P-->>C: 304, no body, Frame Index header
             Note over C: keep what it holds
         else the entry is new or was never held
-            P-->>C: 200 image/jpeg with ETag and X-Trickplay-Cache
+            P-->>C: 200 image/jpeg with ETag,<br/>Frame Index and X-Trickplay-Cache
             Note over C: replace what it holds
         end
     end
@@ -69,6 +69,8 @@ plugin bounds — see [decode permits](../lifecycle/preview-generation.md).
 
 ## Carries
 
-Authorization for every request. The plugin has no notion of an anonymous caller,
-and a server API key is not a substitute for a user: see
+Credentials accepted by Jellyfin's ordinary endpoint policy for every request. GET also
+requires those credentials to resolve to a current user and treats a server API key as
+no substitute. HEAD may accept that API key for its user-independent calculation, but
+its result says nothing about user permission: see
 [authorization and visibility](../design/authorization-and-visibility.md).

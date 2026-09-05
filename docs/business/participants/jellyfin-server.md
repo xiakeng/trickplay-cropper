@@ -6,8 +6,8 @@ Everything durable. The plugin derives from all of it and owns none of it.
 
 | Owned | Supplied to the plugin as |
 |---|---|
-| The library, Items, users, and playback authorization | A user-scoped Item lookup and an authorization decision |
-| Media Sources, including local alternate versions | Membership of a source in a logical video, and the effective Source Video |
+| The library, Items, users, and playback authorization | User-scoped GET lookups and authorization, plus user-independent HEAD identity lookups |
+| Media Sources, including local, linked, and dynamic forms | User-shaped GET membership and full user-independent HEAD membership, plus the effective Source Video |
 | The trickplay configuration | The current Trickplay Resolution Targets |
 | Generated trickplay metadata | Interval, tile geometry, thumbnail count, and recorded width per Media Source |
 | The Source Sprites | JPEG files the plugin crops frames out of |
@@ -60,5 +60,6 @@ plugin's policy, and it is the reason
 The server-side interfaces the plugin reads through, and the version-specific
 behaviour behind every claim above, are recorded in the research notes under
 [the trickplay resolution contract](../../research/jellyfin-10.11.11-trickplay-resolution-contract.md)
-and [the administration API contract](../../research/jellyfin-10.11.11-administration-api-contract.md).
+and [the Frame Probe source-enumeration contract](../../research/jellyfin-10.11.11-frame-probe-source-enumeration-contract.md),
+plus [the administration API contract](../../research/jellyfin-10.11.11-administration-api-contract.md).
 This chapter states the boundary; those notes are the evidence.

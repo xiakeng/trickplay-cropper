@@ -13,9 +13,11 @@ position select?*
 
 ## May assume
 
-Everything the shared front of the pipeline establishes, because the probe runs it:
-the caller is a real user, the Item is visible to them, they may play it, the Media
-Source belongs to it, and one exact Selected Trickplay Resolution applies. See
+Jellyfin's ordinary endpoint policy accepted the request, the unscoped logical Item
+and effective Source Video have their requested identities, the requested Media Source
+belongs to the logical Item's full host enumeration, and one exact Selected Trickplay
+Resolution applies. It may not assume a current user exists, the Item is visible to a
+particular user, or anyone may play it. See
 [source resolution](../lifecycle/source-resolution.md).
 
 ## Must not
@@ -33,7 +35,7 @@ Source belongs to it, and one exact Selected Trickplay Resolution applies. See
 
 ## Faces
 
-The client, and only the client. Internally it shares the pipeline with
-[the preview request](preview-request.md) and diverges from it at a single point;
-where that point is, and what lies beyond it, is drawn in
-[the lifecycle layer](../lifecycle/frame-probe.md).
+The client, and only the client. Internally it shares resolution and Frame Index
+calculation with [the preview request](preview-request.md), while each operation owns a
+different source and authorization path. The split and the probe's stopping point are
+drawn in [the lifecycle layer](../lifecycle/frame-probe.md).

@@ -15,36 +15,50 @@ generation time. The server keeps them deliberately out of step and chooses noth
 between them — see [Jellyfin Server](../participants/jellyfin-server.md) — so the
 selection below is the plugin's own policy.
 
-## The authorization gates, in order
+## The two request fronts
 
-Every request — probe and preview alike — passes these before any resolution or frame
-work.
+Jellyfin's ordinary endpoint authorization policy fronts both operations. After that
+boundary, preview and probe intentionally establish different facts before using one
+shared resolution and Frame Index calculation.
 
-1. **The caller is a real user.** An unauthenticated caller is refused. A caller
-   presenting a server API key is refused too: an API key is an unscoped administrator
-   credential, not a user.
-2. **The Item is visible to that user.** The logical video is looked up scoped to the
-   calling user, so an Item hidden by library access does not resolve.
+### GET: user-scoped preview authority
+
+1. **The caller resolves to a real current user.** A server API key is not mapped to an
+   implied user and is refused.
+2. **The Item is visible to that user.** The logical video is looked up through the
+   user-scoped host API, so an Item hidden by library access does not resolve.
 3. **The user may play the logical video.** Playback authorization is checked once,
    here, against the logical video.
-4. **The requested Media Source belongs to that video.** When no Media Source is named,
-   the Item itself is the source. A named source that is not a member of the logical
-   video is refused as though it did not exist.
-5. **The effective Source Video resolves.** The member source is looked up as a video in
-   its own right, because Jellyfin models a local alternate version as its own Source
-   Video and records its trickplay data under that Source Video's identity.
+4. **The requested Media Source belongs to that video.** Membership comes from the
+   logical video's user-shaped playback Media Source enumeration.
+5. **The effective Source Video is visible.** It is looked up through the user-scoped
+   host API and must have the requested identity.
 
 There is **no second playback check** on the Source Video: membership in a logical video
-the caller may already play is the authorization.
+the caller may already play is the authorization. Visibility and existence collapse into
+the same GET `404`. These gates finish before GET can return a representation or `304`.
 
-| Refusal | Status |
-|---|---|
-| Unauthenticated, or API-key caller | `401` / `403` |
-| Item invisible to this user, or absent | `404` |
-| Playback not permitted | `403` |
-| Named Media Source not a member, or does not resolve | `404` |
+### HEAD: user-independent calculation availability
 
-Visibility and existence collapse into the same `404`.
+1. Resolve the logical video without a user and require its exact requested identity.
+2. Ask Jellyfin for the logical video's full playback Media Source enumeration with no
+   user, `allowMediaProbe: false`, and path substitution disabled.
+3. Require the requested GUID to be a member of that enumeration.
+4. Resolve the effective Source Video without a user and require its exact requested
+   identity.
+
+The full enumeration retains Jellyfin's default, local alternate, linked and eligible
+dynamic sources while disabling explicit media probing. The matched Media Source's Video
+Stream width is the normalization input. HEAD performs no current-user resolution,
+user-visibility lookup, or playback authorization; its success is not permission evidence.
+
+| Refusal | GET | HEAD |
+|---|---|---|
+| Unauthenticated under ordinary endpoint policy | `401` | `401` |
+| Ordinary endpoint policy refusal | `403` | `403` |
+| No current user, or playback not permitted | `403` | not evaluated |
+| Item invisible to the current user | `404` | not evaluated |
+| Item, member Media Source, or Source Video identity unavailable | `404` | `404` |
 
 ## Choosing one Selected Trickplay Resolution
 
@@ -78,9 +92,10 @@ The exact-match rule knowingly refuses data that is servable; why that trade is
 deliberate — and what gets logged so the mismatch is diagnosable — is in
 [resolution exactness](../design/resolution-exactness.md).
 
-Each request reads the configuration and the generated metadata once, as one snapshot,
-and does not retry if either changes underneath it: the race resolves into an ordinary
-outcome above, and the next request observes the new state.
+Each request copies the current target array before selection, then reads generated
+metadata once. It does not retain either value or retry if state changes underneath it:
+the race resolves into an ordinary outcome above, and the next request observes current
+state.
 
 For a preview request only, one further gate follows: the Source Sprite for the selected
 width and sprite index must actually resolve and exist. Metadata does not prove a file is
@@ -88,7 +103,7 @@ on disk. The [Trickplay Frame Probe](frame-probe.md) stops before this gate.
 
 ## The decision path
 
-The gates, in the order they must run:
+The GET gates, in the order they must run:
 
 ```mermaid
 flowchart TD
@@ -125,12 +140,15 @@ flowchart TD
 
 ## Anchors
 
-`JellyfinPreviewContextResolver` owns the gates and the selection through
-`IPreviewContextResolver`; `TrickplayResolutionSelector` implements the minimum-target
-choice and Jellyfin's normalization rule; `PreviewQuery` carries the requested Item,
-optional Media Source, and position; `PreviewContextResolution` is the closed set of
-outcomes above; `TrickplayMetadata` holds the matched generated metadata. The GET-only
-Source Sprite gate that follows is `JellyfinPreviewSourceResolver` through
-`IPreviewSourceResolver`. The selection rule and its failure table are recorded
-normatively in
-[the resolution research note](../../research/jellyfin-10.11.11-trickplay-resolution-contract.md).
+`JellyfinPreviewContextResolver` owns GET's user-scoped gates;
+`JellyfinTrickplayFrameProbeContextResolver` owns HEAD's user-independent source facts.
+Both delegate target, metadata, and Frame Index calculation to
+`JellyfinTrickplayFrameCalculationResolver`. `TrickplayResolutionSelector` implements
+the minimum-target choice and Jellyfin's normalization rule; `PreviewQuery` carries the
+requested Item, optional Media Source, and position; the closed resolution types carry
+only the facts appropriate to each path. `TrickplayMetadata` holds the matched generated
+metadata. The GET-only Source Sprite gate that follows is
+`JellyfinPreviewSourceResolver` through `IPreviewSourceResolver`. The selection rule and
+source-enumeration behavior are recorded normatively in
+[the resolution research note](../../research/jellyfin-10.11.11-trickplay-resolution-contract.md)
+and [the probe source-enumeration note](../../research/jellyfin-10.11.11-frame-probe-source-enumeration-contract.md).

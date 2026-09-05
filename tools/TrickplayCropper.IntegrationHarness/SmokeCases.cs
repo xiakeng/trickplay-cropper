@@ -49,19 +49,15 @@ public sealed class SmokeCases(HttpClient http, TextWriter output)
 
     private async Task VerifyConcealmentAsync(Guid item, CancellationToken cancellationToken)
     {
-        output.WriteLine("Checking concealed visibility: HEAD and GET.");
-        foreach (HttpMethod method in new[] { HttpMethod.Head, HttpMethod.Get })
-        {
-            using HttpRequestMessage request = new(method, PreviewRoute(item, 0));
-            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            Require(response.StatusCode == HttpStatusCode.NotFound, "The invisible Item must return concealed 404.");
-            if (method == HttpMethod.Head)
-            {
-                await PreviewAssertions.VerifyHeadAsync(response, null, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        output.WriteLine("PASS concealed visibility: HEAD=404, GET=404, empty HEAD body.");
+        output.WriteLine("Checking concealed GET visibility without treating HEAD as permission evidence.");
+        using HttpResponseMessage response = await http.GetAsync(
+            PreviewRoute(item, 0),
+            cancellationToken).ConfigureAwait(false);
+        Require(response.StatusCode == HttpStatusCode.NotFound, "The invisible Item GET must return concealed 404.");
+        Require(
+            !response.Headers.Contains("X-Trickplay-Frame-Index"),
+            "A failed GET must not return a Frame Index.");
+        output.WriteLine("PASS concealed visibility: GET=404; HEAD is not permission evidence.");
     }
 
     private async Task VerifyBoundaryAsync(PreviewRequest boundary, CancellationToken cancellationToken)

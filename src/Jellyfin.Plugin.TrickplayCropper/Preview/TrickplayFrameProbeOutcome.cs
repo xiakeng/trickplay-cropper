@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 public abstract record TrickplayFrameProbeOutcome
 {
     /// <summary>
-    /// Represents an authorized probe whose Frame Index is selected.
+    /// Represents an accepted probe whose Frame Index is selected.
     /// </summary>
     /// <param name="FrameIndex">The clamped zero-based Frame Index.</param>
     public sealed record Success(int FrameIndex) : TrickplayFrameProbeOutcome;
@@ -17,17 +17,17 @@ public abstract record TrickplayFrameProbeOutcome
     public sealed record BadRequest : TrickplayFrameProbeOutcome;
 
     /// <summary>
-    /// Represents a request without a usable authenticated user.
+    /// Represents a retained transport-facing authentication refusal.
     /// </summary>
     public sealed record Unauthorized : TrickplayFrameProbeOutcome;
 
     /// <summary>
-    /// Represents an authenticated request without user-scoped playback authority.
+    /// Represents a retained transport-facing ordinary-policy refusal.
     /// </summary>
     public sealed record Forbidden : TrickplayFrameProbeOutcome;
 
     /// <summary>
-    /// Represents an unavailable or concealed resource.
+    /// Represents unavailable user-independent source or calculation inputs.
     /// </summary>
     public sealed record NotFound : TrickplayFrameProbeOutcome;
 

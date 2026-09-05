@@ -27,10 +27,12 @@ the plugin's own in-process position, can see everything; that reach is not evid
 about the caller. Authorization is therefore evaluated as *this user, this Item*,
 never as *does this Item exist*.
 
-**A server API key is refused rather than trusted.** An API key is an unscoped
-administrator credential. Accepting one would make the plugin the only route by
-which an unscoped credential reaches user-scoped media, so it is refused outright
-instead of being mapped to some implied user.
+**GET refuses a server API key rather than inventing a user.** An API key is an
+unscoped administrator credential, not user-scoped playback authority. GET therefore
+refuses it instead of mapping it to some implied user. The Frame Probe answers a
+different question: after Jellyfin's ordinary endpoint policy accepts the request, it
+can calculate against user-independent Item and Media Source facts without asserting
+that any user may see or play them.
 
 **There is no second playback check on the Source Video.** This is the rejected
 alternative, and it was the plugin's original behaviour. Re-checking playback
@@ -50,7 +52,9 @@ order.
 
 ## How a caller observes it
 
-`401` for an unauthenticated caller, `403` for an API-key caller or one who may not
-play the video, `404` for an Item that is invisible or absent and for a Media Source
-that is not a member. Within each status there is nothing further to learn, which is
-the point.
+For GET, `401` identifies an unauthenticated caller, `403` an API-key caller without a
+current user or a user who may not play the video, and `404` an Item that is invisible
+or absent or a Media Source that is not a member. HEAD is governed by Jellyfin's
+ordinary endpoint policy and uses `404` only when the requested Item, Source Video, or
+source membership cannot be established independently of a user. A HEAD success is
+never permission evidence.

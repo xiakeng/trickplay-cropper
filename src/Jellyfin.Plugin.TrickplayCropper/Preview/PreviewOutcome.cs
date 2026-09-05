@@ -10,19 +10,23 @@ public abstract record PreviewOutcome
     /// </summary>
     /// <param name="Content">The immutable response content.</param>
     /// <param name="EntityTag">The canonical entity tag.</param>
+    /// <param name="FrameIndex">The Frame Index selected by this request.</param>
     /// <param name="Telemetry">The completed request telemetry.</param>
     public sealed record Ok(
         ReadOnlyMemory<byte> Content,
         string EntityTag,
+        int FrameIndex,
         PreviewTelemetry.CacheAccess Telemetry) : PreviewOutcome;
 
     /// <summary>
     /// Represents a conditional request whose entity is unchanged.
     /// </summary>
     /// <param name="EntityTag">The canonical entity tag.</param>
+    /// <param name="FrameIndex">The Frame Index selected by this request.</param>
     /// <param name="Telemetry">The completed request telemetry.</param>
     public sealed record NotModified(
         string EntityTag,
+        int FrameIndex,
         PreviewTelemetry.Conditional Telemetry) : PreviewOutcome;
 
     /// <summary>

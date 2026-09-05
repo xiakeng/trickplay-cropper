@@ -43,7 +43,10 @@ public sealed class SmokeCasesSpecs
         using StringWriter output = new();
         await new SmokeCases(http, output).RunAsync(Input, CancellationToken.None);
 
-        Assert.Contains("PASS concealed visibility: HEAD=404, GET=404", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            "PASS concealed visibility: GET=404; HEAD is not permission evidence",
+            output.ToString(),
+            StringComparison.Ordinal);
         Assert.Contains("PASS Item 1 start: ticks=0, Frame Index=0", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("PASS Item 1 beyond-end: ticks=180000001, Frame Index=6", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("PASS Item 2 start: ticks=0, Frame Index=0", output.ToString(), StringComparison.Ordinal);
@@ -55,7 +58,6 @@ public sealed class SmokeCasesSpecs
     [Theory]
     [InlineData("timing")]
     [InlineData("missing-length")]
-    [InlineData("concealed-head")]
     [InlineData("concealed-get")]
     [InlineData("head-frame")]
     [InlineData("head-length")]
@@ -63,6 +65,7 @@ public sealed class SmokeCasesSpecs
     [InlineData("head-etag")]
     [InlineData("head-cache-policy")]
     [InlineData("get-frame")]
+    [InlineData("get-header-frame")]
     [InlineData("get-weak-tag")]
     [InlineData("get-jpeg")]
     [InlineData("get-dimensions")]

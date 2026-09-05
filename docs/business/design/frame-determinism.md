@@ -57,7 +57,8 @@ verification against the sprite.
 
 ## How a caller observes it
 
-`X-Trickplay-Frame-Index` on a probe, and the Frame Index inside the ETag on a
-preview. A caller that records both can verify determinism directly: the same
-position yields the same index, and the same index yields the same ETag for as long
-as the source version holds.
+`X-Trickplay-Frame-Index` on every successful probe and preview response, including a
+preview `304`, and the Frame Index independently inside the preview ETag. A caller
+that records both can verify determinism directly: the same position yields the same
+index, and the same representation yields the same ETag for as long as the source
+version holds.

@@ -26,6 +26,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ITrickplayPreview, TrickplayPreview>();
         serviceCollection.AddSingleton<ITrickplayFrameProbe, TrickplayFrameProbe>();
         serviceCollection.AddSingleton<IPreviewContextResolver, JellyfinPreviewContextResolver>();
+        serviceCollection.AddSingleton<ITrickplayFrameProbeContextResolver, JellyfinTrickplayFrameProbeContextResolver>();
+        serviceCollection.AddSingleton<ITrickplayFrameCalculationResolver, JellyfinTrickplayFrameCalculationResolver>();
         serviceCollection.AddSingleton<IPreviewSourceResolver, JellyfinPreviewSourceResolver>();
         serviceCollection.AddSingleton<DiskPreviewCache>();
         serviceCollection.AddSingleton<IPreviewCache>(

@@ -7,13 +7,14 @@ why the rules are shaped this way is in [the design layer](../design/README.md).
 Read this layer second, after the participants.
 
 Trickplay Cropper serves one JPEG frame of a video for an authorized playback position,
-cropped from trickplay data Jellyfin already generated. Two operations share one pipeline:
+cropped from trickplay data Jellyfin already generated. Two operations share one
+calculation but deliberately use different request fronts:
 
 - The **Trickplay Frame Probe** answers *which frame does this position select?* It reads
   configuration and metadata, computes a Frame Index, and stops. It never touches an image.
-- The **Trickplay Preview** request answers *give me that frame.* It runs the same
-  pipeline, then looks the frame up in the Cache Tree and crops it from a Source Sprite if
-  it is not there.
+- The **Trickplay Preview** request answers *give me that frame.* It first establishes
+  the current user's visibility and playback authority, then looks the calculated frame
+  up in the Cache Tree and crops it from a Source Sprite if it is not there.
 
 ## The lifecycle
 
@@ -24,12 +25,14 @@ flowchart TD
     Client -->|"HEAD, one position"| Probe["Trickplay Frame Probe"]
     Client -->|"GET, one position"| Request["Trickplay Preview request"]
 
-    Probe --> Pipeline
-    Request --> Pipeline
+    Probe --> ProbeSource["Ordinary endpoint policy<br/>unscoped Item and source membership"]
+    Request --> PreviewAuth["Current-user visibility<br/>and playback authorization"]
+    ProbeSource --> Pipeline
+    PreviewAuth --> Pipeline
 
-    subgraph Pipeline["Shared pipeline: validation through Frame Index"]
+    subgraph Pipeline["Shared calculation"]
         direction TB
-        Auth["Authorization and visibility"] --> Resolution["Selected Trickplay Resolution"]
+        Resolution["Selected Trickplay Resolution"]
         Resolution --> Selection["Frame Selection"]
     end
 
@@ -38,21 +41,23 @@ flowchart TD
     Cache -->|"HIT"| Buffer["Buffered JPEG"]
     Cache -->|"MISS"| Generate["Crop one frame from the Source Sprite"]
     Generate --> Buffer
-    Buffer --> Answer["200 image/jpeg<br/>ETag, X-Trickplay-Cache, Server-Timing"]
+    Buffer --> Answer["200 image/jpeg<br/>ETag, Frame Index,<br/>X-Trickplay-Cache, Server-Timing"]
 
-    Auth -->|"refused"| RefusedAuth["401 / 403 / 404"]
+    ProbeSource -->|"unavailable"| RefusedProbe["401 / 403 / 404"]
+    PreviewAuth -->|"refused"| RefusedAuth["401 / 403 / 404"]
     Resolution -->|"no exact metadata match"| RefusedResolution["404"]
 ```
 
-The two operations diverge only after Frame Selection. Everything before it — who is
-asking, whether they may play this video, which resolution applies, which frame the
-position selects — is one path with one set of rules.
+The operations converge only for target, metadata, and Frame Index calculation. HEAD
+does not establish user visibility or playback authority, while GET must establish both
+before it can return bytes or validate an ETag. A successful HEAD is therefore neither
+permission evidence nor a promise that GET can serve the frame.
 
 ## Chapters, in flow order
 
 | Chapter | What it covers |
 |---|---|
-| [Source resolution](source-resolution.md) | The authorization gates in order, and from the current Trickplay Resolution Targets to one exact Selected Trickplay Resolution |
+| [Source resolution](source-resolution.md) | The separate GET and HEAD request fronts, and from current Trickplay Resolution Targets to one exact Selected Trickplay Resolution |
 | [Trickplay Frame Probe](frame-probe.md) | What the HEAD operation may read, what it must never touch, and where it stops |
 | [Frame Selection](frame-selection.md) | Playback position to Frame Index, and Frame Index to sprite, cell, row, column, crop |
 | [Preview generation](preview-generation.md) | Cropping one frame out of a Source Sprite, and why only part of the sprite is decoded |

@@ -38,6 +38,10 @@ internal sealed class PreviewAssertions
         Require(response.Content.Headers.ContentType?.ToString() == "image/jpeg"
             && response.Content.Headers.ContentDisposition?.ToString() == "inline", "GET must return an inline JPEG.");
         VerifyCacheControl(response);
+        Require(
+            Header(response, "X-Trickplay-Frame-Index")
+                == preview.FrameIndex.ToString(CultureInfo.InvariantCulture),
+            "GET Frame Index disagrees with independently read metadata.");
         Require(Header(response, "X-Trickplay-Cache") is "MISS" or "HIT"
             && !response.Headers.Contains("X-Trickplay-Cache-File"), "GET must report a cache disposition without a private path.");
         Require(Regex.IsMatch(Header(response, "Server-Timing"),

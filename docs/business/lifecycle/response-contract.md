@@ -10,11 +10,13 @@ does with any of it: [the client](../participants/client.md). This chapter is th
 | Operation | Response | Headers |
 |---|---|---|
 | Probe | `200`, no body | `X-Trickplay-Frame-Index`, `Cache-Control: private, no-cache` |
-| Preview | `200`, JPEG body | `Content-Type: image/jpeg`, `Content-Disposition: inline`, `Content-Length`, `ETag`, `Cache-Control: private, no-cache`, `X-Trickplay-Cache: HIT` or `MISS`, `Server-Timing` |
-| Preview | `304`, no body | `ETag`, `Cache-Control: private, no-cache`, `Server-Timing` |
+| Preview | `200`, JPEG body | `Content-Type: image/jpeg`, `Content-Disposition: inline`, `Content-Length`, `ETag`, `Cache-Control: private, no-cache`, `X-Trickplay-Frame-Index`, `X-Trickplay-Cache: HIT` or `MISS`, `Server-Timing` |
+| Preview | `304`, no body | `ETag`, `Cache-Control: private, no-cache`, `X-Trickplay-Frame-Index`, `Server-Timing` |
 
 The probe carries no ETag and honours no `If-None-Match`. The preview operation honours
-`If-None-Match`, including the `*` form, and compares weakly.
+`If-None-Match`, including the `*` form, and compares weakly. Its typed success and
+not-modified outcomes carry the request's final Frame Index so `200` HIT, `200` MISS and
+`304` all expose the same `X-Trickplay-Frame-Index`. Failure responses omit that header.
 
 `Cache-Control: private, no-cache` is about *shared* caches, not the client: the answer
 depends on who asked, so an intermediary must not hold it and must revalidate rather than
@@ -31,8 +33,9 @@ of coordination, so a slow preview can be attributed to a stage without server a
 
 ## Status codes
 
-Both operations share the same refusals, because they share the same gates. Only the
-preview operation can fail on a missing sprite, because only it looks.
+Both operations remain behind Jellyfin's ordinary endpoint policy, but their later gates
+differ. GET resolves a current user, user visibility and logical-video playback authority;
+HEAD does not. Only GET can fail on a missing sprite, because only it looks.
 
 | Status | Meaning | Probe | Preview |
 |---|---|---|---|
@@ -40,8 +43,10 @@ preview operation can fail on a missing sprite, because only it looks.
 | `304` | The caller's ETag still matches | no | yes |
 | `400` | Malformed query, or negative playback position | yes | yes |
 | `401` | Unauthenticated caller | yes | yes |
-| `403` | Server API key caller, or playback not permitted | yes | yes |
-| `404` | Item invisible or absent, Media Source not a member, no Trickplay Resolution Target configured, no exact metadata match, no available frames | yes | yes |
+| `403` | Ordinary endpoint policy refuses the request | yes | yes |
+| `403` | No current user, including a server API key, or playback not permitted | no | yes |
+| `404` | Item, Source Video, or Media Source membership unavailable | yes, user-independent | yes, user-scoped and concealing |
+| `404` | No Trickplay Resolution Target, no exact metadata match, or no available frames | yes | yes |
 | `404` | Source Sprite unavailable | no | yes |
 | `405` | Method not supported; `Allow` advertises `GET, HEAD` | — | — |
 | `500` | Configuration unreadable or inconsistent, invalid recorded metadata, or an operational failure during generation | yes | yes |
@@ -49,7 +54,8 @@ preview operation can fail on a missing sprite, because only it looks.
 Two things this table does not distinguish, on purpose:
 
 - **`404` conceals.** An Item hidden by library access and an Item that does not exist are
-  the same response. The gate order that keeps it that way is in
+  the same GET response. HEAD does not evaluate user visibility. The gate order that
+  keeps GET concealing is in
   [source resolution](source-resolution.md).
 - **A successful probe does not predict a successful preview.** The probe stops before the
   sprite availability gate, so the `404` in the second-to-last row can follow a `200` probe
