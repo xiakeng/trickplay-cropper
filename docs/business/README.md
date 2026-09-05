@@ -26,9 +26,10 @@ keep depending on. Start here.
 
 ### 2. [Lifecycle](lifecycle/README.md) — what actually happens
 
-What happens, in order, when a request arrives: the authorization gates, the selection of
-one exact resolution, Frame Selection, the probe's stopping point, generation, the cache
-and its coordination, the response contract, and the cleanup run.
+What happens, in order, when a request arrives: the separate GET authorization and HEAD
+source fronts, the selection of one exact resolution, Frame Selection, the probe's
+stopping point, generation, the cache and its coordination, the response contract, and
+the cleanup run.
 
 *The only layer that describes mechanism. If you want to know how something works, this is
 where the answer lives.*

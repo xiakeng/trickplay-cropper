@@ -1,6 +1,7 @@
 # Trickplay Cropper Next-Stage Specification
 
-- Status: Approved in GitHub issue #56
+- Status: Approved in GitHub issue #56; Frame Probe authorization and GET
+  response amendments approved in GitHub issues #90 and #92
 - Source map: GitHub issue #43
 - Implementation tracker: GitHub issue #64
 - Baseline: v1.0.0.0
@@ -53,30 +54,25 @@ The following v1 decisions remain authoritative:
 - Preview Cache Entries remain derived, server-local, and safe to discard under
   the existing cleanup policy.
 
-The current `main` baseline is not the behavior described by the remainder of
-this document: it exposes GET only and selects a fixed 320-pixel metadata entry.
-The next-stage implementation replaces that fixed selection with the exact
-source-specific policy below.
+The implementation uses the exact source-specific policy below. GET is the
+user-authorized representation operation; HEAD is a user-independent calculation
+operation after Jellyfin's ordinary endpoint policy accepts the request.
 
-## 3. Shared Preview context
+## 3. Request fronts and shared Frame Index calculation
 
-GET and the Trickplay Frame Probe share one request-scoped Preview-context
-pipeline. The pipeline ends after Frame Index calculation and returns a closed,
-typed result consumed by both operations.
+GET and the Trickplay Frame Probe use separate request contexts. They converge only
+for target, metadata, and Frame Index calculation. The shared calculation accepts
+validated source identity and normalization width as data; it does not authorize a
+caller, resolve a current user, or retain state between requests.
 
-The shared pipeline owns, in order:
+The common calculation owns, in order:
 
 1. request parsing and non-negative position validation;
-2. current-user resolution;
-3. user-scoped logical-video lookup;
-4. logical-video playback authorization;
-5. Media Source membership validation;
-6. user-scoped Source Video lookup;
-7. one current Trickplay configuration snapshot;
-8. Trickplay Resolution Target selection and source-specific normalization;
-9. one generated-resolution metadata lookup;
-10. exact metadata validation; and
-11. Frame Index calculation and end clamping.
+2. one copied current Trickplay configuration snapshot;
+3. Trickplay Resolution Target selection and source-specific normalization;
+4. one generated-resolution metadata lookup;
+5. exact metadata validation; and
+6. Frame Index calculation and end clamping.
 
 ### 3.1 Request values
 
@@ -102,15 +98,14 @@ required-binding metadata, then parses at the action or probe boundary. The two
 operations nevertheless produce the same effective query and validation
 outcomes.
 
-### 3.2 Authorization and visibility
+### 3.2 Authorization, visibility, and source facts
 
-The authenticated current user must be resolved before shared Preview work.
-The pipeline performs a user-scoped lookup of the logical video and checks its
-playback access before any cache or Source Sprite work.
-
-The requested Media Source must be a member enumerated by the authorized
-logical video. The effective Source Video lookup remains user-scoped so an
-invisible item cannot be used indirectly.
+Jellyfin's ordinary endpoint authorization policy applies to both operations.
+After that boundary, only GET resolves the authenticated current user. GET performs
+a user-scoped lookup of the logical video, checks its playback access, enumerates
+user-shaped playback Media Sources, proves requested membership, and performs a
+user-scoped effective Source Video lookup before any representation or conditional
+response can succeed.
 
 The implementation must not perform a second playback-policy decision on the
 selected Source Video. The authorized logical video and its enumerated Media
@@ -123,15 +118,29 @@ required playback access independently on both the logical and selected Source
 Videos. It does not remove the logical-video playback decision, Media Source
 membership proof, or user-scoped Source Video visibility lookup.
 
-An API key without a current Jellyfin user is not user-scoped playback
-authority and is forbidden.
+An API key without a current Jellyfin user is not user-scoped playback authority:
+GET forbids it. HEAD may proceed when the ordinary endpoint policy accepts it because
+HEAD does not make a user authorization decision.
+
+HEAD must not resolve a current user, perform user-scoped lookup, or invoke playback
+authorization. It resolves the logical Item and effective Source Video through
+user-independent host APIs and requires exact requested identities. It enumerates the
+logical video's full playback Media Sources with `user: null`,
+`allowMediaProbe: false`, and path substitution disabled. This retains default,
+local-alternate, linked, and eligible dynamic sources from the supported host path while
+disabling explicit media probing. The requested GUID must be a member of the returned
+set, and the matched Media Source's Video Stream width is the normalization input.
+
+HEAD success establishes calculation availability only. It does not establish
+visibility, playback permission, representation availability, or that GET will succeed.
 
 ## 4. Selected Trickplay Resolution
 
 ### 4.1 Configuration snapshot
 
-Each request reads Jellyfin's current `WidthResolutions` once. It does not retry
-or combine values across configuration revisions.
+Each request reads Jellyfin's current `WidthResolutions` once and immediately copies
+the array for request-local use. It does not retain the array, retry, or combine values
+across configuration revisions.
 
 - A null or unreadable array is an internal error.
 - An empty array has no current Trickplay Resolution Target.
@@ -160,9 +169,8 @@ representation.
 
 ### 4.3 Exact metadata selection
 
-Query generated Trickplay metadata once for the authorized effective Source
-Video GUID. Require a dictionary key exactly equal to the Selected Trickplay
-Resolution.
+Query generated Trickplay metadata once for the established effective Source Video
+GUID. Require a dictionary key exactly equal to the Selected Trickplay Resolution.
 
 Do not try:
 
@@ -191,24 +199,24 @@ Calculate the zero-based Frame Index from `PositionTicks` and the selected
 metadata interval using checked arithmetic. Clamp a position at or beyond the
 generated sequence to the final available Frame Index.
 
-GET and the Trickplay Frame Probe must produce the same Frame Index for the same
-authorized request context.
+GET and the Trickplay Frame Probe must produce the same Frame Index for equal
+calculation inputs. The common calculation carries no user or authorization context.
 
 ## 5. Outcome mapping
 
-Map the shared and GET-only outcomes as follows:
+Map calculation, operation-specific, and GET-only outcomes as follows:
 
 | Status | Meaning |
 | --- | --- |
 | `400 Bad Request` | Missing or malformed request values, or negative `PositionTicks` |
 | `401 Unauthorized` | Authentication cannot establish a usable session |
-| `403 Forbidden` | API key has no current user, or logical-video playback is denied |
-| `404 Not Found` | Concealed or unavailable item, non-member source, no current target, no exact metadata, no thumbnails, or GET-only Source Sprite absence |
+| `403 Forbidden` | Ordinary endpoint policy refusal, or GET has no current user or logical-video playback is denied |
+| `404 Not Found` | GET-concealed or otherwise unavailable item, non-member source, no current target, no exact metadata, no thumbnails, or GET-only Source Sprite absence |
 | `500 Internal Server Error` | Invalid configuration, contradictory metadata, arithmetic failure, operational failure, cache-safety failure, or encode failure |
 
 Unavailable and concealed cases must not expose internal distinctions to the
 client. Pass the request cancellation token to asynchronous Jellyfin manager
-calls. The shared pipeline and Trickplay Frame Probe add no explicit
+calls. The shared calculation and Trickplay Frame Probe add no explicit
 cancellation checkpoints, do not convert cancellation into a closed probe
 outcome, and do not log cancellation as a probe failure. Cancellation follows
 the host's existing behavior rather than becoming a successful or cacheable
@@ -216,7 +224,7 @@ outcome.
 
 ## 6. GET Preview contract
 
-After the shared pipeline succeeds, GET alone:
+After GET's user-scoped context and the shared calculation succeed, GET alone:
 
 1. resolves and snapshots the Jellyfin-owned Source Sprite through Jellyfin's
    Trickplay manager;
@@ -231,6 +239,8 @@ GET retains the v1 success contract:
 - `200 OK` with a JPEG body for generated and cached representations;
 - `304 Not Modified` for a matching conditional request;
 - ETag behavior tied to the actual Preview Identity;
+- `X-Trickplay-Frame-Index` carrying the final request Frame Index on every
+  `200` HIT, `200` MISS, and `304`, through the typed GET success outcomes;
 - `Cache-Control`, `Content-Disposition`, `X-Trickplay-Cache`, and
   `Server-Timing`; and
 - no header exposing a cache-file path.
@@ -244,8 +254,8 @@ through normal cleanup.
 ## 7. Trickplay Frame Probe contract
 
 Add HTTP HEAD on the existing Preview route as the Trickplay Frame Probe. A
-dedicated `ITrickplayFrameProbe` accepts a normalized Preview query, the current
-claims principal, and cancellation token. It returns only:
+dedicated `ITrickplayFrameProbe` accepts a normalized Preview query and cancellation
+token. It receives no claims principal. It returns only:
 
 - success carrying Frame Index;
 - BadRequest;
@@ -269,15 +279,17 @@ The plugin must not add ETag, `Server-Timing`, `X-Trickplay-Cache`,
 headers outside plugin ownership may still appear on the wire.
 
 Every HEAD outcome is bodyless, including failures. `If-None-Match` is ignored.
-Successful HEAD proves authorization, exact metadata selection, and Frame Index
-calculation only. It does not prove that a Source Sprite exists or that GET can
-decode, cache, or encode the representation.
+Successful HEAD proves only that the ordinary endpoint policy accepted the request,
+real Item/source membership was found without a user, and exact metadata and Frame
+Index calculation succeeded. It does not prove visibility, playback permission, that
+a Source Sprite exists, or that GET can return or revalidate the representation.
 
-The Trickplay Frame Probe must not resolve or inspect a Source Sprite, create
+The Trickplay Frame Probe must not resolve a current user, perform user-scoped Item
+lookup, invoke playback authorization, resolve or inspect a Source Sprite, create
 Preview Identity, evaluate conditional GET, access the Cache Tree, acquire a
 decode permit, snapshot the filesystem, calculate sprite/cell/row/column/crop
 geometry, take a lock, write state, retry, or invoke the encoder. The shared
-pipeline also has no dependency on these GET-only facilities. GET alone computes
+calculation also has no dependency on authorization or these GET-only facilities. GET alone computes
 sprite index, cell, row, column, and crop geometry after Source Sprite
 resolution.
 
@@ -548,15 +560,20 @@ Run exactly four live cases:
 3. start and beyond-end positions for both playable Items; and
 4. the two-client Scrub Storm.
 
-HEAD and GET share the first three cases where applicable. For playback
-boundaries, read Jellyfin Trickplay metadata independently and predict Frame
-Index without using plugin output. Require HEAD's exact status, headers, and
-empty body. Require GET's JPEG contract, cache headers, ETag Frame Index
-component, and repeatability.
+HEAD and GET share the invalid-token and playback-boundary cases. The invisible
+Item is a GET concealment assertion only; HEAD is not permission evidence and must
+not be required to conceal it. A positive live HEAD assertion for an Item hidden from
+the harness user is allowed only when the subject is independently verified to have
+generated Trickplay metadata and a full-enumeration source membership.
+
+For playback boundaries, read Jellyfin Trickplay metadata independently and predict
+Frame Index without using plugin output. Require HEAD's exact status, headers, and
+empty body. Require GET's JPEG contract, cache headers, independent
+`X-Trickplay-Frame-Index`, ETag Frame Index component, and repeatability.
 
 The invented invalid token must produce `401` for HEAD and GET, with an empty
-HEAD body. The authenticated invisible Item must produce concealed `404`
-responses for both methods. Start and beyond-end requests must agree with the
+HEAD body. The authenticated invisible Item must produce a concealed GET `404`
+without a Frame Index header. Start and beyond-end requests must agree with the
 independently calculated Frame Index.
 
 The Scrub Storm uses:
@@ -623,19 +640,24 @@ incidental call counts, free-form messages, or timing luck.
 
 ### 12.1 Business logic and HTTP
 
-Extend the existing in-memory ASP.NET component seam for GET and the shared
-Preview-context pipeline. Add focused unit matrices for:
+Extend the existing in-memory ASP.NET component seam for GET, its authorization
+context, HEAD's user-independent source adapter, and the shared calculation. Add
+focused unit matrices for:
 
 - request parsing and status mapping;
-- current-user and logical-video authorization;
-- Media Source membership and source visibility;
+- current-user and logical-video authorization on GET;
+- GET user-shaped Media Source membership and source visibility;
+- HEAD absence of current-user, user-scoped visibility, and playback decisions;
+- HEAD full source enumeration with null user and explicit media probing disabled;
+- HEAD source identity and membership for default, local alternate, linked, and
+  eligible dynamic source shapes;
 - configuration shape and minimum-target selection;
 - duplicate and order independence;
 - even normalization, source-width clamping, and null source width;
 - exact metadata selection and validation;
 - Frame Index boundaries and checked arithmetic;
 - cancellation; and
-- complete redacted diagnostics.
+- request-local target copying and complete redacted diagnostics.
 
 Add focused Trickplay Frame Probe tests for every closed outcome and Frame Index
 clamping. Extend HTTP component tests for nullable raw HEAD binding, missing and
@@ -647,7 +669,9 @@ pipeline stage methods.
 
 Add one real-Kestrel automated seam that proves an empty HEAD body for every
 success and failure status. TestServer alone is insufficient for transport-level
-HEAD body suppression.
+HEAD body suppression. The real-Kestrel seam must also prove that ordinary
+authorization can accept a userless API key for HEAD while GET still refuses it, and
+that nonzero GET `200` and `304` responses carry the final Frame Index header.
 
 Do not add a behavioral spy test merely to prove that the Trickplay Frame Probe
 did not invoke Source Sprite, Cache Tree, or encoder collaborators. Enforce that
@@ -773,8 +797,9 @@ The complete three-layer Business Documentation prototype is retained at commit
 release-state-machine prototype at `d52cc0f` is evidence for alternatives and
 must not be implemented as the chosen design.
 
-ADR 0001 and ADR 0002 remain authoritative. ADR 0003 records the new, approved
-observability tradeoff. Integration Harness terms such as Privileged Phase,
+ADR 0001 and ADR 0002 remain authoritative. ADR 0003 records the approved
+observability tradeoff. ADR 0004 records the separate HEAD and GET authorization
+contexts and their shared calculation. Integration Harness terms such as Privileged Phase,
 Restart Budget, Load-Proof Gate, Logging Snapshot, Retained End State,
 Debug-Proof Gate, and Scrub Storm deliberately remain outside `CONTEXT.md`; the
 domain glossary continues to contain product vocabulary only.

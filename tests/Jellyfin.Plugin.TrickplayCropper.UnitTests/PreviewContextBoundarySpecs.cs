@@ -1,6 +1,9 @@
 using System.Reflection;
+using System.Security.Claims;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Trickplay;
 using Microsoft.Net.Http.Headers;
 using Xunit;
@@ -56,6 +59,17 @@ public sealed class PreviewContextBoundarySpecs
 
         Type[] exposedTypes = CollectExposedTypes([implementation]);
 
+        Assert.Contains(typeof(ITrickplayFrameCalculationResolver), exposedTypes);
+        Assert.All(exposedTypes, AssertSharedType);
+    }
+
+    [Fact]
+    public void SharedFrameCalculationResolverDependsOnNoGetOnlyFacility()
+    {
+        Type implementation = Assert.Single(CollectImplementations<ITrickplayFrameCalculationResolver>());
+
+        Type[] exposedTypes = CollectExposedTypes([implementation]);
+
         Assert.Contains(typeof(ITrickplayManager), exposedTypes);
         Assert.All(exposedTypes, AssertSharedType);
     }
@@ -82,7 +96,22 @@ public sealed class PreviewContextBoundarySpecs
 
         Type[] exposedTypes = CollectExposedTypes([implementation]);
 
-        Assert.Contains(typeof(IPreviewContextResolver), exposedTypes);
+        Assert.Contains(typeof(ITrickplayFrameProbeContextResolver), exposedTypes);
+        Assert.All(exposedTypes, AssertSharedType);
+    }
+
+    [Fact]
+    public void TrickplayFrameProbeContextHasNoCurrentUserOrPreviewAuthorityDependency()
+    {
+        Type implementation = Assert.Single(CollectImplementations<ITrickplayFrameProbeContextResolver>());
+
+        Type[] exposedTypes = CollectExposedTypes([implementation]);
+
+        Assert.DoesNotContain(typeof(IUserManager), exposedTypes);
+        Assert.DoesNotContain(typeof(User), exposedTypes);
+        Assert.DoesNotContain(typeof(ClaimsPrincipal), exposedTypes);
+        Assert.DoesNotContain(typeof(PreviewContext), exposedTypes);
+        Assert.Contains(typeof(ITrickplayFrameCalculationResolver), exposedTypes);
         Assert.All(exposedTypes, AssertSharedType);
     }
 

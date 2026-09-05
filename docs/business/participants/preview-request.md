@@ -17,11 +17,12 @@ JPEG frame cropped from a Source Sprite.
 
 ## May assume
 
-The same established front as the probe — see
-[the Trickplay Frame Probe](frame-probe.md) — plus one thing the probe does not get
-to assume: that the Source Sprite for the selected frame resolves and exists. That
-gate is the last one the preview request passes and the probe never reaches, and it
-is the whole difference between the two operations.
+A current user exists, the logical Item and Source Video are visible to that user, the
+user may play the logical video, the selected source belongs to the user-shaped Media
+Source enumeration, and the exact shared calculation succeeded. It also requires a
+Source Sprite for the selected frame to resolve and exist. The Frame Probe shares only
+the calculation; it establishes none of GET's user authority and never reaches the
+sprite gate. See [the Trickplay Frame Probe](frame-probe.md).
 
 ## Must not
 

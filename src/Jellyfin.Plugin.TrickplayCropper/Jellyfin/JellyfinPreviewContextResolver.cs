@@ -1,17 +1,15 @@
 using System.Security.Claims;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
-using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Trickplay;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Library;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 
 /// <summary>
-/// Resolves the shared Preview context through Jellyfin-owned managers.
+/// Resolves the user-authorized Preview context through Jellyfin-owned managers.
 /// </summary>
 internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
 {
@@ -21,29 +19,25 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
     private readonly IUserManager userManager;
     private readonly ILibraryManager libraryManager;
     private readonly IMediaSourceManager mediaSourceManager;
-    private readonly ITrickplayManager trickplayManager;
-    private readonly IServerConfigurationManager serverConfigurationManager;
+    private readonly ITrickplayFrameCalculationResolver calculationResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JellyfinPreviewContextResolver"/> class.
     /// </summary>
     /// <param name="userManager">Resolves the current Jellyfin user.</param>
-    /// <param name="libraryManager">Resolves user-scoped logical and Source Videos.</param>
+    /// <param name="libraryManager">Resolves user-visible logical and Source Videos.</param>
     /// <param name="mediaSourceManager">Enumerates the authorized logical video's Media Sources.</param>
-    /// <param name="trickplayManager">Reads the generated Trickplay metadata for one Source Video.</param>
-    /// <param name="serverConfigurationManager">Reads the current Trickplay configuration snapshot.</param>
+    /// <param name="calculationResolver">Performs the shared resolution and Frame Index calculation.</param>
     public JellyfinPreviewContextResolver(
         IUserManager userManager,
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
-        ITrickplayManager trickplayManager,
-        IServerConfigurationManager serverConfigurationManager)
+        ITrickplayFrameCalculationResolver calculationResolver)
     {
         this.userManager = userManager;
         this.libraryManager = libraryManager;
         this.mediaSourceManager = mediaSourceManager;
-        this.trickplayManager = trickplayManager;
-        this.serverConfigurationManager = serverConfigurationManager;
+        this.calculationResolver = calculationResolver;
     }
 
     /// <inheritdoc />
@@ -71,9 +65,9 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         }
 
         Video? logicalVideo = libraryManager.GetItemById<Video>(query.ItemId, user);
-        if (logicalVideo is null)
+        if (logicalVideo?.Id != query.ItemId)
         {
-            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
+            return Concealed();
         }
 
         if (logicalVideo.GetPlayAccess(user) != PlayAccess.Full)
@@ -107,119 +101,46 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         Video logicalVideo,
         CancellationToken cancellationToken)
     {
-        Guid mediaSourceId = query.ResolvedMediaSourceId;
         IReadOnlyList<MediaSourceInfo> mediaSources = await mediaSourceManager.GetPlaybackMediaSources(
             logicalVideo,
             user,
-            true,
-            false,
+            allowMediaProbe: true,
+            enablePathSubstitution: false,
             cancellationToken).ConfigureAwait(false);
         MediaSourceInfo? matchedSource = mediaSources.FirstOrDefault(
-            source => IsSelectedSource(source, mediaSourceId));
+            source => IsSelectedSource(source, query.ResolvedMediaSourceId));
         if (matchedSource is null)
         {
-            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
+            return Concealed();
         }
 
-        Video? sourceVideo = libraryManager.GetItemById<Video>(mediaSourceId, user);
-        if (sourceVideo is null)
+        Video? sourceVideo = libraryManager.GetItemById<Video>(query.ResolvedMediaSourceId, user);
+        if (sourceVideo?.Id != query.ResolvedMediaSourceId)
         {
-            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
+            return Concealed();
         }
 
-        int[]? configuredTargets = serverConfigurationManager.Configuration?.TrickplayOptions?.WidthResolutions;
-        int? normalizationSourceWidth = matchedSource.VideoStream?.Width;
-
-        int? selectedResolution;
-        try
+        TrickplayFrameCalculationResolution calculation = await calculationResolver
+            .ResolveAsync(query, matchedSource.VideoStream?.Width)
+            .ConfigureAwait(false);
+        return calculation switch
         {
-            selectedResolution = TrickplayResolutionSelector.Select(configuredTargets, normalizationSourceWidth);
-        }
-        catch (InvalidTrickplayConfigurationException failure)
-        {
-            failure.Configuration = new PreviewConfigurationDiagnostics
-            {
-                ConfiguredTargets = configuredTargets,
-                NormalizationSourceWidth = normalizationSourceWidth,
-            };
-            throw;
-        }
-
-        if (selectedResolution is null)
-        {
-            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.NoConfiguredTarget);
-        }
-
-        var configuration = new PreviewConfigurationDiagnostics
-        {
-            ConfiguredTargets = configuredTargets,
-            ChosenTarget = configuredTargets?.Min(),
-            SelectedResolution = selectedResolution,
-            NormalizationSourceWidth = normalizationSourceWidth,
+            TrickplayFrameCalculationResolution.Selected selected => new PreviewContextResolution.Resolved(
+                new PreviewContext(query.ResolvedMediaSourceId, sourceVideo, selected.Metadata, selected.FrameIndex)),
+            TrickplayFrameCalculationResolution.NotFound notFound => new PreviewContextResolution.NotFound(
+                notFound.Reason),
+            _ => throw new InvalidOperationException(
+                $"Unknown Trickplay Frame calculation {calculation.GetType().Name}."),
         };
-        return await SelectMetadataAsync(query, sourceVideo, configuration).ConfigureAwait(false);
     }
 
-    private async Task<PreviewContextResolution> SelectMetadataAsync(
-        PreviewQuery query,
-        Video sourceVideo,
-        PreviewConfigurationDiagnostics configuration)
+    private static PreviewContextResolution.NotFound Concealed()
     {
-        int selectedResolution = configuration.SelectedResolution!.Value;
-        Guid mediaSourceId = query.ResolvedMediaSourceId;
-        Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
-            .GetTrickplayResolutions(mediaSourceId)
-            .ConfigureAwait(false);
-        if (resolutions.Count == 0)
-        {
-            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.NoGeneratedMetadata);
-        }
-
-        if (!resolutions.TryGetValue(selectedResolution, out TrickplayInfo? info))
-        {
-            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.SelectedResolutionMissing);
-        }
-
-        if (info.ThumbnailCount <= 0)
-        {
-            return new PreviewContextResolution.NotFound(PreviewUnavailableReason.NoThumbnails);
-        }
-
-        TrickplayMetadata metadata = CreateMetadata(info);
-        try
-        {
-            metadata.Validate();
-            if (metadata.FrameWidth != selectedResolution)
-            {
-                throw new InvalidTrickplayMetadataException(
-                    metadata,
-                    "FrameWidthMatchesResolutionKey",
-                    metadata.FrameWidth);
-            }
-        }
-        catch (InvalidTrickplayMetadataException failure)
-        {
-            failure.Configuration = configuration with { GeneratedKeys = resolutions.Keys.Order().ToArray() };
-            throw;
-        }
-
-        return new PreviewContextResolution.Resolved(
-            new PreviewContext(mediaSourceId, sourceVideo, metadata, metadata.SelectFrameIndex(query.PositionTicks)));
+        return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
     }
 
     private static bool IsSelectedSource(MediaSourceInfo source, Guid mediaSourceId)
     {
         return Guid.TryParse(source.Id, out Guid candidateId) && candidateId == mediaSourceId;
-    }
-
-    private static TrickplayMetadata CreateMetadata(TrickplayInfo info)
-    {
-        return new TrickplayMetadata(
-            info.Width,
-            info.Height,
-            info.Interval,
-            info.TileWidth,
-            info.TileHeight,
-            info.ThumbnailCount);
     }
 }

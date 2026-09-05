@@ -22,16 +22,18 @@ that answers *why not something else*.
 
 ```mermaid
 flowchart TD
-    S1["Authorization and visibility<br/>carries: authorization and visibility"] --> S2["Resolution selection<br/>carries: resolution exactness"]
+    G["GET authorization and visibility<br/>carries: authorization and visibility"] --> S2["Resolution selection<br/>carries: resolution exactness"]
+    H["HEAD source facts<br/>carries: probe non-authority"] --> S2
     S2 --> S3["Frame Selection<br/>carries: frame determinism"]
     S3 --> P["The probe stops here<br/>carries: probe isolation"]
     S3 --> S4["Cache lookup and generation<br/>carries: cache identity,<br/>concurrency safety"]
     S4 --> S5["The Cache Tree over time<br/>carries: resource bounds"]
 ```
 
-The two stages carrying the most are the shared front — one broken gate there fails
-four promises at once — and the cache, where identity and coordination are two
-promises about the same file.
+The two stages carrying the most are GET's authorization front, where visibility and
+playback authority must remain ordered, and the cache, where identity and coordination
+are two promises about the same file. HEAD joins only at calculation and makes no
+authorization promise.
 
 ## Deliberate non-promises
 

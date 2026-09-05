@@ -5,10 +5,11 @@
 The existing Preview URI can support a lightweight probe with a dedicated
 `[HttpHead]` action. ASP.NET Core 9 matches HTTP methods exactly: a HEAD request
 does not fall back to the `[HttpGet]` action. The HEAD action must invoke a
-separate probe service and stop after authorization, Media Source membership,
-metadata lookup for an already determined Selected Trickplay Resolution, and a
-calculation that produces only the Frame Index. How that resolution is selected
-is a separate contract and outside this document. The HEAD action must never
+separate probe service and stop after ordinary endpoint policy, user-independent
+Item and Media Source membership, metadata lookup for an already determined
+Selected Trickplay Resolution, and a calculation that produces only the Frame
+Index. How that resolution is selected is a separate contract and outside this
+document. The HEAD action must never
 delegate to `GetAsync` or use the existing source resolver unchanged.
 
 A successful response is `200 OK`, has no content, and has exactly these two
@@ -23,9 +24,10 @@ It does not emit `ETag`, `Content-Type`, `Content-Disposition`,
 `X-Trickplay-Cache`, or `Server-Timing`; it does not read `If-None-Match`; and it
 must omit `Content-Length` rather than report zero. Server and middleware fields
 such as `Date`, `Server`, `X-Response-Time-ms`, and applicable CORS fields can
-still be present. HEAD success proves only that the authenticated request maps
-to a Frame Index. It does not prove that a Source Sprite or Preview Cache Entry
-exists, so a subsequent GET can still fail.
+still be present. HEAD success proves only that ordinary endpoint policy accepted
+the request and the user-independent source facts map to a Frame Index. It does
+not prove user visibility, playback permission, or that a Source Sprite or Preview
+Cache Entry exists, so a subsequent GET can still fail.
 
 ## Routing and action selection
 
@@ -60,13 +62,16 @@ before MVC executes the action. A valid API key is accepted by the default
 Jellyfin policy and receives an administrator role even without a current user,
 so `[Authorize]` alone is not the required content authorization boundary.
 
-The probe must preserve the GET path's application checks: resolve a current
-Jellyfin user, resolve the logical video for that user, require full play access,
-require the selected Media Source to be one of the user's playback sources,
-resolve that source video for the same user, and require its full play access.
-The resulting status mapping remains `401` for no usable user session, `403`
-for an API key without a current user or denied play access, and `404` for an
-invisible item or unavailable/unrelated Media Source.
+The probe must not preserve GET's user-scoped application checks. A valid API key
+without a current user may pass the ordinary policy and reach HEAD, while GET
+separately rejects it. HEAD resolves the logical Item and Source Video without a
+user, enumerates the full playback Media Source set with `user: null`, explicit
+media probing disabled, and path substitution disabled, and requires exact identity
+and membership. It does not resolve a current user, ask whether the user can see the
+Item, or invoke playback authorization. Its success is calculation availability,
+not permission evidence. The supported Jellyfin behavior for this enumeration is
+recorded in
+[the source-enumeration contract](jellyfin-10.11.11-frame-probe-source-enumeration-contract.md).
 
 The current typed binding cannot by itself guarantee an application-level empty
 HEAD response. `[ApiController]` turns invalid model state into an automatic
@@ -170,28 +175,26 @@ checks ETag, enters the Preview Cache, and can call the encoder. The implementat
 seam must instead be:
 
 1. A dedicated `ITrickplayFrameProbe` dependency on the HEAD action.
-2. Shared authorization and Media Source selection below both GET and HEAD.
-3. Shared metadata lookup for the already determined Selected Trickplay
-   Resolution; the policy that determines that resolution remains outside this
-   contract.
-4. A HEAD-only Frame Index calculation that reads only `Interval` and
-   `ThumbnailCount`, requires both to be positive, calculates
-   `ticksPerFrame = Interval * TimeSpan.TicksPerMillisecond` with checked
-   arithmetic, and returns
-   `min(PositionTicks / ticksPerFrame, ThumbnailCount - 1)`.
+2. Separate GET user authorization and HEAD user-independent source adapters.
+3. Shared request-local target copying, metadata validation, and Frame Index
+   calculation after each adapter establishes its required source facts.
+4. The shared calculation derives
+   `min(PositionTicks / (Interval * TimeSpan.TicksPerMillisecond), ThumbnailCount - 1)`
+   with checked arithmetic and validates exact selected metadata consistently for
+   both operations.
 5. A GET-only continuation through `FrameSelection.Create` for Source Sprite,
    cell, and crop geometry, followed by tile path, file snapshot, Preview
    Identity, conditional ETag, Preview Cache, decoder, and encoder work.
 
-Tests should make this boundary executable: a HEAD routing test must fail if the
-GET action/service is called; probe tests must allow `GetTrickplayResolutions`
-but throw if `GetTrickplayTilePathAsync` is called; cache and encoder spies must
-remain at zero; the Cache Tree must remain unchanged; and real-Kestrel HTTP tests
+Tests should make this boundary executable: dependency-direction tests keep
+current-user, user-scoped context, Source Sprite, cache, and encoder facilities out
+of the probe path; the Cache Tree must remain unchanged; and real-Kestrel HTTP tests
 must assert an empty content stream for success, malformed input, authorization
 failure, and mapped domain failures. The success test must also assert invariant
 decimal Frame Index formatting, the two plugin headers, and absence of ETag and
-all GET-only headers. A probe test with valid `Interval` and `ThumbnailCount`
-but invalid frame, tile, or crop geometry must still succeed with a Frame Index.
+all GET-only headers. Source-adapter tests must cover the supported default, local
+alternate, linked, and eligible dynamic source shapes and document that the fake
+does not execute Jellyfin provider or filesystem behavior.
 
 Sources: current plugin
 [`JellyfinPreviewSourceResolver`](https://github.com/xiakeng/trickplay-cropper/blob/e7a2c45/src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinPreviewSourceResolver.cs#L125-L193),

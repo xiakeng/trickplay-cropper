@@ -77,7 +77,7 @@ public sealed class TrickplayPreviewController : ControllerBase
             return CreateBodylessResult(StatusCodes.Status400BadRequest);
         }
 
-        TrickplayFrameProbeOutcome outcome = await trickplayFrameProbe.ProbeAsync(query, User, cancellationToken)
+        TrickplayFrameProbeOutcome outcome = await trickplayFrameProbe.ProbeAsync(query, cancellationToken)
             .ConfigureAwait(false);
         return MapProbeOutcome(outcome);
     }
@@ -134,7 +134,7 @@ public sealed class TrickplayPreviewController : ControllerBase
 
     private EmptyResult CreateFrameIndexResult(int frameIndex)
     {
-        Response.Headers[FrameIndexHeaderName] = frameIndex.ToString(CultureInfo.InvariantCulture);
+        ApplyFrameIndexHeader(frameIndex);
         Response.Headers.CacheControl = CacheControlHeaderValue;
         return CreateBodylessResult(StatusCodes.Status200OK);
     }
@@ -164,6 +164,7 @@ public sealed class TrickplayPreviewController : ControllerBase
 
     private FileContentResult MapOk(PreviewOutcome.Ok outcome)
     {
+        ApplyFrameIndexHeader(outcome.FrameIndex);
         ApplySharedHeaders(outcome.EntityTag, outcome.Telemetry);
         Response.Headers.ContentDisposition = "inline";
         Response.Headers["X-Trickplay-Cache"] = outcome.Telemetry.CacheDisposition.ToString().ToUpperInvariant();
@@ -174,8 +175,14 @@ public sealed class TrickplayPreviewController : ControllerBase
 
     private StatusCodeResult MapNotModified(PreviewOutcome.NotModified outcome)
     {
+        ApplyFrameIndexHeader(outcome.FrameIndex);
         ApplySharedHeaders(outcome.EntityTag, outcome.Telemetry);
         return StatusCode(StatusCodes.Status304NotModified);
+    }
+
+    private void ApplyFrameIndexHeader(int frameIndex)
+    {
+        Response.Headers[FrameIndexHeaderName] = frameIndex.ToString(CultureInfo.InvariantCulture);
     }
 
     private void ApplySharedHeaders(string entityTag, PreviewTelemetry telemetry)
