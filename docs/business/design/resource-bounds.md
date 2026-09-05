@@ -100,7 +100,9 @@ only about the bytes written to the tree.
 The in-memory metadata module removes expired observations, obsolete publication
 tombstones, completed-read tracking, and empty per-source state after no in-progress older
 read needs them. This prevents ordinary expiry and cancellation history from becoming
-permanent bookkeeping.
+permanent bookkeeping. Request traffic opportunistically revisits all retained source state
+at most once per 5-minute negative lifetime, avoiding both idle-source leaks and an internal
+cleanup timer.
 
 It deliberately adds no entry capacity, admission queue, load-concurrency limit, overload
 status, or same-key coalescing. Those are not implied by the 30-minute positive and

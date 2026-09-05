@@ -13,6 +13,8 @@ observation that would overwrite a newer positive or negative, or resurrect a va
 by newer invalid metadata. Caller cancellation cannot cancel Jellyfin's issued metadata
 query; the plugin therefore observes it through settlement and applies the same publication
 rules. Completed ordering state and expired observations are reclaimed when no older read is
-still in progress. The cache does not retain configuration, source inputs, request position,
+still in progress. Request traffic drives a cross-source reclamation pass at most once per
+negative lifetime, so idle-source state expires without an internal timer. The cache does not
+retain configuration, source inputs, request position,
 authorization, Source Sprite facts, operational failures, cancellation, or invalid metadata,
 and it adds no capacity limit, queue, coalescing, event invalidation, or filesystem polling.

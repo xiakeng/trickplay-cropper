@@ -939,17 +939,17 @@ public sealed class TrickplayPreviewHttpSpecs
         scenario.QueueMetadataRead(MetadataAvailability.ExactWidthMissing);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
-        Task<HttpResponseMessage> width320 = fixture.HeadAsync();
+        Task<HttpResponseMessage> initialWidthRequest = fixture.HeadAsync();
         await first.Started.WaitAsync(TimeSpan.FromSeconds(10));
         configuredTargets[0] = 640;
 
-        using HttpResponseMessage width640 = await fixture.HeadAsync();
-        await AssertTrickplayFrameProbeSuccessAsync(width640, 0);
+        using HttpResponseMessage alternateWidthResponse = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(alternateWidthResponse, 0);
         Assert.Equal(2, scenario.MetadataReadCount);
 
         first.Release();
-        using HttpResponseMessage completedWidth320 = await width320;
-        await AssertTrickplayFrameProbeSuccessAsync(completedWidth320, 0);
+        using HttpResponseMessage completedInitialWidth = await initialWidthRequest;
+        await AssertTrickplayFrameProbeSuccessAsync(completedInitialWidth, 0);
     }
 
     [Fact]
@@ -1059,13 +1059,13 @@ public sealed class TrickplayPreviewHttpSpecs
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
-        using HttpResponseMessage missing320 = await fixture.HeadAsync();
-        await AssertBodylessTrickplayFrameProbeFailureAsync(missing320, HttpStatusCode.NotFound);
+        using HttpResponseMessage missingSelectedWidth = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(missingSelectedWidth, HttpStatusCode.NotFound);
         Assert.Equal(1, scenario.MetadataReadCount);
 
         configuredTargets[0] = 640;
-        using HttpResponseMessage available640 = await fixture.HeadAsync();
-        await AssertTrickplayFrameProbeSuccessAsync(available640, 0);
+        using HttpResponseMessage availableObservedWidth = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(availableObservedWidth, 0);
         Assert.Equal(1, scenario.MetadataReadCount);
     }
 
@@ -1094,6 +1094,25 @@ public sealed class TrickplayPreviewHttpSpecs
     }
 
     [Fact]
+    public async Task RequestingAnotherSourceReclaimsExpiredIdleMetadataState()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initialSource = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initialSource, 0);
+        Assert.Equal(1, fixture.RetainedMetadataSourceCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(30));
+        scenario.UsesAlternateSource = true;
+        using HttpResponseMessage alternateSource = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(alternateSource, 0);
+
+        Assert.Equal(1, fixture.RetainedMetadataSourceCount);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
     public async Task WholeSourceAbsenceAppliesAcrossSelectedWidths()
     {
         int[] configuredTargets = [320];
@@ -1104,12 +1123,12 @@ public sealed class TrickplayPreviewHttpSpecs
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
-        using HttpResponseMessage missing320 = await fixture.HeadAsync();
-        await AssertBodylessTrickplayFrameProbeFailureAsync(missing320, HttpStatusCode.NotFound);
+        using HttpResponseMessage initialWidthAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(initialWidthAbsence, HttpStatusCode.NotFound);
         configuredTargets[0] = 640;
 
-        using HttpResponseMessage missing640 = await fixture.HeadAsync();
-        await AssertBodylessTrickplayFrameProbeFailureAsync(missing640, HttpStatusCode.NotFound);
+        using HttpResponseMessage alternateWidthAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(alternateWidthAbsence, HttpStatusCode.NotFound);
         Assert.Equal(1, scenario.MetadataReadCount);
     }
 
@@ -1124,8 +1143,8 @@ public sealed class TrickplayPreviewHttpSpecs
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
-        using HttpResponseMessage positive640 = await fixture.HeadAsync();
-        await AssertTrickplayFrameProbeSuccessAsync(positive640, 0);
+        using HttpResponseMessage observedWidthPositive = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(observedWidthPositive, 0);
 
         scenario.Time.Advance(TimeSpan.FromMinutes(5));
         configuredTargets[0] = 320;
@@ -1151,8 +1170,8 @@ public sealed class TrickplayPreviewHttpSpecs
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
-        using HttpResponseMessage positive640 = await fixture.HeadAsync();
-        await AssertTrickplayFrameProbeSuccessAsync(positive640, 0);
+        using HttpResponseMessage retainedWidthPositive = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedWidthPositive, 0);
 
         scenario.Time.Advance(TimeSpan.FromMinutes(5));
         configuredTargets[0] = 320;
@@ -2043,6 +2062,9 @@ public sealed class TrickplayPreviewHttpSpecs
                 .ToArray();
 
         public IServiceProvider Services => host.Services;
+
+        public int RetainedMetadataSourceCount =>
+            Services.GetRequiredService<TrickplayMetadataCache>().RetainedSourceCount;
 
         public string SourceSpritePath { get; }
 

@@ -240,7 +240,9 @@ and may execute independently. The public Jellyfin metadata query cannot cancel 
 read, so caller cancellation stops that caller's wait while the plugin observes the host
 task through settlement and applies the same publication rules. Expired facts, coverage,
 publication tombstones, completed-read tracking, and empty source state are reclaimed
-when no in-progress publication still needs their ordering evidence.
+when no in-progress publication still needs their ordering evidence. Request traffic may
+perform cross-source reclamation at most once per negative lifetime; no internal timer is
+required.
 
 This slice adds no capacity limit, load queue or concurrency bound, overload status,
 same-key coalescing, configuration/library event invalidation, or filesystem polling.

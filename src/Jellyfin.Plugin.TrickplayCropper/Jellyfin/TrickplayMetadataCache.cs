@@ -14,10 +14,14 @@ internal sealed class TrickplayMetadataCache
     private static readonly TimeSpan negativeLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan positiveLifetime = TimeSpan.FromMinutes(30);
 
+    private readonly object readIssuanceGate = new();
     private readonly ConcurrentDictionary<Guid, SourceState> sources = new();
     private readonly TimeProvider timeProvider;
     private readonly ITrickplayManager trickplayManager;
     private long nextObservationSequence;
+    private long nextReclamationUtcTicks;
+
+    internal int RetainedSourceCount => sources.Count;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayMetadataCache"/> class.
@@ -28,6 +32,7 @@ internal sealed class TrickplayMetadataCache
     {
         this.trickplayManager = trickplayManager;
         this.timeProvider = timeProvider;
+        nextReclamationUtcTicks = timeProvider.GetUtcNow().Add(negativeLifetime).UtcTicks;
     }
 
     /// <summary>
@@ -59,15 +64,21 @@ internal sealed class TrickplayMetadataCache
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        DateTimeOffset readStartedAt = timeProvider.GetUtcNow();
-        long sequence = Interlocked.Increment(ref nextObservationSequence);
-        SourceState source = GetSourceForRequest(request, readStartedAt, sequence, out var cached);
-        if (cached is not null)
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        ReclaimExpiredSources(now);
+        MetadataLookup lookup = GetSourceForRequest(request, now);
+        if (lookup is MetadataLookup.Cached cached)
         {
-            return cached;
+            return cached.Resolution;
         }
 
-        Task<ReadOutcome> read = ReadAndPublishAsync(source, request, readStartedAt, sequence);
+        if (lookup is not MetadataLookup.Missed missed)
+        {
+            throw new InvalidOperationException($"Unknown metadata lookup {lookup.GetType().Name}.");
+        }
+
+        IssuedRead issued = IssueRead(missed, request);
+        Task<ReadOutcome> read = ReadAndPublishAsync(missed.Source, request, issued);
         ReadOutcome outcome = await read.WaitAsync(cancellationToken).ConfigureAwait(false);
         return outcome switch
         {
@@ -77,51 +88,71 @@ internal sealed class TrickplayMetadataCache
         };
     }
 
-    private SourceState GetSourceForRequest(
-        MetadataRequest request,
-        DateTimeOffset now,
-        long sequence,
-        out TrickplayMetadataResolution? cached)
+    private MetadataLookup GetSourceForRequest(MetadataRequest request, DateTimeOffset now)
     {
         while (true)
         {
             SourceState source = sources.GetOrAdd(request.SourceVideoId, static _ => new SourceState());
-            if (source.TryResolveOrRegister(request, now, sequence, out cached))
+            SourceLookup lookup = source.ResolveOrReserve(request, now);
+            if (lookup is SourceLookup.Cached cached)
             {
-                return source;
+                return new MetadataLookup.Cached(cached.Resolution);
+            }
+
+            if (lookup is SourceLookup.Reserved reserved)
+            {
+                return new MetadataLookup.Missed(source, reserved.Registration);
             }
 
             sources.TryRemove(new KeyValuePair<Guid, SourceState>(request.SourceVideoId, source));
         }
     }
 
+    private IssuedRead IssueRead(MetadataLookup.Missed lookup, MetadataRequest request)
+    {
+        lock (readIssuanceGate)
+        {
+            var stamp = new ObservationStamp(
+                timeProvider.GetUtcNow(),
+                Interlocked.Increment(ref nextObservationSequence));
+            Task<Dictionary<int, TrickplayInfo>> query;
+            try
+            {
+                query = trickplayManager.GetTrickplayResolutions(request.SourceVideoId);
+            }
+            catch (Exception failure)
+            {
+                query = Task.FromException<Dictionary<int, TrickplayInfo>>(failure);
+            }
+
+            return new IssuedRead(lookup.Registration, stamp, query);
+        }
+    }
+
     private async Task<ReadOutcome> ReadAndPublishAsync(
         SourceState source,
         MetadataRequest request,
-        DateTimeOffset readStartedAt,
-        long sequence)
+        IssuedRead issued)
     {
         try
         {
-            Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
-                .GetTrickplayResolutions(request.SourceVideoId)
-                .ConfigureAwait(false);
+            Dictionary<int, TrickplayInfo> resolutions = await issued.Query.ConfigureAwait(false);
             MetadataObservation observation = CreateObservation(request.SelectedResolution, resolutions);
             DateTimeOffset completedAt = timeProvider.GetUtcNow();
-            if (!IsCurrent(observation.Resolution, readStartedAt, completedAt))
+            if (!IsCurrent(observation.Resolution, issued.Stamp.ReadStartedAt, completedAt))
             {
-                source.Reject(request.SelectedResolution, sequence);
+                source.Reject(request.SelectedResolution, issued.Stamp);
                 return ReadOutcome.Capture(
                     new InvalidOperationException(
                         "The generated Trickplay metadata observation expired before its read completed."));
             }
 
-            source.Publish(observation, request.SelectedResolution, readStartedAt, sequence);
+            source.Publish(observation, request, issued.Stamp);
             return new ReadOutcome.Succeeded(observation.Resolution);
         }
         catch (InvalidTrickplayMetadataException failure)
         {
-            source.Reject(request.SelectedResolution, sequence);
+            source.Reject(request.SelectedResolution, issued.Stamp);
             return ReadOutcome.Capture(failure);
         }
         catch (Exception failure)
@@ -130,9 +161,32 @@ internal sealed class TrickplayMetadataCache
         }
         finally
         {
-            if (source.Complete(sequence, timeProvider.GetUtcNow()))
+            if (source.Complete(issued.Registration, timeProvider.GetUtcNow()))
             {
                 sources.TryRemove(new KeyValuePair<Guid, SourceState>(request.SourceVideoId, source));
+            }
+        }
+    }
+
+    private void ReclaimExpiredSources(DateTimeOffset now)
+    {
+        long scheduledAt = Volatile.Read(ref nextReclamationUtcTicks);
+        if (now.UtcTicks < scheduledAt)
+        {
+            return;
+        }
+
+        long nextScheduledAt = now.Add(negativeLifetime).UtcTicks;
+        if (Interlocked.CompareExchange(ref nextReclamationUtcTicks, nextScheduledAt, scheduledAt) != scheduledAt)
+        {
+            return;
+        }
+
+        foreach ((Guid sourceVideoId, SourceState source) in sources)
+        {
+            if (source.TryRetire(now))
+            {
+                sources.TryRemove(new KeyValuePair<Guid, SourceState>(sourceVideoId, source));
             }
         }
     }
@@ -268,6 +322,31 @@ internal sealed class TrickplayMetadataCache
         int SelectedResolution,
         MetadataAccess Access);
 
+    private sealed record ObservationStamp(DateTimeOffset ReadStartedAt, long Sequence);
+
+    private sealed record ReadRegistration;
+
+    private sealed record IssuedRead(
+        ReadRegistration Registration,
+        ObservationStamp Stamp,
+        Task<Dictionary<int, TrickplayInfo>> Query);
+
+    private abstract record MetadataLookup
+    {
+        internal sealed record Cached(TrickplayMetadataResolution Resolution) : MetadataLookup;
+
+        internal sealed record Missed(SourceState Source, ReadRegistration Registration) : MetadataLookup;
+    }
+
+    private abstract record SourceLookup
+    {
+        internal sealed record Cached(TrickplayMetadataResolution Resolution) : SourceLookup;
+
+        internal sealed record Reserved(ReadRegistration Registration) : SourceLookup;
+
+        internal sealed record Retired : SourceLookup;
+    }
+
     private abstract record ReadOutcome
     {
         public static Failed Capture(Exception failure)
@@ -282,90 +361,85 @@ internal sealed class TrickplayMetadataCache
 
     private sealed class SourceState
     {
-        private readonly HashSet<long> activeReads = [];
+        private readonly HashSet<ReadRegistration> activeReads = [];
         private readonly object gate = new();
         private readonly Dictionary<int, OrderedResolution> resolutions = [];
         private Coverage? coverage;
         private bool retired;
 
-        public bool TryResolveOrRegister(
-            MetadataRequest request,
-            DateTimeOffset now,
-            long sequence,
-            out TrickplayMetadataResolution? resolution)
+        public SourceLookup ResolveOrReserve(MetadataRequest request, DateTimeOffset now)
         {
             lock (gate)
             {
-                resolution = null;
                 if (retired)
                 {
-                    return false;
+                    return new SourceLookup.Retired();
                 }
 
                 Prune(now);
                 OrderedResolution? current = FindCurrent(request.SelectedResolution);
                 if (CanReuse(current, request.Access, now))
                 {
-                    resolution = current!.Resolution;
-                    return true;
+                    return new SourceLookup.Cached(current!.Resolution!);
                 }
 
-                activeReads.Add(sequence);
-                return true;
+                var registration = new ReadRegistration();
+                activeReads.Add(registration);
+                return new SourceLookup.Reserved(registration);
             }
         }
 
         public void Publish(
             MetadataObservation observation,
-            int selectedResolution,
-            DateTimeOffset readStartedAt,
-            long sequence)
+            MetadataRequest request,
+            ObservationStamp stamp)
         {
             lock (gate)
             {
-                if (coverage is not null && coverage.Sequence > sequence)
+                if (coverage is not null && coverage.Stamp.Sequence > stamp.Sequence)
                 {
                     return;
                 }
 
-                PublishObservedRows(observation.Resolutions, readStartedAt, sequence);
-                TombstoneMissingRows(observation.Resolutions.Keys, sequence);
-                coverage = new Coverage(observation.Resolutions.Keys.ToArray(), readStartedAt, sequence);
-                if (!resolutions.TryGetValue(selectedResolution, out OrderedResolution? current)
-                    || current.Sequence < sequence)
+                PublishObservedRows(observation.Resolutions, stamp);
+                TombstoneMissingRows(observation.Resolutions.Keys, stamp);
+                coverage = new Coverage(observation.Resolutions.Keys.ToArray(), stamp);
+                if (!resolutions.TryGetValue(request.SelectedResolution, out OrderedResolution? current)
+                    || current.Stamp.Sequence < stamp.Sequence)
                 {
-                    resolutions[selectedResolution] = new OrderedResolution(
-                        observation.Resolution,
-                        readStartedAt,
-                        sequence);
+                    resolutions[request.SelectedResolution] = new OrderedResolution(observation.Resolution, stamp);
                 }
             }
         }
 
-        public void Reject(int selectedResolution, long sequence)
+        public void Reject(int selectedResolution, ObservationStamp stamp)
         {
             lock (gate)
             {
                 if (!resolutions.TryGetValue(selectedResolution, out OrderedResolution? current)
-                    || current.Sequence < sequence)
+                    || current.Stamp.Sequence < stamp.Sequence)
                 {
-                    resolutions[selectedResolution] = new OrderedResolution(null, null, sequence);
+                    resolutions[selectedResolution] = new OrderedResolution(null, stamp);
                 }
             }
         }
 
-        public bool Complete(long sequence, DateTimeOffset now)
+        public bool Complete(ReadRegistration registration, DateTimeOffset now)
         {
             lock (gate)
             {
-                activeReads.Remove(sequence);
+                activeReads.Remove(registration);
                 Prune(now);
-                if (activeReads.Count == 0 && coverage is null && resolutions.Count == 0)
-                {
-                    retired = true;
-                }
+                return RetireIfEmpty();
+            }
+        }
 
-                return retired;
+        public bool TryRetire(DateTimeOffset now)
+        {
+            lock (gate)
+            {
+                Prune(now);
+                return RetireIfEmpty();
             }
         }
 
@@ -379,8 +453,8 @@ internal sealed class TrickplayMetadataCache
             }
 
             bool derivedSupersedes = derived is not null
-                && (derived.Sequence > selected.Sequence
-                    || (derived.Sequence == selected.Sequence && selected.Resolution is null));
+                && (derived.Stamp.Sequence > selected.Stamp.Sequence
+                    || (derived.Stamp.Sequence == selected.Stamp.Sequence && selected.Resolution is null));
             return derivedSupersedes ? derived : selected;
         }
 
@@ -396,8 +470,7 @@ internal sealed class TrickplayMetadataCache
                 : PreviewUnavailableReason.SelectedResolutionMissing;
             return new OrderedResolution(
                 new TrickplayMetadataResolution.NotFound(reason),
-                coverage.ReadStartedAt,
-                coverage.Sequence);
+                coverage.Stamp);
         }
 
         private static bool CanReuse(
@@ -405,7 +478,7 @@ internal sealed class TrickplayMetadataCache
             MetadataAccess access,
             DateTimeOffset now)
         {
-            if (current?.Resolution is null || current.ReadStartedAt is null)
+            if (current?.Resolution is null)
             {
                 return false;
             }
@@ -416,41 +489,47 @@ internal sealed class TrickplayMetadataCache
                 return false;
             }
 
-            return IsCurrent(current.Resolution, current.ReadStartedAt.Value, now);
+            return IsCurrent(current.Resolution, current.Stamp.ReadStartedAt, now);
         }
 
         private void PublishObservedRows(
             IReadOnlyDictionary<int, TrickplayMetadata> observed,
-            DateTimeOffset readStartedAt,
-            long sequence)
+            ObservationStamp stamp)
         {
             foreach ((int width, TrickplayMetadata metadata) in observed)
             {
                 resolutions.TryGetValue(width, out OrderedResolution? current);
-                if (current is not null && current.Sequence >= sequence)
+                if (current is not null && current.Stamp.Sequence >= stamp.Sequence)
                 {
                     continue;
                 }
 
                 TrickplayMetadataResolution? reusable = CreateReusableResolution(width, metadata);
-                resolutions[width] = new OrderedResolution(
-                    reusable,
-                    reusable is null ? null : readStartedAt,
-                    sequence);
+                resolutions[width] = new OrderedResolution(reusable, stamp);
             }
         }
 
-        private void TombstoneMissingRows(IEnumerable<int> observedWidths, long sequence)
+        private void TombstoneMissingRows(IEnumerable<int> observedWidths, ObservationStamp stamp)
         {
             var observed = observedWidths.ToHashSet();
             foreach (int width in resolutions.Keys.Except(observed).ToArray())
             {
                 OrderedResolution current = resolutions[width];
-                if (current.Sequence < sequence)
+                if (current.Stamp.Sequence < stamp.Sequence)
                 {
-                    resolutions[width] = new OrderedResolution(null, null, sequence);
+                    resolutions[width] = new OrderedResolution(null, stamp);
                 }
             }
+        }
+
+        private bool RetireIfEmpty()
+        {
+            if (activeReads.Count == 0 && coverage is null && resolutions.Count == 0)
+            {
+                retired = true;
+            }
+
+            return retired;
         }
 
         private void Prune(DateTimeOffset now)
@@ -464,28 +543,23 @@ internal sealed class TrickplayMetadataCache
             {
                 OrderedResolution current = resolutions[width];
                 if (current.Resolution is null
-                    || current.ReadStartedAt is null
-                    || !IsCurrent(current.Resolution, current.ReadStartedAt.Value, now))
+                    || !IsCurrent(current.Resolution, current.Stamp.ReadStartedAt, now))
                 {
                     resolutions.Remove(width);
                 }
             }
 
             if (coverage is not null
-                && now - coverage.ReadStartedAt >= negativeLifetime)
+                && now - coverage.Stamp.ReadStartedAt >= negativeLifetime)
             {
                 coverage = null;
             }
         }
 
-        private sealed record Coverage(
-            int[] GeneratedKeys,
-            DateTimeOffset ReadStartedAt,
-            long Sequence);
+        private sealed record Coverage(int[] GeneratedKeys, ObservationStamp Stamp);
 
         private sealed record OrderedResolution(
             TrickplayMetadataResolution? Resolution,
-            DateTimeOffset? ReadStartedAt,
-            long Sequence);
+            ObservationStamp Stamp);
     }
 }
