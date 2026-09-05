@@ -68,14 +68,20 @@ public sealed class ReleaseContractSpecs
     }
 
     [Fact]
-    public void OnlyTheComponentTestsCarryPrivateLinuxNativeAssets()
+    public void OnlyStandaloneVerificationProjectsCarryPrivateLinuxNativeAssets()
     {
-        string componentProjectPath = RepositoryFiles.GetPath(
-            "tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/"
-            + "Jellyfin.Plugin.TrickplayCropper.ComponentTests.csproj");
-        XDocument componentProject = XDocument.Load(componentProjectPath);
-        Assert.Equal("false", GetProperty(componentProject, "IsPackable"));
-        Assert.Equal("false", GetProperty(componentProject, "IsPublishable"));
+        string[] allowedProjects =
+        [
+            RepositoryFiles.GetPath("tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/"
+                + "Jellyfin.Plugin.TrickplayCropper.ComponentTests.csproj"),
+            RepositoryFiles.GetPath("tools/TrickplayCropper.IntegrationHarness/TrickplayCropper.IntegrationHarness.csproj"),
+        ];
+        foreach (string path in allowedProjects)
+        {
+            XDocument project = XDocument.Load(path);
+            Assert.Equal("false", GetProperty(project, "IsPackable"));
+            Assert.Equal("false", GetProperty(project, "IsPublishable"));
+        }
 
         (string Path, XElement Reference)[] nativeReferences = EnumerateProjectPaths()
             .Select(path => (Path: path, Project: XDocument.Load(path)))
@@ -86,11 +92,12 @@ public sealed class ReleaseContractSpecs
                         StringComparison.Ordinal) == true)
                     .Select(reference => (item.Path, Reference: reference)))
             .ToArray();
-        (string nativeProjectPath, XElement nativeReference) = Assert.Single(nativeReferences);
-
-        Assert.Equal(componentProjectPath, nativeProjectPath);
-        Assert.Equal("SkiaSharp.NativeAssets.Linux.NoDependencies", nativeReference.Attribute("Include")!.Value);
-        Assert.Equal("all", nativeReference.Attribute("PrivateAssets")!.Value);
+        Assert.Equal(allowedProjects.Order(StringComparer.Ordinal), nativeReferences.Select(reference => reference.Path));
+        Assert.All(nativeReferences, reference =>
+        {
+            Assert.Equal("SkiaSharp.NativeAssets.Linux.NoDependencies", reference.Reference.Attribute("Include")!.Value);
+            Assert.Equal("all", reference.Reference.Attribute("PrivateAssets")!.Value);
+        });
     }
 
     [Fact]
