@@ -3,9 +3,33 @@
 Trickplay Cropper is a Jellyfin server plugin that exposes authenticated,
 single-frame Trickplay Previews from Jellyfin-owned Source Sprites.
 
-This repository contains the complete Trickplay Cropper v1 implementation,
-its deterministic unit and component verification, and its reproducible
-packaging pipeline.
+The plugin serves one JPEG frame of a video for an authorized playback position,
+cropped from trickplay data Jellyfin already generated. It never generates,
+modifies, or repairs that data. What it adds on top:
+
+- **Adaptive resolution selection.** Every request derives the Selected Trickplay
+  Resolution from the server's current Trickplay Resolution Targets — minimum
+  target, Jellyfin's own normalization rule for the Media Source, and an exact
+  generated-metadata match. No fallback width, no nearest substitute.
+- **The Trickplay Frame Probe.** A bodyless HTTP HEAD operation answers *which
+  frame does this position select?* through the same authorization and selection
+  pipeline as GET, then stops before any image work.
+- **User-scoped authorization with concealment.** Frames reach only callers who
+  may play the logical video; hidden Items answer exactly like absent ones, and a
+  server API key is not a user.
+- **A per-entry cache.** One Preview Cache Entry per derived artifact under the
+  plugin-owned Cache Tree, coordinated by tree leases and entry locks, kept honest
+  by a source version stamp, and emptied by a Jellyfin scheduled task.
+- **Stable structured Debug events.** A fixed EventId/EventName protocol exposes
+  cache disposition, lock, lease, and permit waits plus Frame Index and sprite
+  index — redaction-safe, Debug-only, and behavior-neutral.
+- **Human-gated automated releases.** Every push to `main` refreshes one pending
+  Release Pull Request; merging it publishes the installable ZIP as a stable
+  GitHub Release and updates the Jellyfin repository manifest.
+
+The complete business documentation — participants, lifecycle, and design, with a
+reading path and a route-by-question table — lives under
+[docs/business](docs/business/README.md).
 
 ## Compatibility
 
@@ -14,6 +38,35 @@ packaging pipeline.
 - Target framework: `net9.0`
 - .NET SDK: `9.0.317`
 - Plugin version: `1.0.0.0`
+
+## Install, update, and roll back
+
+Every stable version is published as a GitHub Release tagged `v<version>` and
+titled `Trickplay Cropper <version>`, carrying the validated JPRM ZIP as its only
+asset. The ZIP is flat and contains exactly:
+
+```text
+Jellyfin.Plugin.TrickplayCropper.dll
+meta.json
+```
+
+**Install manually.** Download the ZIP from the release page, extract those two
+files into one dedicated direct child directory of Jellyfin's plugins directory,
+then restart Jellyfin.
+
+**Install, update, and roll back through the catalog.** The repository root keeps a
+Jellyfin repository manifest (`manifest.json`) with one entry for every published
+stable release — versioned source URL, MD5 checksum, and timestamp derived from the
+actual published ZIP — in descending version order. Add this repository to Jellyfin's
+plugin repositories, and Jellyfin offers the plugin for installation, offers
+compatible updates as new stable versions appear, and supports exact-version
+rollback by letting you select any version the manifest retains. The manifest
+contains published stable releases only; drafts, prereleases, failed builds, and
+missing assets are never catalogued.
+
+Rolling back manually is the same operation as installing: download the ZIP of the
+exact version you want from its GitHub Release and replace the plugin directory's
+contents, then restart Jellyfin.
 
 ## Build and test
 
@@ -56,23 +109,32 @@ dotnet run --project tools/TrickplayCropper.PackageValidator \
 sha256sum artifacts/package/trickplay-cropper_1.0.0.0.zip
 ```
 
-The validated ZIP is flat and contains exactly:
+Generated package outputs are never committed; the installable ZIP lives on the
+GitHub Release, and CI's Package Validator is the package-install contract.
 
-```text
-Jellyfin.Plugin.TrickplayCropper.dll
-meta.json
-```
+## Release workflow
 
-## Release evidence
+No push publishes anything on its own. Every push to `main` — code, tests, tools,
+documentation, or workflow-only — has the `auto-release` workflow open or update
+one pending pull request titled `auto-release new version`. Its body carries the
+proposed changelog from the previous Release tag to the current `HEAD` and the
+computed next four-component version; routine releases increment the third
+component, and the committed but unpublished `1.0.0.0` is the floor, so the first
+automatic Release is `1.0.1.0`. A maintainer may edit major or minor components in
+the Release Pull Request before merge.
 
-A successful CI workflow, its source commit, the validated ZIP, and the
-matching SHA-256 file are the complete required v1 release evidence. CI does
-not claim proof of a live Jellyfin plugin load, host-provided Skia resolution,
-live authentication or manager integration, Dashboard persistence, or decoding
-of a real Jellyfin Source Sprite.
+Publication happens only when a human approves and merges that Release Pull
+Request. The `publish-release` workflow then runs the same locked restore,
+formatting, Release build, unit and component tests, JPRM packaging, and package
+validation as ordinary changes, and publishes the ZIP as the stable GitHub
+Release described above, reusing an existing Release or same-named asset on a
+workflow retry rather than recreating it.
 
-For manual installation, extract those two files into one dedicated direct
-child directory of Jellyfin's plugins directory, then restart Jellyfin.
+After publication, the same workflow submits a second pull request that updates
+the Jellyfin repository manifest from the actual published ZIP. That manifest pull
+request passes the same required checks, review, and merge protections as any
+other change and merges as a distinct automated actor without triggering another
+release cycle.
 
 ## Manual local Integration Harness
 
