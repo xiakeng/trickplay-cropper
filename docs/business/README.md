@@ -76,7 +76,7 @@ Two structural rules follow from the layers' jobs:
   narrow, tall one is drawn at full size and simply scrolls. Every diagram in this set is
   therefore top-down by default, keeps each rank to about four nodes and the whole view to
   about eight ranks, splits an oversized view in two instead of stretching it, and never
-  shares one terminal node across many ranks.
+  shares one terminal node across ranks.
 
 ## Language
 

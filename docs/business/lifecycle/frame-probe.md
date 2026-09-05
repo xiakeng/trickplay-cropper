@@ -45,7 +45,7 @@ on a probe is not honoured, and a probe never answers `304`.
 
 Failures are the same closed set as the preview request, because the gates are the same:
 `400` for a malformed query or a negative position, `401` and `403` for the authorization
-gates, `404` for an invisible Item, an unlisted Media Source, no configured target, no
+gates, `404` for an invisible Item, an unlisted Media Source, no Trickplay Resolution Target configured, no
 exact metadata match, or no available frames, and `500` for an unreadable or inconsistent
 configuration. A probe never fails on a missing sprite file, because it never looks. The
 full table is in [the response contract](response-contract.md).
@@ -63,8 +63,8 @@ flowchart TD
     Res --> Sel["Frame Selection"]
     Sel --> Out["X-Trickplay-Frame-Index<br/>Cache-Control: private, no-cache"]
 
-    Auth -->|"refused"| Fail["400 / 401 / 403 / 404 / 500"]
-    Res -->|"no exact match"| Fail
+    Auth -->|"refused"| FailAuth["400 / 401 / 403 / 404 / 500"]
+    Res -->|"no exact match"| FailRes["404 / 500"]
 
     subgraph Unreachable["Never reached by a probe"]
         direction LR

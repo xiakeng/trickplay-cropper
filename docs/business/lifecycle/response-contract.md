@@ -41,7 +41,7 @@ preview operation can fail on a missing sprite, because only it looks.
 | `400` | Malformed query, or negative playback position | yes | yes |
 | `401` | Unauthenticated caller | yes | yes |
 | `403` | Server API key caller, or playback not permitted | yes | yes |
-| `404` | Item invisible or absent, Media Source not a member, no configured target, no exact metadata match, no available frames | yes | yes |
+| `404` | Item invisible or absent, Media Source not a member, no Trickplay Resolution Target configured, no exact metadata match, no available frames | yes | yes |
 | `404` | Source Sprite unavailable | no | yes |
 | `405` | Method not supported; `Allow` advertises `GET, HEAD` | — | — |
 | `500` | Configuration unreadable or inconsistent, invalid recorded metadata, or an operational failure during generation | yes | yes |

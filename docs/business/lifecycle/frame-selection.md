@@ -27,10 +27,10 @@ rather than being estimated around.
    ticks. The result is the ordinal of the frame that covers this position.
 2. **Clamp to the last frame.** The generated sequence is finite, and the video
    usually runs past the last generated frame — the tail is covered by a partial
-   interval, or by nothing at all. Rather than refuse those positions, the Frame
-   Index is clamped to the last available frame. Clamping is a business rule, not
-   an error path: *the end of a video still has a preview, and it is the last
-   one.*
+   interval, or by nothing at all. Positions beyond the last frame resolve to the
+   last frame. Why this is a rule rather than an error is in
+   [frame determinism](../design/frame-determinism.md): *the end of a video still
+   has a preview, and it is the last one.*
 3. **Frame Index to Source Sprite.** One sprite holds tile width × tile height
    frames. Divide the Frame Index by that product to get the sprite, and take the
    remainder as the cell inside it.

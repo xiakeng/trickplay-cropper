@@ -43,7 +43,7 @@ and the plugin applies the same normalization instead of comparing raw numbers.
   exists to remove. It silently substitutes a width the administrator may never have
   configured, and it survives configuration changes that should have changed the
   output.
-- *Take another configured target when the minimum has no metadata* — serves a
+- *Take another current target when the minimum has no metadata* — serves a
   resolution the caller's client may not expect, and makes the answer depend on which
   targets happen to have data.
 - *Take the nearest recorded width* — the most dangerous of the four, because it

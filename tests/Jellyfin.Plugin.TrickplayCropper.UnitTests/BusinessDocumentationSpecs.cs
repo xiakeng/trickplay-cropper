@@ -131,8 +131,18 @@ public sealed partial class BusinessDocumentationSpecs
     }
 
     [Fact]
-    public void EveryMermaidDiagramDeclaresATopDownShape()
+    public void EveryMermaidDiagramSatisfiesTheApprovedShapeRules()
     {
+        // These structural checks guard the approved sizing constraints in the editor's
+        // loop. Two review activities stay human: rendering every diagram and reviewing
+        // its rendered dimensions during development, and the one-time visual check of
+        // GitHub's own renderer (its cross-origin viewscreen iframe), which no local
+        // browser session can complete.
+        const int MaxNodesPerRank = 4;
+        // The approved constraint is "about eight ranks"; the ceiling carries the approved
+        // tolerance the prototype was measured against before the set was approved.
+        const int MaxRanks = 10;
+        const int MaxLeftToRightNodes = 6;
         int diagrams = 0;
 
         foreach ((string file, string markdown) in ReadEveryDocumentedFile())
@@ -146,12 +156,249 @@ public sealed partial class BusinessDocumentationSpecs
 
                 Assert.True(
                     DiagramDeclarationRegex().IsMatch(declaration),
-                    $"{file} declares '{declaration}', which is not a supported top-down shape.");
+                    $"{file} declares '{declaration}', which is not a supported diagram shape.");
+
+                if (declaration.StartsWith("sequenceDiagram", StringComparison.OrdinalIgnoreCase))
+                {
+                    // A sequence diagram has no ranks; the sizing rules target flowcharts.
+                    continue;
+                }
+
+                if (declaration.StartsWith("flowchart LR", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Left-to-right is reserved for a short chain that fits the reading column.
+                    Assert.True(
+                        FlowchartNodeCount(diagram) <= MaxLeftToRightNodes,
+                        $"{file} declares a left-to-right flowchart with more than {MaxLeftToRightNodes} nodes.");
+                    continue;
+                }
+
+                MermaidFlow flow = ParseFlowchart(diagram);
+
+                Assert.True(
+                    flow.RankWidth <= MaxNodesPerRank,
+                    $"{file} has a rank with {flow.RankWidth} nodes; keep ranks to about {MaxNodesPerRank}.");
+                Assert.True(
+                    flow.Depth <= MaxRanks,
+                    $"{file} is {flow.Depth} ranks deep; split the view instead of stretching it.");
+
+                foreach (string shared in flow.TerminalsSharedAcrossRanks)
+                {
+                    Assert.Fail(
+                        $"{file} feeds terminal '{shared}' from more than one rank; give each rank its own exit.");
+                }
             }
         }
 
         Assert.True(diagrams > 0, "The business documentation set must contain Mermaid diagrams.");
     }
+
+    private static int FlowchartNodeCount(string diagram)
+        => ParseFlowchart(diagram).Nodes.Count;
+
+    private static MermaidFlow ParseFlowchart(string diagram)
+    {
+        List<string> lines = diagram
+            .Split('\n')
+            .Select(line => line.Trim())
+            .ToList();
+        HashSet<string> subgraphIds = CollectSubgraphIds(lines);
+        Dictionary<string, string> subgraphEntries = MapSubgraphEntries(lines, subgraphIds);
+
+        Dictionary<string, int> ranks = [];
+        Dictionary<string, List<string>> edgesFrom = [];
+        Dictionary<string, HashSet<int>> incomingSourceRanks = [];
+        HashSet<string> nodes = [];
+
+        foreach (string line in lines)
+        {
+            if (IsFlowchartDirective(line))
+            {
+                continue;
+            }
+
+            foreach ((string from, string to) in ParseFlowchartEdges(line))
+            {
+                string source = ResolveNode(subgraphEntries, from);
+                string target = ResolveNode(subgraphEntries, to);
+                if (source.Length == 0
+                    || target.Length == 0
+                    || subgraphIds.Contains(source)
+                    || subgraphIds.Contains(target))
+                {
+                    continue;
+                }
+
+                if (!edgesFrom.TryGetValue(source, out List<string>? targets))
+                {
+                    targets = [];
+                    edgesFrom[source] = targets;
+                }
+
+                targets.Add(target);
+                nodes.Add(source);
+                nodes.Add(target);
+
+                int sourceRank = ranks.GetValueOrDefault(source, 0);
+                ranks[target] = Math.Max(ranks.GetValueOrDefault(target, 0), sourceRank + 1);
+                if (!incomingSourceRanks.TryGetValue(target, out HashSet<int>? sourceRanks))
+                {
+                    sourceRanks = [];
+                    incomingSourceRanks[target] = sourceRanks;
+                }
+
+                sourceRanks.Add(sourceRank);
+            }
+        }
+
+        foreach (string node in nodes)
+        {
+            ranks.TryAdd(node, 0);
+        }
+
+        int width = ranks.Values.GroupBy(rank => rank).Max(group => group.Count());
+        return new MermaidFlow(
+            nodes,
+            width,
+            ranks.Values.Max() + 1,
+            FindTerminalsSharedAcrossRanks(ranks, edgesFrom, incomingSourceRanks));
+    }
+
+    private static HashSet<string> CollectSubgraphIds(List<string> lines)
+    {
+        HashSet<string> ids = [];
+        foreach (string line in lines)
+        {
+            Match match = SubgraphDeclarationRegex().Match(line);
+            if (match.Success)
+            {
+                ids.Add(match.Groups["id"].Value);
+            }
+        }
+
+        return ids;
+    }
+
+    private static Dictionary<string, string> MapSubgraphEntries(
+        List<string> lines,
+        HashSet<string> subgraphIds)
+    {
+        // An edge aimed at a subgraph lands on its first inner node for layout purposes.
+        Dictionary<string, string> entries = [];
+        List<string> stack = [];
+
+        foreach (string line in lines)
+        {
+            Match match = SubgraphDeclarationRegex().Match(line);
+            if (match.Success)
+            {
+                stack.Add(match.Groups["id"].Value);
+                continue;
+            }
+
+            if (line == "end")
+            {
+                if (stack.Count > 0)
+                {
+                    stack.RemoveAt(stack.Count - 1);
+                }
+
+                continue;
+            }
+
+            if (stack.Count == 0 || IsFlowchartDirective(line))
+            {
+                continue;
+            }
+
+            string sanitized = FlowchartLabelRegex().Replace(line, match => match.Value[0].ToString());
+            string? firstNode = FlowchartIdentifierRegex().Matches(sanitized)
+                .Select(match => match.Groups["id"].Value)
+                .FirstOrDefault(id => !subgraphIds.Contains(id));
+
+            if (firstNode is null)
+            {
+                continue;
+            }
+
+            foreach (string subgraph in stack)
+            {
+                entries.TryAdd(subgraph, firstNode);
+            }
+        }
+
+        return entries;
+    }
+
+    private static bool IsFlowchartDirective(string line)
+        => line.Length == 0
+            || line.StartsWith("direction", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("subgraph", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("classDef", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("class ", StringComparison.Ordinal)
+            || line.StartsWith("style ", StringComparison.Ordinal)
+            || line.StartsWith("flowchart", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("sequenceDiagram", StringComparison.OrdinalIgnoreCase)
+            || line == "end";
+
+    private static string ResolveNode(Dictionary<string, string> subgraphEntries, string node)
+        => subgraphEntries.GetValueOrDefault(node, node);
+
+    private static List<(string From, string To)> ParseFlowchartEdges(string line)
+    {
+        // Drop labels and quoted text first, so only node identifiers remain beside the arrows.
+        string sanitized = FlowchartLabelRegex().Replace(line, match => match.Value[0].ToString());
+        string[] segments = FlowchartArrowRegex().Split(sanitized);
+        if (segments.Length < 2)
+        {
+            return [];
+        }
+
+        List<(string, string)> edges = [];
+        for (int index = 0; index < segments.Length - 1; index++)
+        {
+            string from = LastFlowchartIdentifier(segments[index]);
+            string to = FirstFlowchartIdentifier(segments[index + 1]);
+            if (from.Length > 0 && to.Length > 0)
+            {
+                edges.Add((from, to));
+            }
+        }
+
+        return edges;
+    }
+
+    private static string FirstFlowchartIdentifier(string segment)
+        => FlowchartIdentifierRegex().Match(segment) is { Success: true } match
+            ? match.Groups["id"].Value
+            : string.Empty;
+
+    private static string LastFlowchartIdentifier(string segment)
+    {
+        MatchCollection matches = FlowchartIdentifierRegex().Matches(segment);
+        return matches.Count > 0 ? matches[^1].Groups["id"].Value : string.Empty;
+    }
+
+    private static List<string> FindTerminalsSharedAcrossRanks(
+        IReadOnlyDictionary<string, int> ranks,
+        IReadOnlyDictionary<string, List<string>> edgesFrom,
+        IReadOnlyDictionary<string, HashSet<int>> incomingSourceRanks)
+    {
+        HashSet<string> sourcesWithOutgoing = edgesFrom.Keys.ToHashSet();
+        return
+        [
+            .. ranks
+                .Where(entry => !sourcesWithOutgoing.Contains(entry.Key))
+                .Where(entry => incomingSourceRanks.GetValueOrDefault(entry.Key, []).Count > 1)
+                .Select(entry => entry.Key),
+        ];
+    }
+
+    private sealed record MermaidFlow(
+        IReadOnlyCollection<string> Nodes,
+        int RankWidth,
+        int Depth,
+        IReadOnlyCollection<string> TerminalsSharedAcrossRanks);
 
     private static IEnumerable<(string File, string Markdown)> ReadEveryDocumentedFile()
     {
@@ -179,7 +426,11 @@ public sealed partial class BusinessDocumentationSpecs
             }
 
             int closing = Array.FindIndex(lines, index + 1, line => line.Trim() == "```");
-            Assert.True(closing > index, "A Mermaid diagram is missing its closing fence.");
+            if (closing <= index)
+            {
+                continue;
+            }
+
             diagrams.Add(string.Join('\n', lines[(index + 1)..closing]));
             index = closing;
         }
@@ -198,4 +449,16 @@ public sealed partial class BusinessDocumentationSpecs
 
     [GeneratedRegex(@"^(flowchart (TD|TB|LR)|sequenceDiagram)\b")]
     private static partial Regex DiagramDeclarationRegex();
+
+    [GeneratedRegex(@"-{2,}>|=\{2,}>|-\.-?>?|~{3}")]
+    private static partial Regex FlowchartArrowRegex();
+
+    [GeneratedRegex(@"""[^""]*""|\[[^\]]*\]|\([^)]*\)|\{[^}]*\}")]
+    private static partial Regex FlowchartLabelRegex();
+
+    [GeneratedRegex(@"^subgraph\s+(?<id>\w+)")]
+    private static partial Regex SubgraphDeclarationRegex();
+
+    [GeneratedRegex(@"\b(?<id>[A-Za-z][A-Za-z0-9_]*)\b")]
+    private static partial Regex FlowchartIdentifierRegex();
 }

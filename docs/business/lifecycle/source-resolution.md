@@ -73,9 +73,9 @@ and no treating recorded metadata as authoritative in place of selection.
 | Metadata matches but a frame count is non-positive | `404` |
 | Recorded metadata is internally inconsistent for the selected width | `500` — invalid Jellyfin metadata, not a reason to guess another width |
 
-The exact-match rule knowingly refuses data that is servable: an odd or oversized target
-can leave recorded tiles under a key that differs from the Selected Trickplay Resolution.
-The tiles exist and the request still returns `404`, which is why both values are logged.
+The exact-match rule knowingly refuses data that is servable; why that trade is
+deliberate — and what gets logged so the mismatch is diagnosable — is in
+[resolution exactness](../design/resolution-exactness.md).
 
 Each request reads the configuration and the generated metadata once, as one snapshot,
 and does not retry if either changes underneath it: the race resolves into an ordinary

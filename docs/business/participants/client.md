@@ -44,7 +44,7 @@ sequenceDiagram
     participant P as Trickplay Cropper
 
     Note over C: user scrubs to a position
-    C->>P: HEAD probe for the position
+    C->>P: HEAD, the position
     P-->>C: X-Trickplay-Frame-Index,<br/>Cache-Control private no-cache
 
     Note over C: client-owned check: do I already<br/>hold this frame for this video?

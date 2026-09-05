@@ -40,8 +40,8 @@ flowchart TD
     Generate --> Buffer
     Buffer --> Answer["200 image/jpeg<br/>ETag, X-Trickplay-Cache, Server-Timing"]
 
-    Auth -->|"refused"| Refused["401 / 403 / 404"]
-    Resolution -->|"no exact metadata match"| Refused
+    Auth -->|"refused"| RefusedAuth["401 / 403 / 404"]
+    Resolution -->|"no exact metadata match"| RefusedResolution["404"]
 ```
 
 The two operations diverge only after Frame Selection. Everything before it — who is
@@ -52,7 +52,7 @@ position selects — is one path with one set of rules.
 
 | Chapter | What it covers |
 |---|---|
-| [Source resolution](source-resolution.md) | The authorization gates in order, and from the configured Trickplay Resolution Targets to one exact Selected Trickplay Resolution |
+| [Source resolution](source-resolution.md) | The authorization gates in order, and from the current Trickplay Resolution Targets to one exact Selected Trickplay Resolution |
 | [Trickplay Frame Probe](frame-probe.md) | What the HEAD operation may read, what it must never touch, and where it stops |
 | [Frame Selection](frame-selection.md) | Playback position to Frame Index, and Frame Index to sprite, cell, row, column, crop |
 | [Preview generation](preview-generation.md) | Cropping one frame out of a Source Sprite, and why only part of the sprite is decoded |

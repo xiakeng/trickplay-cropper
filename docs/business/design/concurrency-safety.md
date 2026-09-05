@@ -29,10 +29,12 @@ coordinates per entry, so unrelated requests are genuinely concurrent, and uses 
 tree-wide lease only where the *shape* of the tree changes. ADR 0001 records this
 choice.
 
-**Two locks, one order, always.** Tree lease then entry lock, released in reverse, on
-every path including the maintenance ones. A consistent order is what makes deadlock
-impossible between them — not a timeout, not a detection scheme, just never taking
-them the other way round.
+**Two locks, one order, always.** The design permits exactly one acquisition order
+between the tree lease and the entry lock, on every path including the maintenance
+ones. A consistent order is what makes deadlock impossible between them — not a
+timeout, not a detection scheme, just never taking them the other way round. The
+order itself, and every path that takes the locks, is drawn in
+[cache coordination](../lifecycle/cache-coordination.md).
 
 **Shared by default, exclusive only for shape changes.** Requests take the tree lease
 shared, so they never wait for each other at that level. Only removing an orphaned
@@ -45,20 +47,19 @@ the exclusive lease, new requests queue behind it instead of streaming past. Wit
 preference, a busy server would defer cleanup indefinitely, and the tree would grow
 for exactly as long as it was being used — the opposite of the intent.
 
-**Buffer before release.** The response is read into memory before either lock is
-released. This looks like an inefficiency and is the load-bearing rule: once the entry
-lock is released, the maintenance run is free to delete that entry, because from its
-point of view it is an ordinary file older than its cutoff. A response still referring
-to the file could then fail after having succeeded. Buffering makes a released entry
-nobody's problem.
+**Buffer before release.** This looks like an inefficiency and is the load-bearing
+rule: once the entry lock is released, the maintenance run is free to delete that
+entry, because from its point of view it is an ordinary file older than its cutoff.
+A response still referring to the file could then fail after having succeeded.
+Buffering makes a released entry nobody's problem.
 
-**Write temporary, publish atomically, and lose gracefully.** Generation writes beside
-the final path and moves into it with an operation that refuses to overwrite. The
-refusal is the entire cross-process story: two writers, whichever move lands first
-wins, and the loser reads the winner's entry and reports a hit. Losing is not an error
-and is not retried, because both writers produced equivalent bytes and retrying would
-be a second generation. ADR 0001 names this the final guard against activity outside
-the process, which no in-process lock can reach.
+**Write temporary, publish atomically, and lose gracefully.** Losing a publication
+race must be an ordinary outcome rather than an error: both writers produced
+equivalent bytes, so the loser reuses the winner's entry instead of generating a
+second time. ADR 0001 names this the final guard against activity outside the
+process, which no in-process lock can reach. The move itself, and the branches a
+writer takes, is drawn in
+[the publication race](../lifecycle/cache-coordination.md).
 
 **No timeouts, only cancellation.** A timeout would have to pick a duration that is
 too short for a contended entry and too long to matter. Cancellation is exact: a caller

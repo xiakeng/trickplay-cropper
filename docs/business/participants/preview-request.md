@@ -34,9 +34,9 @@ is the whole difference between the two operations.
   [frame determinism](../design/frame-determinism.md).
 - **Read or write outside the Cache Tree**, or follow a path that leaves it. The
   boundary is in [the Cache Tree](cache-tree.md).
-- **Hold a lock past the point of usefulness.** The response is buffered before
-  anything is released, so a request never depends on a file it has stopped
-  guarding. See [concurrency safety](../design/concurrency-safety.md).
+- **Hold a lock past the point of usefulness.** A request never depends on a file it
+  has stopped guarding; the rule that makes this true is a coordination rule, in
+  [concurrency safety](../design/concurrency-safety.md).
 
 ## Faces
 
