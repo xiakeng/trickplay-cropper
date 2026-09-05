@@ -419,6 +419,9 @@
           "SkiaSharp": "[3.116.1, )"
         }
       },
+      "trickplaycropper.integrationharness": {
+        "type": "Project"
+      },
       "trickplaycropper.manifestbuilder": {
         "type": "Project"
       },

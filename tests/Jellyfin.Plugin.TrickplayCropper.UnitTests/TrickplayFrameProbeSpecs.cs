@@ -139,6 +139,10 @@ public sealed class TrickplayFrameProbeSpecs
         Assert.IsType<TrickplayFrameProbeOutcome.NotFound>(outcome);
         RecordingLogger<TrickplayFrameProbe>.RecordedLog log = Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Debug, log.Level);
+        using System.Text.Json.JsonDocument envelope = System.Text.Json.JsonDocument.Parse(
+            log.Message["TrickplayDebug ".Length..]);
+        Assert.Equal(1001, envelope.RootElement.GetProperty("EventId").GetInt32());
+        Assert.Equal(reason, envelope.RootElement.GetProperty("Reason").GetString());
         Assert.Equal(1001, log.EventId.Id);
         Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
         Assert.Equal(expected, Assert.IsType<PreviewUnavailableReason>(log.Properties["Reason"]));

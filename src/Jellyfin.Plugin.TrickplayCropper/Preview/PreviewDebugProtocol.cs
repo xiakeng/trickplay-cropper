@@ -37,7 +37,7 @@ internal static partial class PreviewDebugProtocol
         EventId = 1002,
         EventName = "TrickplayPreviewFrameSelected",
         Level = LogLevel.Debug,
-        Message = "Trickplay Preview selected FrameIndex {FrameIndex} on SpriteIndex {SpriteIndex}.")]
+        Message = """TrickplayDebug {{"EventId":1002,"EventName":"TrickplayPreviewFrameSelected","FrameIndex":{FrameIndex},"SpriteIndex":{SpriteIndex}}}""")]
     public static partial void LogFrameSelected(ILogger logger, int frameIndex, int spriteIndex);
 
     /// <summary>
@@ -49,7 +49,7 @@ internal static partial class PreviewDebugProtocol
         EventId = 1003,
         EventName = "TrickplayPreviewCacheDisposition",
         Level = LogLevel.Debug,
-        Message = "Trickplay Preview served from cache with disposition {CacheDisposition}.")]
+        Message = """TrickplayDebug {{"EventId":1003,"EventName":"TrickplayPreviewCacheDisposition","CacheDisposition":"{CacheDisposition}"}}""")]
     public static partial void LogCacheDisposition(ILogger logger, PreviewCacheDisposition cacheDisposition);
 
     /// <summary>
@@ -60,7 +60,7 @@ internal static partial class PreviewDebugProtocol
         EventId = 1004,
         EventName = "TrickplayPreviewEntryLockWaiting",
         Level = LogLevel.Debug,
-        Message = "Trickplay Preview is waiting for Preview Cache Entry ownership.")]
+        Message = """TrickplayDebug {{"EventId":1004,"EventName":"TrickplayPreviewEntryLockWaiting"}}""")]
     public static partial void LogEntryLockWaiting(ILogger logger);
 
     /// <summary>
@@ -71,7 +71,7 @@ internal static partial class PreviewDebugProtocol
         EventId = 1005,
         EventName = "TrickplayPreviewEntryLockOwned",
         Level = LogLevel.Debug,
-        Message = "Trickplay Preview owns the Preview Cache Entry.")]
+        Message = """TrickplayDebug {{"EventId":1005,"EventName":"TrickplayPreviewEntryLockOwned"}}""")]
     public static partial void LogEntryLockOwned(ILogger logger);
 
     /// <summary>
@@ -82,7 +82,7 @@ internal static partial class PreviewDebugProtocol
         EventId = 1006,
         EventName = "TrickplayPreviewCacheTreeLeaseWaiting",
         Level = LogLevel.Debug,
-        Message = "Trickplay Preview is waiting for a Cache Tree lease.")]
+        Message = """TrickplayDebug {{"EventId":1006,"EventName":"TrickplayPreviewCacheTreeLeaseWaiting"}}""")]
     public static partial void LogCacheTreeLeaseWaiting(ILogger logger);
 
     /// <summary>
@@ -93,13 +93,13 @@ internal static partial class PreviewDebugProtocol
         EventId = 1007,
         EventName = "TrickplayPreviewDecodePermitWaiting",
         Level = LogLevel.Debug,
-        Message = "Trickplay Preview is waiting for a decode permit.")]
+        Message = """TrickplayDebug {{"EventId":1007,"EventName":"TrickplayPreviewDecodePermitWaiting"}}""")]
     public static partial void LogDecodePermitWaiting(ILogger logger);
 
     [LoggerMessage(
         EventId = 1001,
         EventName = "TrickplayPreviewUnavailable",
         Level = LogLevel.Debug,
-        Message = "Trickplay Preview resolved unavailable with reason {Reason}.")]
+        Message = """TrickplayDebug {{"EventId":1001,"EventName":"TrickplayPreviewUnavailable","Reason":"{Reason}"}}""")]
     private static partial void LogUnavailableReason(ILogger logger, PreviewUnavailableReason reason);
 }
