@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace TrickplayCropper.IntegrationHarness;
 
-/// <summary>Runs the manual deployment milestone using only source-defined local host settings.</summary>
+/// <summary>Runs the manual deployment and first three smoke cases using only source-defined local host settings.</summary>
 internal sealed class HarnessApplication
 {
     private const string AssemblyName = "Jellyfin.Plugin.TrickplayCropper";
@@ -84,11 +84,15 @@ internal sealed class HarnessApplication
         DeploymentCycle cycle = new(Console.Out);
         bool success = await cycle.RunAsync(
             () => PrepareAsync(version),
-            () => VerifyAsync(host, input, version, mode, cancellationToken),
+            async () =>
+            {
+                await host.VerifyDeploymentAsync(input, version, cancellationToken).ConfigureAwait(false);
+                await VerifyAsync(http, input, mode, cancellationToken).ConfigureAwait(false);
+            },
             () => RestoreAsync(host)).ConfigureAwait(false);
         Console.WriteLine(success
-            ? "Deployment milestone passed. Debug plugin and Cache Tree retained; smoke cases #76/#77 are not part of this milestone."
-            : "Deployment milestone failed; see restoration result above.");
+            ? "Smoke cases #76 passed and restoration is healthy. Debug plugin and Cache Tree retained; Scrub Storm #77 is not included."
+            : "Integration Harness failed; see the last verification stage and restoration result above.");
         return success ? 0 : 1;
     }
 
@@ -127,14 +131,14 @@ internal sealed class HarnessApplication
         await host.WaitForHealthAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
-    private static async Task VerifyAsync(LocalJellyfin host, HarnessInput input, string version, string mode,
+    private static async Task VerifyAsync(HttpClient http, HarnessInput input, string mode,
         CancellationToken cancellationToken)
     {
-        await host.VerifyDeploymentAsync(input, version, cancellationToken).ConfigureAwait(false);
         Console.WriteLine("Health, Load-Proof, and fresh structured Debug-Proof gates passed.");
+        await new SmokeCases(http, Console.Out).RunAsync(input, cancellationToken).ConfigureAwait(false);
         if (mode == "--verify-restoration")
         {
-            Console.WriteLine("Injecting an assertion failure after real deployment gates to exercise unconditional restoration.");
+            Console.WriteLine("Injecting an assertion failure after the real smoke cases to exercise unconditional restoration.");
             throw new InvalidOperationException("Intentional restoration verification failure.");
         }
     }

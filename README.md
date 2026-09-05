@@ -76,7 +76,7 @@ child directory of Jellyfin's plugins directory, then restart Jellyfin.
 
 ## Manual local Integration Harness
 
-The deployment milestone is a manually invoked `net9.0` console program. It
+The Integration Harness is a manually invoked `net9.0` console program. It
 validates a human-supplied administrator **user access token** (not a server API
 key), exactly two playable video Item IDs, and one existing Item concealed from
 that user. Copy `harness.example.json` to the gitignored root `harness.json` and
@@ -101,9 +101,9 @@ enumerate or provision media.
 dotnet restore TrickplayCropper.sln --locked-mode
 # Validate the supplied subjects only; no elevation, deployment, or restart.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --check
-# Perform one deployment and restoration cycle.
+# Deploy, run authentication/visibility/playback-boundary smoke cases, and restore.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness
-# Exercise a deliberate assertion failure after the real deployment gates.
+# Exercise a deliberate assertion failure after the real smoke cases.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --verify-restoration
 ```
 
@@ -137,9 +137,19 @@ transcript, run-lock, or other state files are written. A partial snapshot,
 SIGKILL, power loss, lost restoration privilege, or failed restart requires human
 recovery; inspect any surviving snapshot before starting again.
 
-This milestone covers deployment and recovery only. The four fixed smoke cases
-(invalid token, invisible Item, playback boundaries, and Scrub Storm) belong to
-#76 and #77. Other live gaps include playback-policy 403, alternate Media Sources,
+The first three smoke cases verify invented invalid-token HEAD/GET responses
+(401), concealed-Item HEAD/GET responses (404), and start/beyond-end playback
+positions for both supplied Items. Expected Frame Index values come independently
+from Jellyfin's user-scoped playback information, current resolution targets,
+and generated Trickplay metadata, never from plugin responses or product helpers.
+The beyond-end position is one tick after the Media Source runtime. HEAD checks
+its status, exact plugin headers and empty body; GET checks inline JPEG type,
+complete decoding and metadata dimensions, content length, cache policy and
+disposition, timing, strong ETag Frame Index, and repeat HIT with identical bytes
+and ETag. Only ordinal subject labels and non-secret numeric results reach stdout.
+The harness writes no live evidence files; copy the safe results into the PR.
+
+Scrub Storm remains #77. Other live gaps include playback-policy 403, alternate Media Sources,
 every 500 shape, source-width clamping, multiple targets, media-side Source
 Sprites, absent metadata/thumbnails/sprites, cleanup, Cache Tree seeding and lease
 contention. Debug DLL deployment does not verify the shippable ZIP; CI's Package
