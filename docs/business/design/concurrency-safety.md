@@ -93,8 +93,8 @@ order, the two-caller case, and the publication race.
 
 ## How a caller observes it
 
-`Server-Timing`, which reports the lookup, cache, decode, and encode stages with their
-durations. A wait appears there as time rather than as a named event, so a slow preview
-can be attributed to a stage without server access — and the difference between "the
-cache is contended" and "the encoder is saturated" is visible, which matters because
-the two have opposite remedies.
+Through `Server-Timing`, whose stages and durations are listed in
+[the response contract](../lifecycle/response-contract.md). A wait appears there as
+time rather than as a named event, so a slow preview can be attributed to a stage
+without server access — and the difference between "the cache is contended" and "the
+encoder is saturated" is visible, which matters because the two have opposite remedies.

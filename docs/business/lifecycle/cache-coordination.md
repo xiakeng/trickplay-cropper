@@ -104,8 +104,8 @@ may remove it, under an exclusive tree lease.
 
 ## What is observable
 
-A caller sees coordination only through `Server-Timing`, which reports how long the
-lookup, cache, decode, and encode stages took. A wait shows up there as time, not
+A caller sees coordination only through `Server-Timing`, whose stage list is owned by
+[the response contract](response-contract.md). A wait shows up there as time, not
 as a named event.
 
 For diagnosis on the server, the waits themselves are observable as one stable

@@ -31,11 +31,12 @@ and — because the choice is stable across configuration edits that add larger 
 — it keeps the Preview Cache Entry identity stable. A choice that varied with
 unrelated configuration changes would silently invalidate the whole tree.
 
-**Jellyfin's normalization is mirrored, not guessed.** Generation rounds an odd width
-down to even and clamps a width larger than the video down to the video's width, so
-the recorded width can legitimately differ from the target that produced it. A raw
-equality test between a target and a recorded key is therefore not universally valid,
-and the plugin applies the same normalization instead of comparing raw numbers.
+**Jellyfin's normalization is mirrored, not guessed.** Generation can change a
+requested width before recording it, so the recorded width can legitimately differ
+from the target that produced it. A raw equality test between a target and a
+recorded key is therefore not universally valid, and the plugin applies the same
+normalization instead of comparing raw numbers. What the rule itself does is
+[Jellyfin's to state](../participants/jellyfin-server.md).
 
 **No fallback of any kind.** Four alternatives were considered and rejected:
 

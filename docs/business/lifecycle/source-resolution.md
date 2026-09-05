@@ -53,10 +53,11 @@ Once the effective Source Video is known:
 1. **Take the minimum current Trickplay Resolution Target.** Several targets are not an
    error. An empty target array means the server generates nothing, so there is nothing
    to serve.
-2. **Normalize it with Jellyfin's rule for this Media Source.** An odd target is rounded
-   down to an even width; a target wider than the Source Video is clamped to the video's
-   width, also rounded down to even. The result is the **Selected Trickplay Resolution**
-   — source-specific, because the clamp depends on the video.
+2. **Normalize it with Jellyfin's rule for this Media Source.** The rule itself is
+   Jellyfin's, and is recorded where the behaviour comes from:
+   [Jellyfin Server](../participants/jellyfin-server.md). The result of applying it here
+   is the **Selected Trickplay Resolution** — source-specific, because the rule depends
+   on the video.
 3. **Require the generated metadata to match it exactly.** The recorded metadata for the
    effective Source Video must contain an entry at precisely the Selected Trickplay
    Resolution, with positive height, interval, tile width, tile height, and thumbnail

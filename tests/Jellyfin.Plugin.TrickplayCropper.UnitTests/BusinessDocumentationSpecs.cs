@@ -295,17 +295,19 @@ public sealed partial class BusinessDocumentationSpecs
     private static void AssignStableRanks(
         Dictionary<string, int> ranks,
         IReadOnlyDictionary<string, List<string>> edgesFrom,
-        IReadOnlyCollection<string> nodes)
+        HashSet<string> nodes)
     {
         foreach (string node in nodes)
         {
             ranks.TryAdd(node, 0);
         }
 
-        bool changed = true;
-        while (changed)
+        // A longest path in an acyclic graph is at most the node count, so more rounds
+        // than that can only mean a cycle; fail rather than hang on it.
+        int maxRounds = nodes.Count + 1;
+        for (int round = 0; round < maxRounds; round++)
         {
-            changed = false;
+            bool changed = false;
             foreach ((string from, List<string> targets) in edgesFrom)
             {
                 int sourceRank = ranks[from] + 1;
@@ -318,7 +320,14 @@ public sealed partial class BusinessDocumentationSpecs
                     }
                 }
             }
+
+            if (!changed)
+            {
+                return;
+            }
         }
+
+        Assert.Fail("The flowchart contains a cycle, so its ranks never stabilize.");
     }
 
     private static IEnumerable<(string From, string To)> EnumerateFlowchartEdges(
@@ -335,6 +344,13 @@ public sealed partial class BusinessDocumentationSpecs
 
             foreach ((string from, string to) in ParseFlowchartEdges(line))
             {
+                // Group-to-group edges decorate ownership between subgraphs; Mermaid lays
+                // them out as cluster borders, not as ranks, so they do not join the graph.
+                if (subgraphIds.Contains(from) && subgraphIds.Contains(to))
+                {
+                    continue;
+                }
+
                 string source = subgraphEntries.GetValueOrDefault(from, from);
                 string target = subgraphEntries.GetValueOrDefault(to, to);
                 if (source.Length > 0
@@ -506,7 +522,7 @@ public sealed partial class BusinessDocumentationSpecs
     [GeneratedRegex(@"\[[^\]]*\]\((?<target>[^)\s]*)\)")]
     private static partial Regex MarkdownLinkRegex();
 
-    [GeneratedRegex(@"(?i)(:\d+|line\s+\d)")]
+    [GeneratedRegex(@"(?i)(:\d+|lines?\s+\d|\bL\d+\b)")]
     private static partial Regex LineAnchorRegex();
 
     [GeneratedRegex(@"(?m)^##\s")]
