@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.TrickplayCropper.Preview;
@@ -14,11 +13,10 @@ internal sealed class TrickplayMetadataCache
     private static readonly TimeSpan negativeLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan positiveLifetime = TimeSpan.FromMinutes(30);
 
-    private readonly ConcurrentDictionary<Guid, SourceState> sources = new();
+    private readonly ReclaimingSourceCollection<SourceState> sources;
     private readonly TimeProvider timeProvider;
     private readonly ITrickplayManager trickplayManager;
     private long nextObservationSequence;
-    private long nextReclamationUtcTicks;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayMetadataCache"/> class.
@@ -29,7 +27,10 @@ internal sealed class TrickplayMetadataCache
     {
         this.trickplayManager = trickplayManager;
         this.timeProvider = timeProvider;
-        nextReclamationUtcTicks = timeProvider.GetUtcNow().Add(negativeLifetime).UtcTicks;
+        sources = new ReclaimingSourceCollection<SourceState>(
+            timeProvider,
+            negativeLifetime,
+            static (source, now) => source.TryRetire(now));
     }
 
     /// <summary>
@@ -62,7 +63,6 @@ internal sealed class TrickplayMetadataCache
     {
         cancellationToken.ThrowIfCancellationRequested();
         DateTimeOffset now = timeProvider.GetUtcNow();
-        ReclaimExpiredSources(now);
         MetadataLookup lookup = GetSourceForRequest(request, now);
         if (lookup is MetadataLookup.Cached cached)
         {
@@ -101,7 +101,7 @@ internal sealed class TrickplayMetadataCache
                 return new MetadataLookup.Missed(source, reserved.Registration);
             }
 
-            sources.TryRemove(new KeyValuePair<Guid, SourceState>(request.SourceVideoId, source));
+            sources.TryRemove(request.SourceVideoId, source);
         }
     }
 
@@ -157,30 +157,7 @@ internal sealed class TrickplayMetadataCache
         {
             if (source.Complete(issued.Registration, timeProvider.GetUtcNow()))
             {
-                sources.TryRemove(new KeyValuePair<Guid, SourceState>(request.SourceVideoId, source));
-            }
-        }
-    }
-
-    private void ReclaimExpiredSources(DateTimeOffset now)
-    {
-        long scheduledAt = Volatile.Read(ref nextReclamationUtcTicks);
-        if (now.UtcTicks < scheduledAt)
-        {
-            return;
-        }
-
-        long nextScheduledAt = now.Add(negativeLifetime).UtcTicks;
-        if (Interlocked.CompareExchange(ref nextReclamationUtcTicks, nextScheduledAt, scheduledAt) != scheduledAt)
-        {
-            return;
-        }
-
-        foreach ((Guid sourceVideoId, SourceState source) in sources)
-        {
-            if (source.TryRetire(now))
-            {
-                sources.TryRemove(new KeyValuePair<Guid, SourceState>(sourceVideoId, source));
+                sources.TryRemove(request.SourceVideoId, source);
             }
         }
     }

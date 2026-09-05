@@ -904,9 +904,7 @@ public sealed class TrickplayPreviewHttpSpecs
     public async Task NewerAbsenceCannotBeOverwrittenByAnOlderPositiveRead()
     {
         var scenario = new PreviewScenario();
-        MetadataReadPlan older = scenario.QueueMetadataRead(
-            MetadataAvailability.Available,
-            waitsForRelease: true);
+        MetadataReadPlan older = scenario.QueueBlockedMetadataRead(MetadataAvailability.Available);
         scenario.QueueMetadataRead(MetadataAvailability.GeneratedMetadataMissing);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
@@ -933,9 +931,7 @@ public sealed class TrickplayPreviewHttpSpecs
     {
         int[] configuredTargets = [320];
         var scenario = new PreviewScenario { ConfiguredWidthResolutions = configuredTargets };
-        MetadataReadPlan first = scenario.QueueMetadataRead(
-            MetadataAvailability.Available,
-            waitsForRelease: true);
+        MetadataReadPlan first = scenario.QueueBlockedMetadataRead(MetadataAvailability.Available);
         scenario.QueueMetadataRead(MetadataAvailability.ExactWidthMissing);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
@@ -956,10 +952,8 @@ public sealed class TrickplayPreviewHttpSpecs
     public async Task ConcurrentFailureDoesNotRetireStateNeededBySuccessfulRead()
     {
         var scenario = new PreviewScenario();
-        MetadataReadPlan failing = scenario.QueueMetadataFailure(waitsForRelease: true);
-        MetadataReadPlan successful = scenario.QueueMetadataRead(
-            MetadataAvailability.Available,
-            waitsForRelease: true);
+        MetadataReadPlan failing = scenario.QueueBlockedMetadataFailure();
+        MetadataReadPlan successful = scenario.QueueBlockedMetadataRead(MetadataAvailability.Available);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         Task<HttpResponseMessage> failingRequest = fixture.HeadAsync();
@@ -1005,9 +999,7 @@ public sealed class TrickplayPreviewHttpSpecs
     public async Task CanceledMetadataReadPublishesWhenTheIssuedHostQueryLaterSucceeds()
     {
         var scenario = new PreviewScenario();
-        MetadataReadPlan pending = scenario.QueueMetadataRead(
-            MetadataAvailability.Available,
-            waitsForRelease: true);
+        MetadataReadPlan pending = scenario.QueueBlockedMetadataRead(MetadataAvailability.Available);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
         using var cancellation = new CancellationTokenSource();
 
@@ -1033,9 +1025,7 @@ public sealed class TrickplayPreviewHttpSpecs
         {
             RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
         };
-        MetadataReadPlan pending = scenario.QueueMetadataRead(
-            MetadataAvailability.Available,
-            waitsForRelease: true);
+        MetadataReadPlan pending = scenario.QueueBlockedMetadataRead(MetadataAvailability.Available);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         Task<HttpResponseMessage> expiredRequest = fixture.HeadAsync();
@@ -1185,9 +1175,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         scenario.Time.Advance(TimeSpan.FromMinutes(5));
         configuredTargets[0] = 320;
-        MetadataReadPlan older = scenario.QueueMetadataRead(
-            MetadataAvailability.Available,
-            waitsForRelease: true);
+        MetadataReadPlan older = scenario.QueueBlockedMetadataRead(MetadataAvailability.Available);
         scenario.QueueMetadataRead(MetadataAvailability.GeneratedMetadataMissing);
         Task<HttpResponseMessage> olderWidthRead = fixture.HeadAsync();
         await older.Started.WaitAsync(TimeSpan.FromSeconds(10));
@@ -1234,9 +1222,7 @@ public sealed class TrickplayPreviewHttpSpecs
     public async Task NewerInvalidObservationPreventsAnOlderReadFromResurrectingMetadata()
     {
         var scenario = new PreviewScenario();
-        MetadataReadPlan older = scenario.QueueMetadataRead(
-            MetadataAvailability.Available,
-            waitsForRelease: true);
+        MetadataReadPlan older = scenario.QueueBlockedMetadataRead(MetadataAvailability.Available);
         scenario.QueueMetadataRead(MetadataAvailability.FrameWidthZero);
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
@@ -2540,7 +2526,7 @@ public sealed class TrickplayPreviewHttpSpecs
                 if (plan is not null)
                 {
                     await plan.WaitForReleaseAsync();
-                    if (plan.Fails)
+                    if (plan.Outcome == MetadataReadOutcome.Failed)
                     {
                         throw new IOException("The scripted metadata read failed.");
                     }
@@ -3112,22 +3098,33 @@ public sealed class TrickplayPreviewHttpSpecs
             Interlocked.Increment(ref metadataReadCount);
         }
 
-        public MetadataReadPlan QueueMetadataRead(
-            MetadataAvailability availability,
-            bool waitsForRelease = false)
+        public MetadataReadPlan QueueMetadataRead(MetadataAvailability availability)
         {
-            var plan = new MetadataReadPlan(availability, waitsForRelease, fails: false);
-            lock (metadataReadPlans)
-            {
-                metadataReadPlans.Enqueue(plan);
-            }
-
-            return plan;
+            var plan = new MetadataReadPlan(availability, MetadataReadOutcome.Succeeded);
+            plan.Release();
+            return QueueMetadataPlan(plan);
         }
 
-        public MetadataReadPlan QueueMetadataFailure(bool waitsForRelease = false)
+        public MetadataReadPlan QueueBlockedMetadataRead(MetadataAvailability availability)
         {
-            var plan = new MetadataReadPlan(MetadataAvailability.Available, waitsForRelease, fails: true);
+            return QueueMetadataPlan(new MetadataReadPlan(availability, MetadataReadOutcome.Succeeded));
+        }
+
+        public void QueueMetadataFailure()
+        {
+            var plan = new MetadataReadPlan(MetadataAvailability.Available, MetadataReadOutcome.Failed);
+            plan.Release();
+            QueueMetadataPlan(plan);
+        }
+
+        public MetadataReadPlan QueueBlockedMetadataFailure()
+        {
+            return QueueMetadataPlan(
+                new MetadataReadPlan(MetadataAvailability.Available, MetadataReadOutcome.Failed));
+        }
+
+        private MetadataReadPlan QueueMetadataPlan(MetadataReadPlan plan)
+        {
             lock (metadataReadPlans)
             {
                 metadataReadPlans.Enqueue(plan);
@@ -3231,6 +3228,12 @@ public sealed class TrickplayPreviewHttpSpecs
         TileWidthZero,
     }
 
+    private enum MetadataReadOutcome
+    {
+        Succeeded,
+        Failed,
+    }
+
     private sealed class MetadataReadPlan
     {
         private readonly TaskCompletionSource completed = new(
@@ -3242,22 +3245,17 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public MetadataReadPlan(
             MetadataAvailability availability,
-            bool waitsForRelease,
-            bool fails)
+            MetadataReadOutcome outcome)
         {
             Availability = availability;
-            Fails = fails;
-            if (!waitsForRelease)
-            {
-                release.TrySetResult();
-            }
+            Outcome = outcome;
         }
 
         public MetadataAvailability Availability { get; }
 
         public Task Completed => completed.Task;
 
-        public bool Fails { get; }
+        public MetadataReadOutcome Outcome { get; }
 
         public Task Started => started.Task;
 
