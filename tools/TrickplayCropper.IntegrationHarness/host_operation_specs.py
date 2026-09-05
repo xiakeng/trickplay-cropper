@@ -120,5 +120,89 @@ class HostOperationSpecs(unittest.TestCase):
             self.assertEqual(b"preserve", sentinel.read_bytes())
 
 
+    def test_snapshot_is_claimed_before_reading_original_logging(self):
+        import threading
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            folder = pathlib.Path(root)
+            logging = folder / "logging.json"
+            logging.write_text('{"Serilog":{"MinimumLevel":"Information"}}')
+            for suffix in ("dll", "pdb"):
+                (folder / (host.ASSEMBLY + "." + suffix)).write_bytes(suffix.encode())
+            operation = host.HostOperation(logging, folder / "plugins", folder / "cache", lambda: None)
+            reading = threading.Event()
+            release = threading.Event()
+            read = pathlib.Path.read_bytes
+            result = []
+            def blocked_read(path):
+                if path == logging and threading.current_thread() is worker:
+                    reading.set()
+                    if not release.wait(5):
+                        raise TimeoutError("barrier")
+                return read(path)
+            worker = threading.Thread(target=lambda: result.append(operation.prepare(folder, "1.0.0.0")))
+            with patch.object(pathlib.Path, "read_bytes", blocked_read):
+                worker.start()
+                try:
+                    self.assertTrue(reading.wait(5))
+                    self.assertEqual(host.REFUSED, operation.prepare(folder, "1.0.0.0"))
+                finally:
+                    release.set()
+                    worker.join(5)
+            self.assertEqual([0], result)
+            self.assertEqual(0, operation.restore())
+
+    def test_incomplete_snapshot_metadata_never_authorizes_restoration(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            folder = pathlib.Path(root)
+            logging = folder / "logging.json"
+            original = b'{"Serilog":{"MinimumLevel":"Information"}}'
+            logging.write_bytes(original)
+            for suffix in ("dll", "pdb"):
+                (folder / (host.ASSEMBLY + "." + suffix)).write_bytes(suffix.encode())
+            operation = host.HostOperation(logging, folder / "plugins", folder / "cache", lambda: self.fail("restart"))
+            with patch.object(host.shutil, "copystat", side_effect=OSError("metadata failure")):
+                self.assertEqual(host.BEFORE_SNAPSHOT, operation.prepare(folder, "1.0.0.0"))
+            self.assertEqual(original, logging.read_bytes())
+            self.assertTrue(operation.snapshot.exists())
+            self.assertFalse((folder / "plugins").exists())
+
+    def test_query_sandbox_reads_live_wal_without_writing_any_state(self):
+        import sqlite3
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as root:
+            folder = pathlib.Path(root)
+            database = folder / "test.db"
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("CREATE TABLE subject(id INTEGER)")
+                connection.execute("INSERT INTO subject VALUES(75)")
+                connection.commit()
+                before = {path.name: path.read_bytes() for path in folder.iterdir()}
+                code = """
+import pathlib,sqlite3,sys
+sys.path.insert(0,sys.argv[1])
+from read_only_filesystem import restrict_writes
+restrict_writes()
+folder=pathlib.Path(sys.argv[2])
+try:
+    (folder/'forbidden').write_bytes(b'no')
+    raise AssertionError('writes were allowed')
+except PermissionError:
+    pass
+with sqlite3.connect((folder/'test.db').as_uri()+'?mode=ro',uri=True) as db:
+    assert db.execute('SELECT id FROM subject').fetchone() == (75,)
+"""
+                result = subprocess.run([sys.executable, "-B", "-c", code, str(pathlib.Path(__file__).parent), root],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(before, {path.name: path.read_bytes() for path in folder.iterdir()})
+            finally:
+                connection.close()
+
+
 if __name__ == "__main__":
     unittest.main()

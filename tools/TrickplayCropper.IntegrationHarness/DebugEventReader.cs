@@ -6,7 +6,8 @@ namespace TrickplayCropper.IntegrationHarness;
 /// <summary>Reads the versioned plugin event envelope carried by an unchanged Jellyfin text sink.</summary>
 public sealed class DebugEventReader
 {
-    private const string Marker = "[DBG] TrickplayDebug ";
+    private const string Level = "[DBG] ";
+    private const string Marker = "TrickplayDebug ";
 
     /// <summary>Accepts only fresh FrameSelected events with valid identities and nonnegative frame geometry.</summary>
     public static bool HasFrameSelection(string log, DateTimeOffset since)
@@ -34,6 +35,31 @@ public sealed class DebugEventReader
         }
 
         string message = line[(timestampEnd + 1)..].TrimStart();
+        if (!message.StartsWith(Level, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        message = message[Level.Length..];
+        if (message.StartsWith('['))
+        {
+            int threadEnd = message.IndexOf(']');
+            if (threadEnd < 2 || !int.TryParse(message.AsSpan(1, threadEnd - 1), out _))
+            {
+                return false;
+            }
+
+            message = message[(threadEnd + 1)..].TrimStart();
+            int categoryEnd = message.IndexOf(": ", StringComparison.Ordinal);
+            if (categoryEnd < 0 || !message[..categoryEnd].StartsWith(
+                "Jellyfin.Plugin.TrickplayCropper.", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            message = message[(categoryEnd + 2)..];
+        }
+
         if (!message.StartsWith(Marker, StringComparison.Ordinal))
         {
             return false;

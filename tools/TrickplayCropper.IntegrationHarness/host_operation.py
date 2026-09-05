@@ -47,19 +47,20 @@ class HostOperation:
                 if not (binary / (ASSEMBLY + "." + suffix)).is_file():
                     raise ValueError("Missing Debug artifact")
             contained(self.logging)
-            info = self.logging.stat()
-            original = self.logging.read_bytes()
-            edited = self.override(original)
-            # The snapshot itself is the sole concurrency guard. Claim it before any
-            # destructive work; a check followed by a later copy permits two owners.
+            # Claim the sole concurrency guard before reading any original bytes.
+            # A failed capture leaves the snapshot for human inspection, but does
+            # not authorize restoring incomplete bytes or metadata over logging.
             with self.snapshot.open("xb") as snapshot:
+                info = self.logging.stat()
+                original = self.logging.read_bytes()
+                edited = self.override(original)
                 snapshot.write(original)
                 snapshot.flush()
                 os.fsync(snapshot.fileno())
-                owned = True
             shutil.copystat(self.logging, self.snapshot)
             os.utime(self.snapshot, ns=(info.st_atime_ns, info.st_mtime_ns))
             os.chown(self.snapshot, info.st_uid, info.st_gid)
+            owned = True
             self.deploy(binary, version)
             self.logging.write_bytes(edited)
             result = 0
@@ -149,6 +150,7 @@ def main(arguments):
         return BEFORE_SNAPSHOT
     # Ctrl+C cancels HTTP work in the driver, not a partly completed privileged phase.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     operation = HostOperation(pathlib.Path("/etc/jellyfin/logging.json"),
                               pathlib.Path("/var/lib/jellyfin/plugins"),
                               pathlib.Path("/var/lib/jellyfin/temp/Jellyfin.Plugin.TrickplayCropper/preview-v1"), restart)

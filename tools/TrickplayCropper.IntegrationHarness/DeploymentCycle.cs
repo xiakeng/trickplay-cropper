@@ -12,9 +12,12 @@ public sealed class DeploymentCycle(TextWriter output)
         int status = await deploy().ConfigureAwait(false);
         if (status is not (0 or 22))
         {
-            output.WriteLine(status == 20
-                ? "A surviving Logging Snapshot blocks this run; human inspection is required."
-                : "Deployment did not establish snapshot ownership; the cycle did not start.");
+            output.WriteLine(status switch
+            {
+                20 => "A surviving Logging Snapshot blocks this run; human inspection is required.",
+                21 => "Deployment stopped before a restorable snapshot; inspect any incomplete snapshot before retrying.",
+                _ => "Unexpected privileged exit: snapshot ownership is unknown. Inspect logging and its snapshot before retrying.",
+            });
             return false;
         }
 

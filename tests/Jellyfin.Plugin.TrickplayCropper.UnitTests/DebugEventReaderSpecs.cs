@@ -7,6 +7,17 @@ public sealed class DebugEventReaderSpecs
 {
     private static readonly DateTimeOffset since = new(2026, 9, 5, 1, 0, 0, TimeSpan.Zero);
 
+    [Fact]
+    public void ReadsTheDefaultJellyfinSinkWithThreadAndCategory()
+    {
+        const string Log = """
+            [2026-09-05 09:00:00.000 +08:00] [DBG] [12] Jellyfin.Plugin.TrickplayCropper.Preview.TrickplayPreview: TrickplayDebug {"EventId":1002,"EventName":"TrickplayPreviewFrameSelected","FrameIndex":3,"SpriteIndex":0}
+            """;
+        Assert.True(DebugEventReader.HasFrameSelection(Log, since));
+        Assert.False(DebugEventReader.HasFrameSelection(
+            Log.Replace("Jellyfin.Plugin.TrickplayCropper", "Unrelated.Plugin", StringComparison.Ordinal), since));
+    }
+
     [Theory]
     [InlineData("1002", "TrickplayPreviewFrameSelected", "0", true)]
     [InlineData("1003", "TrickplayPreviewFrameSelected", "0", false)]

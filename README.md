@@ -78,9 +78,12 @@ with a password.
 Use the local native Jellyfin installation, Python 3 (standard library only),
 .NET SDK from `global.json`, and an unprivileged account with interactive sudo
 access. The harness uses fixed `/etc/jellyfin` and `/var/lib/jellyfin` paths. Its
-read-only, exact-ID SQLite query proves the invisible Item exists independently
+Landlock-restricted read-only, exact-ID SQLite query proves the invisible Item exists independently
 of the user-scoped HTTP 404; the account must be able to read Jellyfin's database
-and existing WAL/shared memory. It does not enumerate or provision media.
+and existing WAL/shared memory. Linux Landlock ABI 3 or later is required: the
+query child denies all file writes, creation, deletion, and truncation even if
+the account could otherwise write to the database directory. It does not
+enumerate or provision media.
 
 ```sh
 dotnet restore TrickplayCropper.sln --locked-mode
