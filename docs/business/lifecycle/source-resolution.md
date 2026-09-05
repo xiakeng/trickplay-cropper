@@ -115,7 +115,7 @@ flowchart TD
     Targets{"Current Trickplay<br/>Resolution Targets"} -->|"Empty array"| B1["404"]
     Targets -->|"Unreadable, or invalid"| B2["500"]
     Targets -->|"One or more"| Min["Select the minimum target"]
-    Min --> Normalize["Normalize for this Media Source:<br/>odd rounds down to even,<br/>wider than the video clamps to it"]
+    Min --> Normalize["Normalize for this Media Source<br/>by Jellyfin's rule"]
     Normalize --> Selected["Selected Trickplay Resolution"]
     Selected --> Match{"Metadata matches it exactly,<br/>is consistent, and has frames?"}
     Match -->|"Inconsistent"| B3["500"]

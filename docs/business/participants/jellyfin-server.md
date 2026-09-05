@@ -28,8 +28,8 @@ left implicit:
   regenerating.
 - **A target may not survive contact with a video.** Generation normalizes a
   requested width — an odd width rounds down to even, and a width larger than the
-  video clamps to it — so the recorded width can differ from the target that
-  produced it.
+  video clamps to the video's width, itself rounded down to even — so the recorded
+  width can differ from the target that produced it.
 - **Recorded metadata is a snapshot**, not a live projection of configuration. Its
   interval, geometry, and counts describe what was generated then.
 - **Metadata does not prove a file exists.** Recorded data can outlive the sprite
