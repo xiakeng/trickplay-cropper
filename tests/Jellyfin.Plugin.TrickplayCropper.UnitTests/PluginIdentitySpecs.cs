@@ -18,15 +18,4 @@ public sealed class PluginIdentitySpecs
     {
         Assert.Equal(new Version(1, 0, 0, 0), typeof(Plugin).Assembly.GetName().Version);
     }
-
-    [Fact]
-    public void ConstructedPluginProvidesTheAssemblyAttributesRequiredByJellyfin()
-    {
-        var plugin = new Plugin();
-
-        Assert.Equal(typeof(Plugin).Assembly.GetName().Version, plugin.Version);
-        Assert.Equal(typeof(Plugin).Assembly.Location, plugin.AssemblyFilePath);
-        Assert.Equal(Path.GetDirectoryName(plugin.AssemblyFilePath), plugin.DataFolderPath);
-        Assert.Equal(plugin.Version.ToString(), plugin.GetPluginInfo().Version.ToString());
-    }
 }

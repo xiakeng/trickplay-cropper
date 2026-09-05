@@ -1,7 +1,7 @@
 using TrickplayCropper.IntegrationHarness;
 using Xunit;
 
-namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
+namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class DebugEventReaderSpecs
 {

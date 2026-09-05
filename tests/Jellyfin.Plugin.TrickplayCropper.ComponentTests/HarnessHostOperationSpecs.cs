@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Xunit;
 
-namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
+namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class HarnessHostOperationSpecs
 {
@@ -22,7 +22,7 @@ public sealed class HarnessHostOperationSpecs
             UseShellExecute = false,
         };
         start.ArgumentList.Add("-B");
-        start.ArgumentList.Add(Path.Combine(root.FullName, "tools/TrickplayCropper.IntegrationHarness/host_operation_specs.py"));
+        start.ArgumentList.Add(Path.Combine(root.FullName, "tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/host_operation_specs.py"));
         using Process process = Process.Start(start)!;
         Task<string> output = process.StandardOutput.ReadToEndAsync();
         Task<string> error = process.StandardError.ReadToEndAsync();

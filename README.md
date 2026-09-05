@@ -30,6 +30,16 @@ The component tests are Linux-specific because they privately provide the
 native assets that Jellyfin supplies at runtime. Production references
 Jellyfin and SkiaSharp only at compile time.
 
+Tests tied to Jellyfin server behavior belong to ComponentTests, including
+HTTP contracts, server log formats, deployment/recovery, operator input, and
+plugin host activation, even when test doubles avoid a live connection.
+ComponentTests also runs the harness's Python filesystem, SQLite WAL, and
+Landlock checks against temporary fixtures. These checks require Python 3 and
+Linux Landlock ABI 3 or later; they never use the operator's `harness.json`,
+invoke sudo, or restart a service. UnitTests has no Integration Harness project
+reference. CI runs both test projects; actual host deployment remains a separate
+manual Integration Harness invocation.
+
 ## Package
 
 CI runs the commit-pinned JPRM action against only the production project. A
@@ -134,4 +144,4 @@ every 500 shape, source-width clamping, multiple targets, media-side Source
 Sprites, absent metadata/thumbnails/sprites, cleanup, Cache Tree seeding and lease
 contention. Debug DLL deployment does not verify the shippable ZIP; CI's Package
 Validator owns that check. Default CI compiles the harness and runs its isolated
-unit/filesystem checks, but never executes the live harness or uses sudo.
+component checks, but never executes the live harness or uses sudo.

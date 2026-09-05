@@ -1034,6 +1034,10 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(LogLevel.Debug, log.Level);
         Assert.Equal("TrickplayPreviewUnavailable", log.EventId.Name);
         Assert.Equal(expectedReason, log.Properties["Reason"]!.ToString());
+        using System.Text.Json.JsonDocument envelope = System.Text.Json.JsonDocument.Parse(
+            log.Message["TrickplayDebug ".Length..]);
+        Assert.Equal(1001, envelope.RootElement.GetProperty("EventId").GetInt32());
+        Assert.Equal(expectedReason, envelope.RootElement.GetProperty("Reason").GetString());
     }
 
     private static string? ExpectedDebugReason(NotFoundCondition condition)

@@ -4,7 +4,8 @@ import pathlib
 import tempfile
 import unittest
 
-spec = importlib.util.spec_from_file_location("host_operation", pathlib.Path(__file__).with_name("host_operation.py"))
+HARNESS_DIRECTORY = pathlib.Path(__file__).resolve().parents[2] / "tools/TrickplayCropper.IntegrationHarness"
+spec = importlib.util.spec_from_file_location("host_operation", HARNESS_DIRECTORY / "host_operation.py")
 host = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(host)
 
@@ -196,7 +197,7 @@ except PermissionError:
 with sqlite3.connect((folder/'test.db').as_uri()+'?mode=ro',uri=True) as db:
     assert db.execute('SELECT id FROM subject').fetchone() == (75,)
 """
-                result = subprocess.run([sys.executable, "-B", "-c", code, str(pathlib.Path(__file__).parent), root],
+                result = subprocess.run([sys.executable, "-B", "-c", code, str(HARNESS_DIRECTORY), root],
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(before, {path.name: path.read_bytes() for path in folder.iterdir()})

@@ -17,7 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin.Plugin.TrickplayCropper.csproj" />
-    <ProjectReference Include="../../tools/TrickplayCropper.IntegrationHarness/TrickplayCropper.IntegrationHarness.csproj" />
     <ProjectReference Include="../../tools/TrickplayCropper.PackageValidator/TrickplayCropper.PackageValidator.csproj" />
     <ProjectReference Include="../../tools/TrickplayCropper.ReleasePlanner/TrickplayCropper.ReleasePlanner.csproj" />
     <ProjectReference Include="../../tools/TrickplayCropper.ManifestBuilder/TrickplayCropper.ManifestBuilder.csproj" />

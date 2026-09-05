@@ -20,5 +20,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin.Plugin.TrickplayCropper.csproj" />
+    <ProjectReference Include="../../tools/TrickplayCropper.IntegrationHarness/TrickplayCropper.IntegrationHarness.csproj" />
   </ItemGroup>
 </Project>
