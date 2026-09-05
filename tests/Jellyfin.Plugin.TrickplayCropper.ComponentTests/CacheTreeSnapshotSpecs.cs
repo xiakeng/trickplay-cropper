@@ -17,13 +17,13 @@ public sealed class CacheTreeSnapshotSpecs : IDisposable
     [InlineData("bytes")]
     [InlineData("noncanonical")]
     [InlineData("link")]
-    public void RejectsAnIncompleteOrNoncanonicalRetainedTree(string fault)
+    public async Task RejectsAnIncompleteOrNoncanonicalRetainedTree(string fault)
     {
         string canonical = Path.Combine(root, Canonical);
         Directory.CreateDirectory(Path.GetDirectoryName(canonical)!);
         File.WriteAllBytes(canonical, [1, 2, 3]);
-        IReadOnlyDictionary<string, byte[]> expected = CacheTreeSnapshot.Read(root);
-        Assert.True(CacheTreeSnapshot.Matches(root, expected));
+        IReadOnlyDictionary<string, byte[]> expected = await CacheTreeSnapshot.ReadAsync(root, CancellationToken.None);
+        Assert.True(await CacheTreeSnapshot.MatchesAsync(root, expected, CancellationToken.None));
         switch (fault)
         {
             case "residue":
@@ -51,7 +51,31 @@ public sealed class CacheTreeSnapshotSpecs : IDisposable
                 throw new ArgumentOutOfRangeException(nameof(fault));
         }
 
-        Assert.False(CacheTreeSnapshot.Matches(root, expected));
+        Assert.False(await CacheTreeSnapshot.MatchesAsync(root, expected, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RejectsCancellationThatArrivesWhileAcceptingAMatchingSnapshot()
+    {
+        using CancellationTokenSource cancellation = new();
+        IReadOnlyDictionary<string, byte[]> expected = new CancellingExpectations(cancellation);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            CacheTreeSnapshot.MatchesAsync(root, expected, cancellation.Token));
+    }
+
+    private sealed class CancellingExpectations(CancellationTokenSource cancellation)
+        : System.Collections.ObjectModel.ReadOnlyDictionary<string, byte[]>(new Dictionary<string, byte[]>()),
+          IReadOnlyDictionary<string, byte[]>
+    {
+        int IReadOnlyCollection<KeyValuePair<string, byte[]>>.Count
+        {
+            get
+            {
+                // Cancel after the actual filesystem read, precisely when its matching result is accepted.
+                cancellation.Cancel();
+                return 0;
+            }
+        }
     }
 
     public void Dispose() => Directory.Delete(root, true);

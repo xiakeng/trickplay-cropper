@@ -45,7 +45,7 @@ public sealed class ScrubStormSpecs : IDisposable
             Assert.EndsWith("PositionTicks=125000000", request, StringComparison.Ordinal));
         Assert.Contains(handler.Requests.Skip(576).Take(6), request => request.EndsWith("PositionTicks=0", StringComparison.Ordinal));
         Assert.Contains(handler.Requests.Skip(576).Take(6), request => request.EndsWith("PositionTicks=150000000", StringComparison.Ordinal));
-        Assert.Equal(12, CacheTreeSnapshot.Read(root).Count);
+        Assert.Equal(12, (await CacheTreeSnapshot.ReadAsync(root, CancellationToken.None)).Count);
         Assert.Equal(1, handler.LogReads);
         Assert.Contains("MISS-to-HIT observed", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("Contention diagnostic entry-lock: not-observed", output.ToString(), StringComparison.Ordinal);

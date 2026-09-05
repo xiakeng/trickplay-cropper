@@ -14,18 +14,23 @@ public sealed class DebugEventReader
         Read(log, since).Any(value => value.EventId == 1002);
 
     /// <summary>Reads only the known stable Debug protocol, retaining event multiplicity.</summary>
-    public static IReadOnlyList<ProtocolEvent> Read(string log, DateTimeOffset since)
+    public static IReadOnlyList<ProtocolEvent> Read(string log, DateTimeOffset since) => Read(log, since, CancellationToken.None);
+
+    /// <summary>Stops parsing when the live verification deadline expires or the operator cancels.</summary>
+    public static IReadOnlyList<ProtocolEvent> Read(string log, DateTimeOffset since, CancellationToken cancellationToken)
     {
         List<ProtocolEvent> events = [];
         using StringReader reader = new(log);
         while (reader.ReadLine() is { } line)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (ReadLine(line, since) is { } value)
             {
                 events.Add(value);
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return events;
     }
 

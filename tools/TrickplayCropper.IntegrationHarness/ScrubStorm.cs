@@ -14,7 +14,7 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
     {
         ArgumentNullException.ThrowIfNull(input);
         PreviewRequest[] subjects = await ReadSubjectsAsync(input, cancellationToken).ConfigureAwait(false);
-        StormObservations observations = new(CacheTreeSnapshot.Read(cacheRoot));
+        StormObservations observations = new(await CacheTreeSnapshot.ReadAsync(cacheRoot, cancellationToken).ConfigureAwait(false));
         DateTimeOffset since = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         output.WriteLine("Checking Scrub Storm: seed=0x5EEDC0DE, clients=2, lanes/client=3, positions/lane/Item=12, rounds/shape=2.");
         foreach (int shape in Enumerable.Range(0, shapes.Length))
@@ -134,9 +134,11 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
         while (true)
         {
             string log = await host.ReadNewestLogAsync(timeout.Token).ConfigureAwait(false);
-            IReadOnlyList<DebugEventReader.ProtocolEvent> events = DebugEventReader.Read(log, since);
-            if (observations.Matches(events) && CacheTreeSnapshot.Matches(cacheRoot, observations.Files))
+            IReadOnlyList<DebugEventReader.ProtocolEvent> events = DebugEventReader.Read(log, since, timeout.Token);
+            if (observations.Matches(events)
+                && await CacheTreeSnapshot.MatchesAsync(cacheRoot, observations.Files, timeout.Token).ConfigureAwait(false))
             {
+                timeout.Token.ThrowIfCancellationRequested();
                 output.WriteLine("Stable Debug events reconciled: GET disposition counts and Frame Index/sprite index multiplicities agree.");
                 output.WriteLine($"Reconciled GET events: MISS={events.Count(value => value.Disposition == "MISS")}, "
                     + $"HIT={events.Count(value => value.Disposition == "HIT")}, "
