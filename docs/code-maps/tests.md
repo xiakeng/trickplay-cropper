@@ -23,7 +23,7 @@ Each file below lives in the named suite's directory.
 | Scheduled cleanup task | `ClearTrickplayCropperCacheTaskSpecs.cs` (UnitTests) |
 | Release tools | `ManifestBuilderSpecs.cs`, `PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs` (UnitTests) |
 | Build-manifest, runtime, and dependency-lock contracts | `ReleaseContractSpecs.cs` (UnitTests) |
-| Workflow contracts | `ReleaseWorkflowContractSpecs.cs`, `PublicationWorkflowContractSpecs.cs`, `ManifestWorkflowContractSpecs.cs`, `BusinessDocsWorkflowContractSpecs.cs` (UnitTests) |
+| Workflow contracts | `ReleaseWorkflowContractSpecs.cs`, `PublicationWorkflowContractSpecs.cs`, `ManifestWorkflowContractSpecs.cs` (UnitTests) |
 | Harness smoke cases, scrub storm, report, deployment, input | `SmokeCasesSpecs.cs`, `ScrubStormSpecs.cs`, `ScrubStormReportSpecs.cs`, `DeploymentCycleSpecs.cs`, `HarnessInputSpecs.cs`, `HarnessHostOperationSpecs.cs`, `host_operation_specs.py` (ComponentTests) |
 | Harness host gates and Debug-event reading | `LocalJellyfinSpecs.cs`, `DebugEventReaderSpecs.cs` (ComponentTests) |
 | Plugin discovery, identity, and host activation | `PluginDiscoverySpecs.cs`, `PluginIdentitySpecs.cs` (UnitTests), `PluginHostActivationSpecs.cs` (ComponentTests) |

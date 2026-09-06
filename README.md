@@ -34,20 +34,9 @@ modifies, or repairs that data. What it adds on top:
   Release Pull Request; merging it publishes the installable ZIP as a stable
   GitHub Release and updates the Jellyfin repository manifest.
 
-## Reading the repository
-
-| Question | Where |
-|---|---|
-| What the product does, and why it is shaped this way | [Business documentation](docs/business/README.md) — participants, lifecycle, and design, with a reading path and a route-by-question table |
-| What a term means, and which decisions are accepted | The [CONTEXT.md](CONTEXT.md) glossary and the [ADRs](docs/adr/) |
-| Where a behavior lives in code, and which tests prove it | [Code Maps](docs/code-maps/README.md) |
-| How to install, build, test, package, or run the harness | This README and the workflows it references |
-
-Business documentation maintenance is deferred to the open `docs:business-analysis`
-issue the merge workflow maintains after every merge to `main`; the
-[Business Documentation index](docs/business/README.md) records the base and the
-rules. The root README and the affected Code Maps are updated in the same pull
-request that changes documented behavior.
+The complete business documentation — participants, lifecycle, and design, with a
+reading path and a route-by-question table — lives under
+[docs/business](docs/business/README.md).
 
 ## Compatibility
 

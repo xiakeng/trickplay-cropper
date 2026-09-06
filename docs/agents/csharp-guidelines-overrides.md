@@ -3,17 +3,10 @@
 Automated formatting, naming, compiler, and analyzer diagnostics take
 precedence over subjective review comments about the same rule.
 
-Keep documentation synchronized with the code. When a change modifies behavior that
-`README.md` defines, or restructures code that a
-[Code Map](../code-maps/README.md) describes, update that documentation in the same
+Keep documentation synchronized with the code. When a change restructures code that a
+[Code Map](../code-maps/README.md) describes, update the affected maps in the same
 change. Documentation that no longer matches the code is a defect of the change, not
 follow-up work.
-
-`docs/business/` is maintained asynchronously through the open `docs:business-analysis`
-issue the merge workflow maintains after merges to `main`; the
-[Business Documentation index](../business/README.md) records the base and the rules.
-Deferred analysis is not an exemption from documentation work — implementation changes
-still own the root README and the affected Code Maps in the same pull request.
 
 ## Repository size limits
 

@@ -12,18 +12,3 @@ implementation details or business specifications — those live in the code and
 | [Caching](caching.md) | Where Preview Cache Coordination, both observation caches, and cleanup live |
 | [Tests](tests.md) | Which suite and entry point proves which behavior |
 | [Tooling](tooling.md) | Where the Integration Harness and the build, release, and analysis tooling live |
-
-## Maintenance
-
-- A structural change updates every Code Map it affects in the same pull request.
-- Semantic and symbol accuracy are review responsibilities: a map naming a target or
-  symbol that no longer exists is a defect of the change that broke it.
-- The [root README](../../README.md) stays an implementation-phase, same-pull-request
-  responsibility of the change that alters documented behavior.
-
-## Size limit
-
-Every Markdown source in this collection — this index and any future nested map —
-stays within the repository's Code Map size limit, recorded in the
-[Code Standard Override](../agents/csharp-guidelines-overrides.md). The limit applies
-nowhere else in the repository.

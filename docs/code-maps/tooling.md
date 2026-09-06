@@ -39,6 +39,5 @@ manually invoked, no-mock verification against the local Jellyfin host.
 
 Tool behavior is pinned by UnitTests (`PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs`,
 `ManifestBuilderSpecs.cs`); workflow definitions by `ReleaseWorkflowContractSpecs.cs`,
-`PublicationWorkflowContractSpecs.cs`, `ManifestWorkflowContractSpecs.cs`, and
-`BusinessDocsWorkflowContractSpecs.cs`; harness machinery by the ComponentTests listed on
-the [tests map](tests.md).
+`PublicationWorkflowContractSpecs.cs`, and `ManifestWorkflowContractSpecs.cs`; harness
+machinery by the ComponentTests listed on the [tests map](tests.md).
