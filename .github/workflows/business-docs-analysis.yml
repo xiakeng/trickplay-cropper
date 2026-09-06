@@ -18,6 +18,7 @@ concurrency:
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
   ANALYSIS_LABEL: docs:business-analysis
   ANALYSIS_TITLE: Review and maintain business documentation
 
@@ -48,7 +49,7 @@ jobs:
           set -euo pipefail
           cat > "${RUNNER_TEMP}/analysis-issue-body.md" <<'BODY'
           Using the base commit recorded in `docs/business/README.md`, analyze subsequent code changes and maintain the relevant documentation under `docs/business/`.
-          
+
           If no documentation updates are needed, close this issue directly.
           BODY
 

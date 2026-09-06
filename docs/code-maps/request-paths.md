@@ -3,18 +3,19 @@
 One controller routes both operations at `TrickplayCropper/Videos/{itemId}/Preview`.
 After binding, the paths diverge: GET resolves a user-authorized context and serves a
 representation; the Trickplay Frame Probe answers *which frame this position selects*
-and stops before any image work. Both paths share `PreviewQuery`
-(`Preview/PreviewQuery.cs`) and the observation caches on the [caching map](caching.md).
+and stops before any image work. Both paths share `PreviewQuery` and the observation
+caches on the [caching map](caching.md).
 
 ## Controller
 
 The only HTTP surface is
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
-`GetAsync` binds the query, `HeadAsync` binds raw strings and answers malformed input
-with `400` (`TryCreateQuery`), and `MapOutcome` with `CreateBodylessResult` map
-outcomes to wire responses and headers. Closed outcome sets: `PreviewOutcome` (GET,
-including `Ok` and `NotModified`) and `TrickplayFrameProbeOutcome` (HEAD; no
-conditional variant).
+`GetAsync` binds the query, `HeadAsync` binds raw strings and rejects malformed input
+(`TryCreateQuery`), and `MapOutcome` with `CreateBodylessResult` map outcomes to wire
+responses and headers. Closed outcome sets: `PreviewOutcome` (GET) and
+`TrickplayFrameProbeOutcome` (HEAD, no conditional variant); the
+[response contract](../business/lifecycle/response-contract.md) owns statuses and
+headers.
 
 ## GET chain
 
@@ -34,7 +35,7 @@ snapshot) → `PreviewIdentity.Create` → conditional `If-None-Match` check →
 
 ## Trickplay Frame Probe chain
 
-`HeadAsync` → `TrickplayFrameProbe.ProbeAsync` (negative position → `400`) →
+`HeadAsync` → `TrickplayFrameProbe.ProbeAsync` (rejects negative positions) →
 `JellyfinTrickplayFrameProbeContextResolver.ResolveAsync` →
 `TrickplaySourceFactsCache.GetForProbeAsync` → `ResolveForProbeAsync` →
 `TrickplayFrameProbeOutcome.Success(FrameIndex)` → bodyless response carrying
@@ -55,4 +56,3 @@ Suite locations are on the [tests map](tests.md).
 | GET outcome mapping and conditional requests | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
 | Authorization-split boundary | `PreviewContextBoundarySpecs.cs` (UnitTests) |
-| Resolution and frame selection math | `TrickplayResolutionSelectorSpecs.cs`, `FrameSelectionSpecs.cs`, `TrickplayMetadataSpecs.cs` (UnitTests) |

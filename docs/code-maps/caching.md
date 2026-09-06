@@ -19,11 +19,11 @@ the [request paths map](request-paths.md).
 
 ## Observation caches
 
-Both caches share lifetimes (positive 30 minutes, explicit absence 5 minutes, measured
-from authoritative read start), ordered publication via `ObservationStamp`, and
-reclamation via `ReclaimingSourceCollection`. GET publishes only user-verified facts and
-refreshes generated metadata unless a current absence applies; the probe reuses both
-positive and scoped-absence observations.
+Both caches implement the freshness, ordering, and reclamation contracts the
+[cache chapters](../business/design/cache-identity-and-freshness.md) of the business
+documentation define, with ordered publication via `ObservationStamp` and reclamation
+via `ReclaimingSourceCollection`. GET publishes only user-verified facts; the Trickplay
+Frame Probe reuses both positive and scoped-absence observations.
 
 | Target | Key symbols | Responsibility |
 |---|---|---|

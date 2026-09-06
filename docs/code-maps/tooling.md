@@ -25,7 +25,7 @@ manually invoked, no-mock verification against the local Jellyfin host.
 | [SmokeCases.cs](../../tools/TrickplayCropper.IntegrationHarness/SmokeCases.cs) | `RunAsync` | Invalid token, concealed GET, playback boundaries |
 | [ScrubStorm.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStorm.cs) | `RunAsync`, `VerifyQuiescenceAsync` | Coordinated HEAD/GET storm across six lanes |
 | [ScrubStormReport.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStormReport.cs) | `WriteAsync`, `ToMarkdown` | Client-observed statistics and the gitignored Markdown report |
-| [DeploymentCycle.cs](../../tools/TrickplayCropper.IntegrationHarness/DeploymentCycle.cs) | `RunAsync` | Prepare, verify, restore; exactly two sudo boundaries and two restarts |
+| [DeploymentCycle.cs](../../tools/TrickplayCropper.IntegrationHarness/DeploymentCycle.cs) | `RunAsync` | Prepare, verify, and restore around each verification run |
 | [host_operation.py](../../tools/TrickplayCropper.IntegrationHarness/host_operation.py) | prepare, restore | Privileged deployment and logging restoration |
 | [LocalJellyfin.cs](../../tools/TrickplayCropper.IntegrationHarness/LocalJellyfin.cs) | `ValidateAsync`, `WaitForHealthAsync` | Read-only host gates and deployment verification |
 

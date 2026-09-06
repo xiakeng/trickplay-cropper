@@ -9,14 +9,12 @@ public sealed partial class BusinessDocsWorkflowContractSpecs
     private const string FindStepName = "Find the pending business documentation analysis issue";
     private const string CreateStepName = "Create the pending business documentation analysis issue";
 
-    private static readonly string workflow = RepositoryFiles.Read(WorkflowRelativePath);
-
-    private const string ApprovedIssueTitle = "Review and maintain business documentation";
-
     private const string ApprovedIssueBody =
         "Using the base commit recorded in `docs/business/README.md`, analyze subsequent code "
         + "changes and maintain the relevant documentation under `docs/business/`.\n\n"
         + "If no documentation updates are needed, close this issue directly.";
+
+    private static readonly string workflow = RepositoryFiles.Read(WorkflowRelativePath);
 
     [Fact]
     public void TheWorkflowTriggersOnlyOnPullRequestsClosedAgainstMain()
@@ -53,11 +51,15 @@ public sealed partial class BusinessDocsWorkflowContractSpecs
     }
 
     [Fact]
-    public void TheWorkflowAuthenticatesWithTheGithubTokenOnly()
+    public void TheWorkflowAuthenticatesWithTheGithubTokenAndTargetsTheRepositoryWithoutACheckout()
     {
         Assert.Equal(
             "${{ secrets.GITHUB_TOKEN }}",
             WorkflowFiles.ReadEnvValue(workflow, "GH_TOKEN"));
+
+        Assert.Equal(
+            "${{ github.repository }}",
+            WorkflowFiles.ReadEnvValue(workflow, "GH_REPO"));
     }
 
     [Fact]
@@ -81,20 +83,14 @@ public sealed partial class BusinessDocsWorkflowContractSpecs
             "if: steps.pending.outputs.existing == ''",
             workflow,
             StringComparison.Ordinal);
-
-        Assert.DoesNotContain("gh issue edit", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("gh issue comment", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("gh issue close", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("gh issue reopen", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("gh issue lock", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("gh issue pin", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("gh issue transfer", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TheWorkflowCreatesOneStandaloneIssueWithTheFixedTitle()
     {
-        Assert.Equal(ApprovedIssueTitle, WorkflowFiles.ReadEnvValue(workflow, "ANALYSIS_TITLE"));
+        Assert.Equal(
+            "Review and maintain business documentation",
+            WorkflowFiles.ReadEnvValue(workflow, "ANALYSIS_TITLE"));
 
         string creation = WorkflowFiles.ReadStepBody(WorkflowFiles.ReadSteps(workflow), CreateStepName);
 
@@ -119,6 +115,7 @@ public sealed partial class BusinessDocsWorkflowContractSpecs
             .ToArray();
 
         Assert.Equal(["gh issue list", "gh issue create"], commands);
+        Assert.DoesNotContain("gh api", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -137,9 +134,9 @@ public sealed partial class BusinessDocsWorkflowContractSpecs
             workflow);
     }
 
-    private static string ReadIssueBodyHeredoc(string workflow)
+    private static string ReadIssueBodyHeredoc(string source)
     {
-        string[] lines = workflow.Replace("\r\n", "\n").Split('\n');
+        string[] lines = source.Replace("\r\n", "\n").Split('\n');
         int start = Array.FindIndex(lines, line => line.Contains("<<'BODY'", StringComparison.Ordinal));
         Assert.True(start >= 0, "The workflow must write the fixed issue body from a quoted heredoc.");
 
