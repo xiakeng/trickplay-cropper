@@ -9,7 +9,7 @@ A single JPEG frame selected for an authorized playback position and cropped fro
 _Avoid_: Thumbnail, cropped image, preview image
 
 **Trickplay Frame Probe**:
-The lightweight HTTP HEAD operation that computes a Frame Index for an Item and real Media Source accepted by Jellyfin's ordinary endpoint policy, without making a user-visibility or playback decision and without resolving a Source Sprite or accessing the Cache Tree or encoder.
+The lightweight HTTP HEAD operation that computes a Frame Index for an Item and real Media Source for a natively authenticated user identity or userless API key. It makes no user-visibility or playback decision and does not apply per-user remote-access or parental-schedule restrictions; a successful probe is not evidence of permission to retrieve a Trickplay Preview.
 _Avoid_: HEAD probe, frame probe, preview probe
 
 **Source Sprite**:
