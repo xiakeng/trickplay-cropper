@@ -65,6 +65,8 @@ internal sealed class TrickplaySourceFactsCache
         try
         {
             TrickplaySourceFactsResolution loaded = await LoadAsync(query, cancellationToken).ConfigureAwait(false);
+            // The host can swallow provider cancellation and return an incomplete source list.
+            cancellationToken.ThrowIfCancellationRequested();
             PublishCurrent(reserved.Item, query.ResolvedMediaSourceId, loaded, stamp);
             return loaded;
         }

@@ -1040,6 +1040,41 @@ public sealed class TrickplayPreviewHttpSpecs
         Assert.Equal(1, scenario.MetadataReadCount);
     }
 
+    [Fact]
+    public async Task SwallowedProviderCancellationDoesNotCacheDynamicSourceAbsence()
+    {
+        var scenario = new PreviewScenario
+        {
+            HostSource = HostSourceKind.EligibleDynamic,
+            UsesAlternateSource = true,
+            Membership = SourceMembership.NotMember,
+        };
+        SourceReadPlan pending = scenario.QueueBlockedSourceRead();
+        pending.SwallowsCancellation = true;
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<HttpResponseMessage> canceledProbe = fixture.HeadAsync(cancellation.Token);
+        await pending.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        cancellation.Cancel();
+        try
+        {
+            using HttpResponseMessage ignored = await canceledProbe;
+        }
+        catch (OperationCanceledException)
+        {
+            // The assertion concerns the next caller, independently of transport cancellation timing.
+        }
+
+        await scenario.FirstRequestCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        scenario.Membership = SourceMembership.Member;
+        using HttpResponseMessage current = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(current, 0);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
     [Theory]
     [InlineData(SourceMembership.Member, SourceMembership.NotMember, HttpStatusCode.NotFound)]
     [InlineData(SourceMembership.NotMember, SourceMembership.Member, HttpStatusCode.OK)]
@@ -2599,6 +2634,17 @@ public sealed class TrickplayPreviewHttpSpecs
             webHost.ConfigureServices(services => ConfigureServices(services, context));
             webHost.Configure(application =>
             {
+                application.Use(async (request, next) =>
+                {
+                    try
+                    {
+                        await next(request);
+                    }
+                    finally
+                    {
+                        context.Scenario.FirstRequestCompleted.TrySetResult();
+                    }
+                });
                 application.UseRouting();
                 application.UseAuthentication();
                 application.UseAuthorization();
@@ -3449,6 +3495,9 @@ public sealed class TrickplayPreviewHttpSpecs
         public TaskCompletionSource CacheAccessStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public TaskCompletionSource FirstRequestCompleted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
         public int[]? ConfiguredWidthResolutions { get; init; } = [320];
 
         public bool DeniesDefaultAuthorizationPolicy { get; init; }
@@ -3740,6 +3789,8 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public int? SourceVideoWidth { get; }
 
+        public bool SwallowsCancellation { get; set; }
+
         public Task Started => started.Task;
 
         public void Release()
@@ -3750,7 +3801,14 @@ public sealed class TrickplayPreviewHttpSpecs
         public async Task WaitForReleaseAsync(CancellationToken cancellationToken)
         {
             started.TrySetResult();
-            await release.Task.WaitAsync(cancellationToken);
+            try
+            {
+                await release.Task.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (SwallowsCancellation && cancellationToken.IsCancellationRequested)
+            {
+                // Jellyfin's provider boundary omits failed providers, including canceled ones.
+            }
         }
     }
 
