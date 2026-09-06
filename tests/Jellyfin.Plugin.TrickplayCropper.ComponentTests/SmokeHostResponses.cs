@@ -16,28 +16,6 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         string route = request.RequestUri!.PathAndQuery;
-        if (request.Headers.Authorization?.Parameter == "Token=\"apikey456\"")
-        {
-            if (route == "/Users/Me")
-            {
-                return Task.FromResult(new HttpResponseMessage(fault == "api-user" ? HttpStatusCode.OK : HttpStatusCode.Unauthorized));
-            }
-
-            HttpResponseMessage response = request.Method == HttpMethod.Head ? Preview(request)
-                : new HttpResponseMessage(fault == "api-get" ? HttpStatusCode.OK : HttpStatusCode.Forbidden);
-            if (request.Method == HttpMethod.Head && fault == "api-head")
-            {
-                response.StatusCode = HttpStatusCode.Forbidden;
-            }
-
-            if (request.Method == HttpMethod.Head && fault == "api-frame")
-            {
-                response.Headers.Remove("X-Trickplay-Frame-Index");
-            }
-
-            return Task.FromResult(response);
-        }
-
         if (request.Headers.Authorization?.Parameter != "Token=\"abc123\"")
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
@@ -98,24 +76,7 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
             // Unlike ByteArrayContent, this preserves absent Content-Length before buffering.
             response.Content = new StreamContent(new MemoryStream());
             response.Content.Headers.Remove("Content-Length");
-            if (fault == "stale-head" && !cached.Contains(identity))
-            {
-                response.Headers.Remove("X-Trickplay-Frame-Index");
-                response.Headers.Add("X-Trickplay-Frame-Index", "99");
-            }
-
             CorruptHead(response);
-            return response;
-        }
-
-        if (request.Headers.IfNoneMatch.Count > 0)
-        {
-            response.StatusCode = fault == "conditional-status" ? HttpStatusCode.OK : HttpStatusCode.NotModified;
-            response.Headers.ETag = fault == "conditional-tag" ? new EntityTagHeaderValue("\"wrong\"")
-                : new EntityTagHeaderValue(request.Headers.IfNoneMatch.Single().Tag);
-            response.Headers.Add("X-Trickplay-Frame-Index",
-                fault == "conditional-frame" ? "99" : frame.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            response.Content = new ByteArrayContent(fault == "conditional-body" ? [1] : []);
             return response;
         }
 

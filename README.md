@@ -136,22 +136,10 @@ video Item IDs, and one Item that exists but is invisible to that user. Keep the
 file private (`chmod 600 harness.json`); it grants the user's administrator
 access and is only ever sent to localhost in an HTTP authorization header.
 
-An optional `userlessApiKey` field accepts an existing operator-supplied API key.
-When supplied, smoke verifies that it cannot resolve `/Users/Me`, can perform HEAD,
-and receives `403` from GET. When omitted, it explicitly reports that case as not run.
-The harness never creates/revokes credentials or changes user/global policy.
-
-A concealed Item returning GET `404` is a response-contract check; without verified
-generated data it does not by itself establish authorization. The HTTP component
-suite covers invisible-but-generated Items. A successful HEAD is calculation
-availability, not permission evidence. Successful GET responses,
+The concealed-Item case is a GET authorization assertion only. A successful HEAD
+is calculation availability, not permission evidence. Successful GET responses,
 including `304 Not Modified`, expose the selected Frame Index in
 `X-Trickplay-Frame-Index`; the ETag remains the independent representation identity.
-Boundary smoke checks GET `200`, repeated JPEG HIT, conditional GET `304`, then HEAD
-after GET has refreshed the observations. It checks each GET's actual Frame Index
-against generated metadata and verifies that the independent snapshot stayed equal.
-An older valid HEAD observation is never used as a cross-refresh GET oracle.
-
 The current live harness does not expose backing source/metadata read counters, fake-time
 expiry, or publication barriers, so source-cache I/O and race coverage remains in the
 HTTP component seam with host API test doubles rather than the live fixture. Default,
@@ -175,26 +163,3 @@ Exit code zero means all four cases plus restoration and final health passed;
 `--verify-restoration` deliberately exits nonzero even when recovery succeeds.
 After the run the Debug plugin and the populated Cache Tree remain in place —
 only logging configuration is restored.
-
-
-### Controlled request-cost comparison
-
-`python3 -B tools/TrickplayCropper.IntegrationHarness/request_costs.py --label before`
-(or `--label after`) reads the same root `harness.json` and measures the already
-deployed local host. Run it immediately after a fresh Debug deployment/cache reset,
-before any Preview request, with the plugin Debug logging override enabled. It performs
-no deployment or restoration itself; the operator must retain the existing privileged
-prepare/restore cycle and restore in a `finally`/shell trap on failure. Use identical
-host, build configuration, credential, media, logging, and script for both revisions.
-
-It separates first source/metadata loads, explicit default-source probes, warm serial
-and six-lane traffic, new JPEG frames, conditional GET, and nonmember-source negatives.
-GET nonmember `404` is not a metadata-negative cache hit: GET still rechecks source
-membership. Each run retains redacted Markdown and per-request JSON under ignored
-`test-output/request-costs-*.{md,json}`, including non-success response groups and
-partial failures. Counts cover measured Preview requests, excluding independent host
-metadata/readiness requests. Warm-path I/O and expiry/regeneration are established
-with deterministic component observations, not inferred from response latency.
-
-See [the #95 verification record](docs/research/request-cost-verification.md) for the
-matched measurements, fixture limits, regression coverage, and remaining host costs.
