@@ -30,6 +30,10 @@ Use the five default canonical triage labels. See `docs/agents/triage-labels.md`
 
 This repository uses a single-context domain docs layout. See `docs/agents/domain.md`.
 
+### Code Maps
+
+Start codebase navigation from the Code Maps index. See `docs/code-maps/README.md`.
+
 ### C# coding standard
 
 For C# code changes, apply `docs/agents/csharp-guidelines/SKILL.md` and

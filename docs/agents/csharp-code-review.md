@@ -9,8 +9,8 @@ Use this contract for C# production code, tests, tools, and build configuration.
 3. Apply `docs/agents/csharp-guidelines/SKILL.md`, every reference category
    touched by the change, and `docs/agents/csharp-guidelines-overrides.md`.
 4. Inspect affected call sites, configuration, and tests.
-5. Identify the documentation that describes the changed behavior:
-   `docs/business/` and `README.md`.
+5. Identify the documentation that describes the changed behavior: the affected Code
+   Maps under `docs/code-maps/`.
 
 Preparation is complete when every changed behavior maps to the requested
 contract or is identified as unintended scope.
@@ -21,14 +21,13 @@ contract or is identified as unintended scope.
   relevant to the contract.
 - Check compatibility, public behavior, state transitions, resource ownership,
   concurrency, exceptions, and performance where affected.
-- Verify the code still matches `docs/business/` and `README.md`. When the
-  change alters behavior those documents define — headers, statuses,
-  ownership, ordering, bounds, configuration, commands, or outputs — flag the
-  mismatch and require the documentation to be updated in the same change; a
-  follow-up ticket is not an acceptable remediation.
+- Verify the code still matches the affected Code Maps under `docs/code-maps/`. When
+  the change restructures code a Code Map describes, flag the mismatch and require the
+  map to be updated in the same change。
 - Apply every relevant CSharpGuidelines rule, leaving deterministic diagnostics
   to configured tooling unless the configuration was bypassed or is incorrect.
 - Confirm tests independently prove the changed behavior at stable seams.
+- Unit tests should follow guidelines under `docs/agents/test-value-gate.md`
 - Prefer the simplest design that fully satisfies the requirement.
 - Keep one authoritative source for each fact; derive copies, fixtures, and
   expectations from it.

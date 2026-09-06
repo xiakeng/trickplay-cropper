@@ -1,0 +1,59 @@
+name: business-docs-analysis
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+permissions:
+  issues: write
+
+# Runs serialize so two merges cannot both pass the lookup before either creates;
+# the open analysis issue itself is never used as a synchronization ledger.
+concurrency:
+  group: business-docs-analysis
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+  ANALYSIS_LABEL: docs:business-analysis
+  ANALYSIS_TITLE: Review and maintain business documentation
+
+jobs:
+  maintain-analysis-issue:
+    name: Maintain the pending business documentation analysis issue
+    runs-on: ubuntu-24.04
+    if: >-
+      github.event.pull_request.merged == true
+    steps:
+      - name: Find the pending business documentation analysis issue
+        id: pending
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --label "${ANALYSIS_LABEL}" --state open \
+            --json number --jq '.[0].number // empty')"
+          echo "existing=${existing}" >> "${GITHUB_OUTPUT}"
+
+          if [[ -n "${existing}" ]]; then
+            echo "Analysis issue #${existing} is already open; it will not be touched."
+          else
+            echo "No open issue carries the dedicated analysis label."
+          fi
+
+      - name: Create the pending business documentation analysis issue
+        if: steps.pending.outputs.existing == ''
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/analysis-issue-body.md" <<'BODY'
+          Using the base commit recorded in `docs/business/README.md`, analyze subsequent code changes and maintain the relevant documentation under `docs/business/`.
+
+          If no documentation updates are needed, close this issue directly.
+          BODY
+
+          gh issue create \
+            --title "${ANALYSIS_TITLE}" \
+            --body-file "${RUNNER_TEMP}/analysis-issue-body.md" \
+            --label "${ANALYSIS_LABEL}"

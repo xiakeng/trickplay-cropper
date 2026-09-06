@@ -10,6 +10,10 @@ Actions, Release publication, or the plugin manifest — those are development o
 Installation, update, and rollback guidance lives in the
 [repository README](../../README.md).
 
+## Document base
+
+Documents are based on commit 'd1af4327c0535649d578d6bbc57c7ec107891c08'
+
 ## Three layers, in reading order
 
 The same product is described three times from three angles, because the three questions
