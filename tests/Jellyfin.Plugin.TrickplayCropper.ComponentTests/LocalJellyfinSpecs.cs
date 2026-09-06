@@ -59,6 +59,27 @@ public sealed class LocalJellyfinSpecs
         }
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.Unauthorized, false)]
+    public async Task SubjectValidationWaitsForApiReadinessWithoutRetryingAuthentication(HttpStatusCode initialStatus, bool accepted)
+    {
+        using HostResponses handler = new(true, true, false, initialStatus);
+        using HttpClient http = new(handler) { BaseAddress = new Uri("http://localhost:8096") };
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task validate = new LocalJellyfin(http).ValidateAsync(Input, timeout.Token);
+        if (accepted)
+        {
+            await validate;
+            Assert.Equal(2, handler.PluginRequests);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(() => validate);
+            Assert.Equal(1, handler.PluginRequests);
+        }
+    }
+
     private sealed class DeploymentResponses(HttpStatusCode initialStatus, bool disconnectOnce) : HttpMessageHandler
     {
         public int PluginRequests { get; private set; }
@@ -98,11 +119,22 @@ public sealed class LocalJellyfinSpecs
         }
     }
 
-    private sealed class HostResponses(bool administrator, bool playback, bool visible) : HttpMessageHandler
+    private sealed class HostResponses(bool administrator, bool playback, bool visible,
+        HttpStatusCode initialStatus = HttpStatusCode.OK) : HttpMessageHandler
     {
+        public int PluginRequests { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             string route = request.RequestUri!.PathAndQuery;
+            if (route == "/Plugins")
+            {
+                return Task.FromResult(new HttpResponseMessage(++PluginRequests == 1 ? initialStatus : HttpStatusCode.OK)
+                {
+                    Content = new StringContent("[]"),
+                });
+            }
+
             string json;
             if (route == "/Users/Me")
             {

@@ -147,7 +147,7 @@ local alternate, linked, and eligible dynamic source compatibility is grounded i
 pinned Jellyfin source; the tests do not run its real provider or linked-source graph.
 
 ```sh
-# Validate the supplied subjects only; no elevation, deployment, or restart.
+# Wait for API readiness and validate supplied subjects; no elevation or restart.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness -- --check
 # Deploy, run all four smoke cases including Scrub Storm, and restore.
 dotnet run --project tools/TrickplayCropper.IntegrationHarness
