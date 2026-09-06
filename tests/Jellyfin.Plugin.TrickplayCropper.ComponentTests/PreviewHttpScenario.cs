@@ -128,7 +128,7 @@ internal sealed class PreviewScenario
 
     public int? SourceVideoWidth { get; set; }
 
-    public Guid UserId { get; init; } = UserId;
+    public Guid UserId { get; init; } = TrickplayPreviewHttpSharedSpecs.UserId;
 
     public bool UsesAlternateSource { get; set; }
 
