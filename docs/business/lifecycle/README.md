@@ -11,7 +11,7 @@ cropped from trickplay data Jellyfin already generated. Two operations share one
 calculation but deliberately use different request fronts:
 
 - The **Trickplay Frame Probe** answers *which frame does this position select?* It reads
-  current configuration, reuses or loads a bounded metadata observation, computes a Frame
+  current configuration, reuses or loads bounded source and metadata observations, computes a Frame
   Index, and stops. It never touches an image.
 - The **Trickplay Preview** request answers *give me that frame.* It first establishes
   the current user's visibility and playback authority, then looks the calculated frame
@@ -26,7 +26,7 @@ flowchart TD
     Client -->|"HEAD, one position"| Probe["Trickplay Frame Probe"]
     Client -->|"GET, one position"| Request["Trickplay Preview request"]
 
-    Probe --> ProbeSource["Ordinary endpoint policy<br/>unscoped Item and source membership"]
+    Probe --> ProbeSource["Ordinary endpoint policy<br/>bounded source facts"]
     Request --> PreviewAuth["Current-user visibility<br/>and playback authorization"]
     ProbeSource --> Pipeline
     PreviewAuth --> Pipeline
@@ -50,7 +50,8 @@ flowchart TD
     Resolution -->|"no exact metadata match"| RefusedResolution["404"]
 ```
 
-The operations converge only for target, metadata observation, and Frame Index calculation. HEAD
+The operations share source-fact publication, target selection, metadata observations,
+and Frame Index calculation. HEAD
 does not establish user visibility or playback authority, while GET must establish both
 before it can return bytes or validate an ETag. A successful HEAD is therefore neither
 permission evidence nor a promise that GET can serve the frame.

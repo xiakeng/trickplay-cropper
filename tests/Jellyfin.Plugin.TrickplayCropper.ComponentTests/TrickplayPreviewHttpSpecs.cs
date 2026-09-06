@@ -752,7 +752,7 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage refreshed = await fixture.HeadAsync();
         await AssertTrickplayFrameProbeSuccessAsync(refreshed, 1);
         Assert.Equal(2, scenario.MetadataReadCount);
-        Assert.Equal(3, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
     }
 
     [Fact]
@@ -768,6 +768,391 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage laterPosition = await fixture.HeadAsync();
         await AssertTrickplayFrameProbeSuccessAsync(laterPosition, 3);
         Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task WarmProbePerformsNoPluginSourceOrMetadataIo()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage cold = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(cold, 0);
+        Assert.Equal(2, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(1, scenario.MetadataReadCount);
+
+        using HttpResponseMessage warm = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(warm, 0);
+        Assert.Equal(2, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(1, scenario.MetadataReadCount);
+        Assert.Equal(0, scenario.UserLookups);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+    }
+
+    [Fact]
+    public async Task SourceFactsExpireIndependentlyFromNewerMetadata()
+    {
+        int[] configuredTargets = [320];
+        var scenario = new PreviewScenario { ConfiguredWidthResolutions = configuredTargets };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initial, 0);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(10));
+        configuredTargets[0] = 640;
+        scenario.Metadata = MetadataAvailability.ExactWidthMissing;
+        using HttpResponseMessage newerMetadata = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(newerMetadata, 0);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(2, scenario.MetadataReadCount);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(20));
+        using HttpResponseMessage refreshedSource = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshedSource, 0);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(4, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(2, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task ExplicitSourceAbsenceExpiresAfterFiveMinutes()
+    {
+        var scenario = new PreviewScenario { LogicalVideo = ItemAvailability.Missing };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(initial, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.UserIndependentLibraryLookups);
+
+        scenario.LogicalVideo = ItemAvailability.Available;
+        scenario.Time.Advance(TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(59));
+        using HttpResponseMessage retainedAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(retainedAbsence, HttpStatusCode.NotFound);
+        Assert.Equal(1, scenario.UserIndependentLibraryLookups);
+
+        scenario.Time.Advance(TimeSpan.FromSeconds(1));
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 0);
+        Assert.Equal(3, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task SuccessfulGetWarmsUserNeutralSourceFactsForTheProbe()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage preview = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+        Assert.Equal(1, scenario.UserLookups);
+        Assert.Equal(2, scenario.UserScopedLibraryLookups);
+        Assert.Equal(1, scenario.UserScopedSourceEnumerations);
+        Assert.Equal(0, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(0, scenario.UserIndependentSourceEnumerations);
+
+        using HttpResponseMessage probe = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(probe, 0);
+        Assert.Equal(1, scenario.UserLookups);
+        Assert.Equal(0, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(0, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task OlderSourceReadCannotOverwriteANewerGetObservation()
+    {
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = [640],
+            Metadata = MetadataAvailability.MultipleWidths,
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+            SourceVideoWidth = 321,
+        };
+        SourceReadPlan older = scenario.QueueBlockedSourceRead();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> olderProbe = fixture.HeadAsync();
+        await older.Started.WaitAsync(TimeSpan.FromSeconds(10));
+
+        scenario.SourceVideoWidth = 640;
+        using HttpResponseMessage currentGet = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, currentGet.StatusCode);
+        Assert.Equal("1", currentGet.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+
+        older.Release();
+        using HttpResponseMessage olderResponse = await olderProbe;
+        await AssertTrickplayFrameProbeSuccessAsync(olderResponse, 3);
+
+        using HttpResponseMessage retainedNewerSource = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedNewerSource, 1);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(1, scenario.UserScopedSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task ExpiredGetSourceReadCannotGainFreshAgeAtCompletion()
+    {
+        var scenario = new PreviewScenario();
+        SourceReadPlan slow = scenario.QueueBlockedSourceRead();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> slowGet = fixture.GetAsync();
+        await slow.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        scenario.Time.Advance(TimeSpan.FromMinutes(30));
+        slow.Release();
+
+        using HttpResponseMessage expired = await slowGet;
+        Assert.Equal(HttpStatusCode.InternalServerError, expired.StatusCode);
+        Assert.Equal(0, scenario.MetadataReadCount);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 0);
+        Assert.Equal(2, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task GetRechecksMembershipWithoutReplacingTheWarmProbePositiveWithUserFilteredAbsence()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initialProbe = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initialProbe, 0);
+
+        scenario.Membership = SourceMembership.NotMember;
+        using HttpResponseMessage currentGet = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, currentGet.StatusCode);
+        Assert.Equal(1, scenario.UserScopedSourceEnumerations);
+        Assert.Equal(1, scenario.MetadataReadCount);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+
+        using HttpResponseMessage retainedProbe = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedProbe, 0);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task ProbeObservesRelinkingOnlyAfterThePositiveSourceLifetime()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initial, 0);
+
+        scenario.Membership = SourceMembership.NotMember;
+        scenario.Time.Advance(TimeSpan.FromMinutes(29));
+        using HttpResponseMessage retainedPositive = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedPositive, 0);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage observedAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(observedAbsence, HttpStatusCode.NotFound);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+
+        scenario.Membership = SourceMembership.Member;
+        scenario.Time.Advance(TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(59));
+        using HttpResponseMessage retainedAbsence = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(retainedAbsence, HttpStatusCode.NotFound);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+
+        scenario.Time.Advance(TimeSpan.FromSeconds(1));
+        using HttpResponseMessage observedRelink = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(observedRelink, 0);
+        Assert.Equal(3, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task ProbeObservesSourceDeletionOnlyAfterThePositiveSourceLifetime()
+    {
+        var scenario = new PreviewScenario { UsesAlternateSource = true };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initial, 0);
+
+        scenario.SelectedVideo = ItemAvailability.Missing;
+        using HttpResponseMessage currentGet = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.NotFound, currentGet.StatusCode);
+
+        using HttpResponseMessage retainedPositive = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(retainedPositive, 0);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(30));
+        using HttpResponseMessage observedDeletion = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(observedDeletion, HttpStatusCode.NotFound);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(4, scenario.UserIndependentLibraryLookups);
+    }
+
+    [Fact]
+    public async Task CurrentGetWidthReplacesTheWarmProbeWidth()
+    {
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = [640],
+            Metadata = MetadataAvailability.MultipleWidths,
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+            SourceVideoWidth = 321,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage oldProbe = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(oldProbe, 3);
+
+        scenario.SourceVideoWidth = 640;
+        using HttpResponseMessage currentGet = await fixture.GetAsync();
+        Assert.Equal(HttpStatusCode.OK, currentGet.StatusCode);
+        Assert.Equal("1", currentGet.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+
+        using HttpResponseMessage currentProbe = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(currentProbe, 1);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(1, scenario.UserScopedSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task CanceledSourceReadDoesNotWarmTheProbe()
+    {
+        var scenario = new PreviewScenario();
+        SourceReadPlan pending = scenario.QueueBlockedSourceRead();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<HttpResponseMessage> canceledProbe = fixture.HeadAsync(cancellation.Token);
+        await pending.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await canceledProbe);
+        pending.Release();
+
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 0);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(1, scenario.MetadataReadCount);
+    }
+
+    [Theory]
+    [InlineData(SourceMembership.Member, SourceMembership.NotMember, HttpStatusCode.NotFound)]
+    [InlineData(SourceMembership.NotMember, SourceMembership.Member, HttpStatusCode.OK)]
+    public async Task NewerSourceObservationWinsAcrossPositiveAndAbsence(
+        SourceMembership olderMembership,
+        SourceMembership newerMembership,
+        HttpStatusCode expectedCurrentStatus)
+    {
+        var scenario = new PreviewScenario { Membership = olderMembership };
+        SourceReadPlan older = scenario.QueueBlockedSourceRead();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> olderProbe = fixture.HeadAsync();
+        await older.Started.WaitAsync(TimeSpan.FromSeconds(10));
+
+        scenario.Membership = newerMembership;
+        using HttpResponseMessage newerProbe = await fixture.HeadAsync();
+        Assert.Equal(expectedCurrentStatus, newerProbe.StatusCode);
+
+        older.Release();
+        using HttpResponseMessage olderResponse = await olderProbe;
+        Assert.Equal(
+            olderMembership == SourceMembership.Member ? HttpStatusCode.OK : HttpStatusCode.NotFound,
+            olderResponse.StatusCode);
+
+        using HttpResponseMessage retainedNewer = await fixture.HeadAsync();
+        Assert.Equal(expectedCurrentStatus, retainedNewer.StatusCode);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task ExpiredNewerSourceAbsencePreventsOlderPositivePublication()
+    {
+        var scenario = new PreviewScenario();
+        SourceReadPlan older = scenario.QueueBlockedSourceRead();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        Task<HttpResponseMessage> olderProbe = fixture.HeadAsync();
+        await older.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        scenario.Membership = SourceMembership.NotMember;
+        SourceReadPlan newer = scenario.QueueBlockedSourceRead();
+        Task<HttpResponseMessage> newerProbe = fixture.HeadAsync();
+        await newer.Started.WaitAsync(TimeSpan.FromSeconds(10));
+        scenario.Time.Advance(TimeSpan.FromMinutes(5));
+        newer.Release();
+        using HttpResponseMessage expired = await newerProbe;
+        Assert.Equal(HttpStatusCode.InternalServerError, expired.StatusCode);
+
+        older.Release();
+        using HttpResponseMessage olderResponse = await olderProbe;
+        await AssertTrickplayFrameProbeSuccessAsync(olderResponse, 0);
+
+        using HttpResponseMessage current = await fixture.HeadAsync();
+        Assert.Equal(HttpStatusCode.NotFound, current.StatusCode);
+        Assert.Equal(3, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task InvalidWidthRemainsAnErrorInsteadOfBecomingSourceAbsence()
+    {
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = [640],
+            Metadata = MetadataAvailability.ExactWidthMissing,
+            SourceVideoWidth = 1,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(initial, HttpStatusCode.InternalServerError);
+
+        scenario.SourceVideoWidth = 640;
+        using HttpResponseMessage retainedInvalidWidth = await fixture.HeadAsync();
+        await AssertBodylessTrickplayFrameProbeFailureAsync(
+            retainedInvalidWidth,
+            HttpStatusCode.InternalServerError);
+        Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(30));
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 0);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+    }
+
+    [Fact]
+    public async Task ExpiredSourcePositiveIsNotServedWhileAnotherReadIsInProgress()
+    {
+        var scenario = new PreviewScenario
+        {
+            ConfiguredWidthResolutions = [640],
+            Metadata = MetadataAvailability.MultipleWidths,
+            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+            SourceVideoWidth = 321,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage initial = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(initial, 3);
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(29));
+        scenario.SourceVideoWidth = 640;
+        SourceReadPlan pending = scenario.QueueBlockedSourceRead();
+        Task<HttpResponseMessage> pendingGet = fixture.GetAsync();
+        await pending.Started.WaitAsync(TimeSpan.FromSeconds(10));
+
+        scenario.Time.Advance(TimeSpan.FromMinutes(1));
+        using HttpResponseMessage refreshed = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(refreshed, 1);
+        Assert.Equal(2, scenario.UserIndependentSourceEnumerations);
+
+        pending.Release();
+        using HttpResponseMessage completedGet = await pendingGet;
+        Assert.Equal(HttpStatusCode.OK, completedGet.StatusCode);
     }
 
     [Fact]
@@ -1321,9 +1706,15 @@ public sealed class TrickplayPreviewHttpSpecs
         using HttpResponseMessage response = await fixture.HeadAsync();
 
         await AssertTrickplayFrameProbeSuccessAsync(response, 0);
+        using HttpResponseMessage warm = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(warm, 0);
         Assert.Equal(0, scenario.UserLookups);
         Assert.Equal(0, scenario.UserScopedSourceEnumerations);
         Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
+        Assert.Equal(2, scenario.UserIndependentLibraryLookups);
+        Assert.Equal(1, scenario.MetadataReadCount);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
     }
 
     [Fact]
@@ -2442,43 +2833,60 @@ public sealed class TrickplayPreviewHttpSpecs
                     throw new InvalidOperationException("Playback sources used an unexpected Jellyfin user.");
                 }
 
-                string memberId = scenario.Membership switch
-                {
-                    SourceMembership.Member => scenario.SelectedSourceId.ToString("D"),
-                    SourceMembership.NotMember => unavailableSourceId.ToString("D"),
-                    SourceMembership.Malformed => "not-a-guid",
-                    _ => throw new InvalidOperationException("Unknown source-membership scenario."),
-                };
-                var mediaSource = new MediaSourceInfo
-                {
-                    Id = memberId,
-                    OpenToken = scenario.HostSource == HostSourceKind.EligibleDynamic
-                        ? "component-provider-token"
-                        : null,
-                    Path = scenario.HostSource switch
-                    {
-                        HostSourceKind.LinkedAlternate => "/media/resolved-linked-target.mkv",
-                        HostSourceKind.EligibleDynamic => "https://provider.invalid/dynamic-stream",
-                        _ => scenario.SelectedMediaPath,
-                    },
-                };
-                if (scenario.SourceVideoWidth is int sourceVideoWidth)
-                {
-                    mediaSource.MediaStreams =
-                    [
-                        new MediaStream
-                        {
-                            Type = MediaStreamType.Video,
-                            IsDefault = true,
-                            Width = sourceVideoWidth,
-                        },
-                    ];
-                }
-
-                IReadOnlyList<MediaSourceInfo> mediaSources = [mediaSource];
-                return Task.FromResult(mediaSources);
+                return ReadMediaSourcesAsync(
+                    scenario,
+                    scenario.BeginSourceRead(),
+                    (CancellationToken)arguments[4]!);
             });
             return mock.Service;
+        }
+
+        private static async Task<IReadOnlyList<MediaSourceInfo>> ReadMediaSourcesAsync(
+            PreviewScenario scenario,
+            SourceReadPlan? plan,
+            CancellationToken cancellationToken)
+        {
+            if (plan is not null)
+            {
+                await plan.WaitForReleaseAsync(cancellationToken);
+            }
+
+            SourceMembership membership = plan?.Membership ?? scenario.Membership;
+            int? sourceVideoWidth = plan is null ? scenario.SourceVideoWidth : plan.SourceVideoWidth;
+            string memberId = membership switch
+            {
+                SourceMembership.Member => scenario.SelectedSourceId.ToString("D"),
+                SourceMembership.NotMember => unavailableSourceId.ToString("D"),
+                SourceMembership.Malformed => "not-a-guid",
+                _ => throw new InvalidOperationException("Unknown source-membership scenario."),
+            };
+            var mediaSource = new MediaSourceInfo
+            {
+                Id = memberId,
+                OpenToken = scenario.HostSource == HostSourceKind.EligibleDynamic
+                    ? "component-provider-token"
+                    : null,
+                Path = scenario.HostSource switch
+                {
+                    HostSourceKind.LinkedAlternate => "/media/resolved-linked-target.mkv",
+                    HostSourceKind.EligibleDynamic => "https://provider.invalid/dynamic-stream",
+                    _ => scenario.SelectedMediaPath,
+                },
+            };
+            if (sourceVideoWidth is int width)
+            {
+                mediaSource.MediaStreams =
+                [
+                    new MediaStream
+                    {
+                        Type = MediaStreamType.Video,
+                        IsDefault = true,
+                        Width = width,
+                    },
+                ];
+            }
+
+            return [mediaSource];
         }
 
         private static IServerConfigurationManager CreateServerConfigurationManager(PreviewScenario scenario)
@@ -2550,6 +2958,11 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 MetadataAvailability.ExactWidthMissing => new Dictionary<int, TrickplayInfo> { [640] = metadata },
                 MetadataAvailability.GeneratedMetadataMissing => new Dictionary<int, TrickplayInfo>(),
+                MetadataAvailability.MultipleWidths => new Dictionary<int, TrickplayInfo>
+                {
+                    [320] = metadata,
+                    [640] = CreateMetadata(scenario, MetadataAvailability.ChangedWidth),
+                },
                 _ => new Dictionary<int, TrickplayInfo> { [320] = metadata },
             };
         }
@@ -2572,12 +2985,20 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 case MetadataAvailability.Available:
                 case MetadataAvailability.GeneratedMetadataMissing:
+                case MetadataAvailability.MultipleWidths:
                     {
                         break;
                     }
 
                 case MetadataAvailability.ChangedInterval:
                     {
+                        metadata.Interval = 20_000;
+                        break;
+                    }
+
+                case MetadataAvailability.ChangedWidth:
+                    {
+                        metadata.Width = 640;
                         metadata.Interval = 20_000;
                         break;
                     }
@@ -2676,7 +3097,8 @@ public sealed class TrickplayPreviewHttpSpecs
         private static Task<string> ResolveSourceSpritePath(object?[]? arguments, PreviewHostContext context)
         {
             context.Scenario.RecordSourceSpritePathRequest();
-            if (!Equals(arguments?[1], 320)
+            int expectedResolution = context.Scenario.Metadata == MetadataAvailability.MultipleWidths ? 640 : 320;
+            if (!Equals(arguments?[1], expectedResolution)
                 || !Equals(arguments?[2], 0)
                 || !Equals(arguments?[3], false))
             {
@@ -2708,13 +3130,16 @@ public sealed class TrickplayPreviewHttpSpecs
         private static string CreateSourceSprite(string temporaryDirectory, PreviewScenario scenario)
         {
             string sourceSpritePath = Path.Combine(temporaryDirectory, "source-sprite.jpg");
-            int sourceWidth = scenario.SourceSprite == SourceSpriteAvailability.DimensionMismatch ? 320 : 640;
+            int frameWidth = scenario.Metadata == MetadataAvailability.MultipleWidths ? 640 : 320;
+            int sourceWidth = scenario.SourceSprite == SourceSpriteAvailability.DimensionMismatch
+                ? frameWidth
+                : frameWidth * 2;
             using var bitmap = new SKBitmap(sourceWidth, 360, SKColorType.Rgba8888, SKAlphaType.Opaque);
             using var canvas = new SKCanvas(bitmap);
-            DrawCell(canvas, SKColors.Red, 0, 0);
-            DrawCell(canvas, SKColors.Green, 320, 0);
-            DrawCell(canvas, SKColors.Blue, 0, 180);
-            DrawCell(canvas, SKColors.Yellow, 320, 180);
+            DrawCell(canvas, SKColors.Red, 0, 0, frameWidth);
+            DrawCell(canvas, SKColors.Green, frameWidth, 0, frameWidth);
+            DrawCell(canvas, SKColors.Blue, 0, 180, frameWidth);
+            DrawCell(canvas, SKColors.Yellow, frameWidth, 180, frameWidth);
             using FileStream output = File.Create(sourceSpritePath);
             Assert.True(bitmap.Encode(output, SKEncodedImageFormat.Jpeg, quality: 100));
             output.Close();
@@ -2722,10 +3147,10 @@ public sealed class TrickplayPreviewHttpSpecs
             return sourceSpritePath;
         }
 
-        private static void DrawCell(SKCanvas canvas, SKColor color, int left, int top)
+        private static void DrawCell(SKCanvas canvas, SKColor color, int left, int top, int frameWidth)
         {
             using var paint = new SKPaint { Color = color };
-            canvas.DrawRect(left, top, 320, 180, paint);
+            canvas.DrawRect(left, top, frameWidth, 180, paint);
         }
     }
 
@@ -3009,6 +3434,7 @@ public sealed class TrickplayPreviewHttpSpecs
     {
         private int metadataReadCount;
         private readonly Queue<MetadataReadPlan> metadataReadPlans = [];
+        private readonly Queue<SourceReadPlan> sourceReadPlans = [];
         private int sourceSpritePathRequests;
         private int userIndependentLibraryLookups;
         private int userIndependentSourceEnumerations;
@@ -3041,11 +3467,11 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public string LogicalTitle { get; init; } = "Component logical video";
 
-        public ItemAvailability LogicalVideo { get; init; } = ItemAvailability.Available;
+        public ItemAvailability LogicalVideo { get; set; } = ItemAvailability.Available;
 
         public string MediaSourceIdFormat { get; init; } = "D";
 
-        public SourceMembership Membership { get; init; } = SourceMembership.Member;
+        public SourceMembership Membership { get; set; } = SourceMembership.Member;
 
         public MetadataAvailability Metadata { get; set; } = MetadataAvailability.Available;
 
@@ -3057,7 +3483,7 @@ public sealed class TrickplayPreviewHttpSpecs
 
         public bool ReturnsMismatchedSourceIdentity { get; init; }
 
-        public ItemAvailability SelectedVideo { get; init; } = ItemAvailability.Available;
+        public ItemAvailability SelectedVideo { get; set; } = ItemAvailability.Available;
 
         public string SelectedMediaPath { get; init; } = "/media/component-selected-source.mkv";
 
@@ -3072,7 +3498,7 @@ public sealed class TrickplayPreviewHttpSpecs
         public ManualTimeProvider Time { get; } = new(
             new DateTimeOffset(2026, 9, 6, 0, 0, 0, TimeSpan.Zero));
 
-        public int? SourceVideoWidth { get; init; }
+        public int? SourceVideoWidth { get; set; }
 
         public Guid UserId { get; init; } = userId;
 
@@ -3139,6 +3565,25 @@ public sealed class TrickplayPreviewHttpSpecs
             {
                 return metadataReadPlans.Count > 0 ? metadataReadPlans.Dequeue() : null;
             }
+        }
+
+        public SourceReadPlan? BeginSourceRead()
+        {
+            lock (sourceReadPlans)
+            {
+                return sourceReadPlans.Count > 0 ? sourceReadPlans.Dequeue() : null;
+            }
+        }
+
+        public SourceReadPlan QueueBlockedSourceRead()
+        {
+            var plan = new SourceReadPlan(Membership, SourceVideoWidth);
+            lock (sourceReadPlans)
+            {
+                sourceReadPlans.Enqueue(plan);
+            }
+
+            return plan;
         }
 
         public void RecordUserIndependentLibraryLookup()
@@ -3212,6 +3657,7 @@ public sealed class TrickplayPreviewHttpSpecs
     {
         Available,
         ChangedInterval,
+        ChangedWidth,
         ContradictoryFrameWidth,
         CropBottomOverflow,
         CropRightOverflow,
@@ -3222,6 +3668,7 @@ public sealed class TrickplayPreviewHttpSpecs
         FrameWidthZero,
         GeneratedMetadataMissing,
         IntervalZero,
+        MultipleWidths,
         NegativeThumbnails,
         NoThumbnails,
         TileHeightZero,
@@ -3273,6 +3720,37 @@ public sealed class TrickplayPreviewHttpSpecs
         public void MarkCompleted()
         {
             completed.TrySetResult();
+        }
+    }
+
+    private sealed class SourceReadPlan
+    {
+        private readonly TaskCompletionSource release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource started = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public SourceReadPlan(SourceMembership membership, int? sourceVideoWidth)
+        {
+            Membership = membership;
+            SourceVideoWidth = sourceVideoWidth;
+        }
+
+        public SourceMembership Membership { get; }
+
+        public int? SourceVideoWidth { get; }
+
+        public Task Started => started.Task;
+
+        public void Release()
+        {
+            release.TrySetResult();
+        }
+
+        public async Task WaitForReleaseAsync(CancellationToken cancellationToken)
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
         }
     }
 
@@ -3338,7 +3816,7 @@ public sealed class TrickplayPreviewHttpSpecs
         SourceSpriteMissing,
     }
 
-    private enum SourceMembership
+    public enum SourceMembership
     {
         Member,
         NotMember,

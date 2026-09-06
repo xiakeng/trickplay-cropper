@@ -8,18 +8,18 @@ position select?*
 - **The Frame Index answer.** Given a position, an Item, and an optional Media
   Source, the probe owns the arithmetic that turns them into a Frame Index. How it
   derives it is in [Frame Selection](../lifecycle/frame-selection.md).
-- **Bounded calculation reuse.** It may reuse generated metadata only as calculation
-  evidence, never as user authority or proof that image bytes exist.
+- **Bounded calculation reuse.** It may reuse user-independent source facts and generated
+  metadata only as calculation evidence, never as user authority or proof that image
+  bytes exist.
 - **The decision to stop.** The probe owns the boundary between answering the cheap
   question and doing the expensive work, and never crosses it.
 
 ## May assume
 
-Jellyfin's ordinary endpoint policy accepted the request, the unscoped logical Item
-and effective Source Video have their requested identities, the requested Media Source
-belongs to the logical Item's full host enumeration, and one exact Selected Trickplay
-Resolution applies. It may not assume a current user exists, the Item is visible to a
-particular user, or anyone may play it. See
+Jellyfin's ordinary endpoint policy accepted the request, a current Source Facts
+Observation establishes the requested Item/Source identities, membership and matched
+width, and one exact Selected Trickplay Resolution applies. It may not assume a current
+user exists, the Item is visible to a particular user, or anyone may play it. See
 [source resolution](../lifecycle/source-resolution.md).
 
 ## Must not

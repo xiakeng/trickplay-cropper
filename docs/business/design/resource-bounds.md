@@ -95,7 +95,7 @@ rather than refuse data the server considers good. The bound covers host CPU as 
 disk: it is a statement about the whole cost of being a tenant in the server process, not
 only about the bytes written to the tree.
 
-## Generated-metadata state is reclaimed, not capacity-bounded
+## Source and metadata state is reclaimed, not capacity-bounded
 
 The in-memory metadata module removes expired observations, obsolete publication
 tombstones, completed-read tracking, and empty per-source state after no in-progress older
@@ -103,6 +103,12 @@ read needs them. This prevents ordinary expiry and cancellation history from bec
 permanent bookkeeping. Request traffic opportunistically revisits all retained source state
 at most once per 5-minute negative lifetime, avoiding both idle-source leaks and an internal
 cleanup timer.
+
+Source facts use the same reclamation policy, with separate state by logical Item and
+Media Source. Each in-flight source read protects its publication order until settlement;
+GET releases that registration on success, refusal, cancellation, and failure. Reclamation
+does not extend source age or metadata age, and preserves no mutable host Video or playback
+DTO. A retained expired observation can protect ordering but cannot answer a request.
 
 It deliberately adds no entry capacity, admission queue, load-concurrency limit, overload
 status, or same-key coalescing. Those are not implied by the 30-minute positive and

@@ -15,10 +15,12 @@ modifies, or repairs that data. What it adds on top:
   frame does this position select?* for an Item and real Media Source accepted by
   Jellyfin's ordinary endpoint policy, then stops before user-scoped preview
   authorization or any image work.
-- **Bounded generated-metadata reuse.** HEAD can reuse immutable positive metadata for
-  30 minutes and scoped absence for 5 minutes, while GET preserves current authorization
-  and refreshes every non-negative-short-circuited metadata observation — including JPEG
-  HITs and conditional requests.
+- **Bounded source and metadata reuse.** A warm HEAD reuses immutable Item/source
+  membership, matched-source width, and generated metadata for 30 minutes; explicit
+  absence lives for 5 minutes. GET always rechecks current user authority and source
+  facts, publishes only verified user-neutral positives, and refreshes every
+  non-negative-short-circuited metadata observation — including JPEG HITs and
+  conditional requests.
 - **User-scoped authorization with concealment.** Frames reach only callers who
   may play the logical video; GET makes hidden Items answer exactly like absent
   ones, and does not treat a server API key as a user.
@@ -138,6 +140,11 @@ The concealed-Item case is a GET authorization assertion only. A successful HEAD
 is calculation availability, not permission evidence. Successful GET responses,
 including `304 Not Modified`, expose the selected Frame Index in
 `X-Trickplay-Frame-Index`; the ETag remains the independent representation identity.
+The current live harness does not expose backing source/metadata read counters, fake-time
+expiry, or publication barriers, so source-cache I/O and race coverage remains in the
+HTTP component seam with host API test doubles rather than the live fixture. Default,
+local alternate, linked, and eligible dynamic source compatibility is grounded in the
+pinned Jellyfin source; the tests do not run its real provider or linked-source graph.
 
 ```sh
 # Validate the supplied subjects only; no elevation, deployment, or restart.

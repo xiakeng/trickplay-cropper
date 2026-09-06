@@ -10,7 +10,7 @@ for the official `v10.11.11` tag. [Jellyfin release tag][release]
 
 ## Supported host call
 
-The adapter calls:
+On a source-facts miss or expiry, the adapter calls:
 
 ```csharp
 GetPlaybackMediaSources(
@@ -54,6 +54,11 @@ The user-independent lookups and membership test establish real host identities,
 visibility or playback authority. A successful probe is calculation availability only.
 GET keeps its separate current-user, visibility, playback, user-shaped membership and
 Source Video visibility gates.
+
+Issue #94 adds bounded immutable membership and matched-width observations around this
+cold loader. Warm HEAD reuses these facts without repeating host lookups or enumeration;
+the [source resolution lifecycle](../business/lifecycle/source-resolution.md) defines
+their independent age, publication, and explicit-absence rules.
 
 ## Automated seam and its limits
 
