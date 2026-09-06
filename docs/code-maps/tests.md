@@ -12,14 +12,18 @@ Each file below lives in the named suite's directory.
 
 | To prove or change… | Entry point |
 |---|---|
-| GET/HEAD HTTP behavior: authorization, concealment, conditional requests, warm probe reuse, real Kestrel | `TrickplayPreviewHttpSpecs.cs` (ComponentTests) |
+| GET response and authorization behavior | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
+| Probe HTTP behavior and real Kestrel | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
+| Source Facts Observation behavior | `TrickplaySourceFactsObservationHttpSpecs.cs` (ComponentTests) |
+| Generated Metadata Observation behavior | `TrickplayGeneratedMetadataObservationHttpSpecs.cs`, `TrickplayGeneratedMetadataScopeHttpSpecs.cs` (ComponentTests) |
 | GET outcome mapping, conditional ETag comparison, Debug events | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract and Debug reasons | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
 | Authorization-split architectural boundary | `PreviewContextBoundarySpecs.cs` (UnitTests) |
 | Resolution selection, frame selection, metadata validation | `TrickplayResolutionSelectorSpecs.cs`, `FrameSelectionSpecs.cs`, `TrickplayMetadataSpecs.cs` (UnitTests) |
-| Disk cache behavior | `DiskPreviewCacheSpecs.cs` (ComponentTests) |
+| Disk cache entry, path, cleanup, and failure behavior | `DiskPreviewCacheEntrySpecs.cs`, `DiskPreviewCachePathSafetySpecs.cs`, `DiskPreviewCacheCleanupEligibilitySpecs.cs`, `DiskPreviewCacheCleanupCoordinationSpecs.cs`, `DiskPreviewCacheFailureSpecs.cs` (ComponentTests) |
 | Coordination, tree, and entry locks | `PreviewCacheCoordinationSpecs.cs`, `CacheTreeLockSpecs.cs`, `PreviewEntryLockRegistrySpecs.cs` (ComponentTests) |
-| Encoder crop, failure, cancellation, decode permits | `TrickplayPreviewEncoderSpecs.cs` (ComponentTests) |
+| Encoder crop, input, and failure behavior | `TrickplayPreviewEncoderCropSpecs.cs` (ComponentTests) |
+| Encoder cancellation, decode permits, and telemetry | `TrickplayPreviewEncoderConcurrencySpecs.cs` (ComponentTests) |
 | Scheduled cleanup task | `ClearTrickplayCropperCacheTaskSpecs.cs` (UnitTests) |
 | Release tools | `ManifestBuilderSpecs.cs`, `PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs` (UnitTests) |
 | Build-manifest, runtime, and dependency-lock contracts | `ReleaseContractSpecs.cs` (UnitTests) |

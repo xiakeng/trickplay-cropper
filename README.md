@@ -37,6 +37,9 @@ modifies, or repairs that data. What it adds on top:
 The complete business documentation — participants, lifecycle, and design, with a
 reading path and a route-by-question table — lives under
 [docs/business](docs/business/README.md).
+Compact contributor navigation starts at the [Code Maps index](docs/code-maps/README.md),
+which routes request paths, caching, tests, and tooling without duplicating those
+business contracts.
 
 ## Compatibility
 
@@ -78,6 +81,8 @@ contents, then restart Jellyfin.
 ## Build and test
 
 The committed NuGet lock files are enforced for every restore.
+CI also directly enforces repository file-size boundaries, compact Code Maps, and
+the existence of every local target linked by a Code Map.
 
 ```bash
 dotnet restore TrickplayCropper.sln --locked-mode
