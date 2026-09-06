@@ -23,11 +23,11 @@ contract or is identified as unintended scope.
   concurrency, exceptions, and performance where affected.
 - Verify the code still matches the affected Code Maps under `docs/code-maps/`. When
   the change restructures code a Code Map describes, flag the mismatch and require the
-  map to be updated in the same change; a follow-up ticket is not an acceptable
-  remediation.
+  map to be updated in the same change。
 - Apply every relevant CSharpGuidelines rule, leaving deterministic diagnostics
   to configured tooling unless the configuration was bypassed or is incorrect.
 - Confirm tests independently prove the changed behavior at stable seams.
+- Unit tests should follow guidelines under `docs/agents/test-value-gate.md`
 - Prefer the simplest design that fully satisfies the requirement.
 - Keep one authoritative source for each fact; derive copies, fixtures, and
   expectations from it.

@@ -8,6 +8,9 @@ Keep documentation synchronized with the code. When a change restructures code t
 change. Documentation that no longer matches the code is a defect of the change, not
 follow-up work.
 
+## Unit tests guidelines
+Follow guidelines in `docs/agents/test-value-gate.md`
+
 ## Repository size limits
 
 Every Markdown source in the [Code Maps](../code-maps/README.md) collection — the index
