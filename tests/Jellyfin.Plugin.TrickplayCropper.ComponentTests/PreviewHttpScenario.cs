@@ -35,25 +35,9 @@ using Microsoft.Extensions.Options;
 using SkiaSharp;
 using Xunit;
 
-using static global::Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewHttpSharedSpecs;
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.PreviewHttpTestValues;
 
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
-
-internal sealed record PreviewHostContext(
-    string TemporaryDirectory,
-    string SourceSpritePath,
-    PreviewScenario Scenario);
-
-internal sealed class VideoLookupContext
-{
-    public required Video AlternateVideo { get; init; }
-
-    public required Video LogicalVideo { get; init; }
-
-    public required PreviewScenario Scenario { get; init; }
-
-    public required User User { get; init; }
-}
 
 internal sealed class PreviewScenario
 {
@@ -128,7 +112,7 @@ internal sealed class PreviewScenario
 
     public int? SourceVideoWidth { get; set; }
 
-    public Guid UserId { get; init; } = TrickplayPreviewHttpSharedSpecs.UserId;
+    public Guid UserId { get; init; } = PreviewHttpTestValues.UserId;
 
     public bool UsesAlternateSource { get; set; }
 
@@ -238,131 +222,4 @@ internal sealed class PreviewScenario
     {
         Interlocked.Increment(ref userScopedSourceEnumerations);
     }
-}
-
-public enum AuthenticationState
-{
-    UserSession,
-    ApiKeyWithoutCurrentUser,
-    Missing,
-    Invalid,
-    UnusableUserSession,
-}
-
-public enum ConditionalEntityTagKind
-{
-    Weak,
-    Wildcard,
-}
-
-public enum ConfigurationFailureKind
-{
-    UnreadableSnapshot,
-    NonPositiveConfiguredTarget,
-    NonPositiveSelectedResolution,
-}
-
-public enum TrickplayFrameProbeKestrelCondition
-{
-    Success,
-    MalformedInput,
-    UnauthenticatedSession,
-    DefaultPolicyDenied,
-    ApiKeyWithoutCurrentUser,
-    ConcealedResource,
-    InvalidMetadata,
-}
-
-internal enum ItemAvailability
-{
-    Available,
-    Missing,
-    Hidden,
-    WrongType,
-}
-
-public enum MetadataAvailability
-{
-    Available,
-    ChangedInterval,
-    ChangedWidth,
-    ContradictoryFrameWidth,
-    CropBottomOverflow,
-    CropRightOverflow,
-    CropXOverflow,
-    CropYOverflow,
-    ExactWidthMissing,
-    FrameHeightZero,
-    FrameWidthZero,
-    GeneratedMetadataMissing,
-    IntervalZero,
-    MultipleWidths,
-    NegativeThumbnails,
-    NoThumbnails,
-    TileHeightZero,
-    TileWidthZero,
-}
-
-internal enum MetadataReadOutcome
-{
-    Succeeded,
-    Failed,
-}
-
-public enum InternalFailureCondition
-{
-    ContradictoryFrameWidth,
-    FrameWidthZero,
-    FrameHeightZero,
-    IntervalZero,
-    TileWidthZero,
-    TileHeightZero,
-    CropXOverflow,
-    CropYOverflow,
-    CropRightOverflow,
-    CropBottomOverflow,
-}
-
-public enum HostSourceKind
-{
-    Default,
-    LocalAlternate,
-    LinkedAlternate,
-    EligibleDynamic,
-}
-
-public enum NotFoundCondition
-{
-    LogicalVideoMissing,
-    LogicalVideoHidden,
-    LogicalItemWrongType,
-    SelectedSourceNotMember,
-    SelectedSourceMembershipMalformed,
-    SelectedVideoMissing,
-    SelectedVideoIdentityMismatch,
-    SelectedVideoHidden,
-    SelectedItemWrongType,
-    NoConfiguredTarget,
-    GeneratedMetadataMissing,
-    ExactMetadataMissing,
-    ThumbnailsMissing,
-    ThumbnailsNegative,
-    ManagerPathMissing,
-    SourceSpriteMissing,
-}
-
-public enum SourceMembership
-{
-    Member,
-    NotMember,
-    Malformed,
-}
-
-internal enum SourceSpriteAvailability
-{
-    Available,
-    DimensionMismatch,
-    ManagerFailure,
-    ManagerPathMissing,
-    FileMissing,
 }

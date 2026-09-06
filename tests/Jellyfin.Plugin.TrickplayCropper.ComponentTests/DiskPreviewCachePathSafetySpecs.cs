@@ -9,9 +9,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.DiskPreviewCacheSupport;
+
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public sealed class DiskPreviewCachePathSafetySpecs : DiskPreviewCacheSharedSpecs
+public sealed class DiskPreviewCachePathSafetySpecs
 {
     [Fact]
     public async Task RejectsARequestPathThatCrossesADirectoryReparsePoint()
@@ -85,7 +87,9 @@ public sealed class DiskPreviewCachePathSafetySpecs : DiskPreviewCacheSharedSpec
             .WaitAsync(CoordinationTimeout);
 
         Assert.True(File.Exists(fixture.ExternalEntryPath));
-        RecordedLog warning = Assert.Single(fixture.Logger.Entries, entry => entry.Level == LogLevel.Warning);
+        DiskCacheRecordedLog warning = Assert.Single(
+            fixture.Logger.Entries,
+            entry => entry.Level == LogLevel.Warning);
         Assert.Equal(fixture.CacheFixture.PluginRoot, warning.Properties["CachePath"]);
     }
 

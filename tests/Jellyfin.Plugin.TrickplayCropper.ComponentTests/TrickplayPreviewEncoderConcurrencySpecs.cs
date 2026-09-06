@@ -6,9 +6,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SkiaSharp;
 using Xunit;
 
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewEncoderSupport;
+
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public sealed class TrickplayPreviewEncoderConcurrencySpecs : TrickplayPreviewEncoderSharedSpecs
+public sealed class TrickplayPreviewEncoderConcurrencySpecs
 {
     [Fact]
     public async Task CancelsBeforeWaitingForADecodePermit()

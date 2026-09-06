@@ -35,9 +35,12 @@ using Microsoft.Extensions.Options;
 using SkiaSharp;
 using Xunit;
 
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.PreviewHttpTestValues;
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewHttpSupport;
+
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public sealed class TrickplayFrameProbeHttpSpecs : TrickplayPreviewHttpSharedSpecs
+public sealed class TrickplayFrameProbeHttpSpecs
 {
     [Fact]
     public async Task ServesBodylessTrickplayFrameProbeSuccessWithExactlyTwoPluginHeaders()
@@ -211,7 +214,7 @@ public sealed class TrickplayFrameProbeHttpSpecs : TrickplayPreviewHttpSharedSpe
     }
 
     [Theory]
-    [MemberData(nameof(MalformedPreviewRequestPaths))]
+    [MemberData(nameof(MalformedPreviewRequestPaths), MemberType = typeof(TrickplayPreviewHttpSupport))]
     public async Task RejectsMissingMalformedAndNegativeTrickplayFrameProbeValues(string requestPath)
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();

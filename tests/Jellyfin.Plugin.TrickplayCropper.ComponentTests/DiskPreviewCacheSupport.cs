@@ -11,22 +11,22 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public abstract class DiskPreviewCacheSharedSpecs
+internal static class DiskPreviewCacheSupport
 {
-    private protected static readonly TimeSpan CoordinationTimeout = TimeSpan.FromSeconds(10);
-    private protected static IApplicationPaths CreateApplicationPaths(string temporaryDirectory)
+    internal static readonly TimeSpan CoordinationTimeout = TimeSpan.FromSeconds(10);
+    internal static IApplicationPaths CreateApplicationPaths(string temporaryDirectory)
     {
         IApplicationPaths paths = DispatchProxy.Create<IApplicationPaths, ApplicationPathsSpecs>();
         ((ApplicationPathsSpecs)(object)paths).TemporaryDirectory = temporaryDirectory;
         return paths;
     }
 
-    private protected static PreviewIdentity CreateIdentity()
+    internal static PreviewIdentity CreateIdentity()
     {
         return CreateIdentity("f0000000000.jpg");
     }
 
-    private protected static PreviewIdentity CreateIdentity(string entryName)
+    internal static PreviewIdentity CreateIdentity(string entryName)
     {
         return new PreviewIdentity(
             "0123456789abcdef0123456789abcdef",
@@ -38,42 +38,7 @@ public abstract class DiskPreviewCacheSharedSpecs
                 entryName));
     }
 
-    public class ApplicationPathsSpecs : DispatchProxy
-    {
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ApplicationPathsSpecs"/> class.
-        /// </summary>
-        public ApplicationPathsSpecs()
-        {
-        }
-
-        public string TemporaryDirectory { get; set; } = string.Empty;
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            ArgumentNullException.ThrowIfNull(targetMethod);
-            return targetMethod.Name == "get_TempDirectory"
-                ? TemporaryDirectory
-                : throw new InvalidOperationException($"Unexpected application-paths call: {targetMethod.Name}.");
-        }
-    }
-
-    public class ServerApplicationHostSpecs : DispatchProxy
-    {
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ServerApplicationHostSpecs"/> class.
-        /// </summary>
-        public ServerApplicationHostSpecs()
-        {
-        }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            throw new InvalidOperationException($"Unexpected application-host call: {targetMethod?.Name}.");
-        }
-    }
-
-    private protected sealed class FixedTimeProvider : TimeProvider
+    internal sealed class FixedTimeProvider : TimeProvider
     {
         private readonly DateTimeOffset utcNow;
 
@@ -91,7 +56,7 @@ public abstract class DiskPreviewCacheSharedSpecs
         }
     }
 
-    private protected sealed class RecordingProgress : IProgress<double>
+    internal sealed class RecordingProgress : IProgress<double>
     {
         private readonly List<double> values = [];
 
@@ -103,7 +68,7 @@ public abstract class DiskPreviewCacheSharedSpecs
         }
     }
 
-    private protected sealed class CallbackProgress(Action<double> callback) : IProgress<double>
+    internal sealed class CallbackProgress(Action<double> callback) : IProgress<double>
     {
         public void Report(double value)
         {
@@ -111,11 +76,11 @@ public abstract class DiskPreviewCacheSharedSpecs
         }
     }
 
-    private protected sealed class RecordingLogger<TCategory> : ILogger<TCategory>
+    internal sealed class RecordingLogger<TCategory> : ILogger<TCategory>
     {
-        private readonly List<RecordedLog> entries = [];
+        private readonly List<DiskCacheRecordedLog> entries = [];
 
-        public IReadOnlyList<RecordedLog> Entries
+        public IReadOnlyList<DiskCacheRecordedLog> Entries
         {
             get
             {
@@ -148,17 +113,17 @@ public abstract class DiskPreviewCacheSharedSpecs
                 : [];
             lock (entries)
             {
-                entries.Add(new RecordedLog(logLevel, exception, properties));
+                entries.Add(new DiskCacheRecordedLog(logLevel, exception, properties));
             }
         }
     }
 
-    private protected sealed record RecordedLog(
+    internal sealed record DiskCacheRecordedLog(
         LogLevel Level,
         Exception? Exception,
         IReadOnlyDictionary<string, object?> Properties);
 
-    private protected sealed class PluginDirectoryReparseFixture : IDisposable
+    internal sealed class PluginDirectoryReparseFixture : IDisposable
     {
         private readonly string externalDirectory;
 
@@ -206,7 +171,7 @@ public abstract class DiskPreviewCacheSharedSpecs
         }
     }
 
-    private protected sealed class TemporaryCacheFixture : IDisposable
+    internal sealed class TemporaryCacheFixture : IDisposable
     {
         private readonly string temporaryDirectory;
 

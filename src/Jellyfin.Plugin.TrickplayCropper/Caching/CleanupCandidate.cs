@@ -5,6 +5,9 @@ namespace Jellyfin.Plugin.TrickplayCropper.Caching;
 /// <summary>
 /// Captures the identity and ownership scope of one cleanup candidate.
 /// </summary>
+/// <param name="Path">The canonical candidate path.</param>
+/// <param name="Length">The captured file length.</param>
+/// <param name="LastWriteTimeUtcTicks">The captured last-write timestamp.</param>
 internal abstract record CleanupCandidate(
     string Path,
     long Length,
@@ -15,6 +18,12 @@ internal abstract record CleanupCandidate(
     private const int FrameDigits = 10;
     private const int TemporaryTokenLength = 32;
 
+    /// <summary>
+    /// Captures a stable candidate when the file belongs to the cache and predates the cleanup run.
+    /// </summary>
+    /// <param name="filePath">The candidate file path.</param>
+    /// <param name="cleanupStartedUtc">The cleanup run boundary.</param>
+    /// <returns>The captured candidate, or <see langword="null"/> when the file is not eligible.</returns>
     public static CleanupCandidate? Capture(string filePath, DateTime cleanupStartedUtc)
     {
         string canonicalPath = System.IO.Path.GetFullPath(filePath);
@@ -96,16 +105,3 @@ internal abstract record CleanupCandidate(
         return true;
     }
 }
-
-internal sealed record EntryCleanupCandidate(
-    string Path,
-    string LockPath,
-    long Length,
-    long LastWriteTimeUtcTicks)
-    : CleanupCandidate(Path, Length, LastWriteTimeUtcTicks);
-
-internal sealed record ExclusiveCleanupCandidate(
-    string Path,
-    long Length,
-    long LastWriteTimeUtcTicks)
-    : CleanupCandidate(Path, Length, LastWriteTimeUtcTicks);

@@ -35,9 +35,12 @@ using Microsoft.Extensions.Options;
 using SkiaSharp;
 using Xunit;
 
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.PreviewHttpTestValues;
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewHttpSupport;
+
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public sealed class TrickplayPreviewGetResponseHttpSpecs : TrickplayPreviewHttpSharedSpecs
+public sealed class TrickplayPreviewGetResponseHttpSpecs
 {
     [Fact]
     public async Task ServesGeneratedDefaultSourcePreview()

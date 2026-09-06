@@ -35,7 +35,8 @@ using Microsoft.Extensions.Options;
 using SkiaSharp;
 using Xunit;
 
-using static global::Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewHttpSharedSpecs;
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.PreviewHttpTestValues;
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewHttpSupport;
 
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 

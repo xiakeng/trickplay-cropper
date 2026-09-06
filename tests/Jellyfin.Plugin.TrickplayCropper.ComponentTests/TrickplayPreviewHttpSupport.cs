@@ -35,21 +35,16 @@ using Microsoft.Extensions.Options;
 using SkiaSharp;
 using Xunit;
 
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.PreviewHttpTestValues;
+
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public abstract class TrickplayPreviewHttpSharedSpecs
+internal static class TrickplayPreviewHttpSupport
 {
-    private protected const string ExpectedDefaultFrameToken = "f0000000000";
-    private protected const string ExpectedDefaultSourceStamp = "d5b827fd3d17075e86151d7299ff22cd";
-    private protected const string ExpectedDefaultEntityTag =
+    internal const string ExpectedDefaultFrameToken = "f0000000000";
+    internal const string ExpectedDefaultSourceStamp = "d5b827fd3d17075e86151d7299ff22cd";
+    internal const string ExpectedDefaultEntityTag =
         $"\"{ExpectedDefaultSourceStamp}-{ExpectedDefaultFrameToken}\"";
-
-    internal static readonly Guid AlternateSourceId = Guid.Parse("9fe0dc1f-c780-483e-86c8-fc16267127f6");
-    internal static readonly Guid ItemId = Guid.Parse("3f728b7b-4aa5-4f65-b488-a6029edb6725");
-    internal static readonly Guid OtherItemId = Guid.Parse("86bfb88a-2931-4454-8d5d-15a8c427f235");
-    internal static readonly Guid OtherUserId = Guid.Parse("136fd48e-1dd2-4bee-a56f-44bf4ab0a377");
-    internal static readonly Guid UnavailableSourceId = Guid.Parse("59036707-aa98-4b65-8875-d63c9d110906");
-    internal static readonly Guid UserId = Guid.Parse("e07c89e3-a67e-49f5-9cbf-76b980ebe59a");
 
     public static TheoryData<string> MalformedPreviewRequestPaths => new()
     {
@@ -61,11 +56,11 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         { "/TrickplayCropper/Videos/not-a-guid/Preview?PositionTicks=0" },
     };
 
-    private protected static string PreviewPath => string.Create(
+    internal static string PreviewPath => string.Create(
         CultureInfo.InvariantCulture,
         $"/TrickplayCropper/Videos/{ItemId:D}/Preview");
 
-    private protected static PreviewScenario CreateKestrelScenario(TrickplayFrameProbeKestrelCondition condition)
+    internal static PreviewScenario CreateKestrelScenario(TrickplayFrameProbeKestrelCondition condition)
     {
         return condition switch
         {
@@ -98,7 +93,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         };
     }
 
-    private protected static string GetDefaultEntryPath(PreviewHostFixture fixture)
+    internal static string GetDefaultEntryPath(PreviewHostFixture fixture)
     {
         return Path.Combine(
             fixture.CacheRoot,
@@ -108,7 +103,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
             $"{ExpectedDefaultFrameToken}.jpg");
     }
 
-    private protected static int[]? CreateInvalidConfiguration(ConfigurationFailureKind kind)
+    internal static int[]? CreateInvalidConfiguration(ConfigurationFailureKind kind)
     {
         return kind switch
         {
@@ -122,7 +117,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         };
     }
 
-    private protected static void AssertExpectedUnavailableDebugReason(RecordedLog[] debugLogs, NotFoundCondition condition)
+    internal static void AssertExpectedUnavailableDebugReason(RecordedLog[] debugLogs, NotFoundCondition condition)
     {
         RecordedLog[] unavailable = debugLogs
             .Where(entry => entry.EventId.Id == 1001)
@@ -144,7 +139,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         Assert.Equal(expectedReason, envelope.RootElement.GetProperty("Reason").GetString());
     }
 
-    private protected static string? ExpectedDebugReason(NotFoundCondition condition)
+    internal static string? ExpectedDebugReason(NotFoundCondition condition)
     {
         return condition switch
         {
@@ -159,7 +154,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         };
     }
 
-    private protected static PreviewScenario CreateNotFoundScenario(NotFoundCondition condition)
+    internal static PreviewScenario CreateNotFoundScenario(NotFoundCondition condition)
     {
         return condition switch
         {
@@ -216,7 +211,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         };
     }
 
-    private protected static PreviewScenario CreateInternalFailureScenario(InternalFailureCondition condition)
+    internal static PreviewScenario CreateInternalFailureScenario(InternalFailureCondition condition)
     {
         return condition switch
         {
@@ -268,7 +263,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         };
     }
 
-    private protected static void AssertAvailableSelectionDiagnostics(
+    internal static void AssertAvailableSelectionDiagnostics(
         InternalFailureCondition condition,
         RecordedLog log)
     {
@@ -337,7 +332,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         }
     }
 
-    private protected static TrickplayMetadata CreateExpectedMetadata(InternalFailureCondition condition)
+    internal static TrickplayMetadata CreateExpectedMetadata(InternalFailureCondition condition)
     {
         return condition switch
         {
@@ -379,12 +374,12 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         };
     }
 
-    private protected static PreviewScenario CreateLogicalAvailabilityScenario(ItemAvailability availability)
+    internal static PreviewScenario CreateLogicalAvailabilityScenario(ItemAvailability availability)
     {
         return new PreviewScenario { LogicalVideo = availability };
     }
 
-    private protected static PreviewScenario CreateSelectedAvailabilityScenario(ItemAvailability availability)
+    internal static PreviewScenario CreateSelectedAvailabilityScenario(ItemAvailability availability)
     {
         return new PreviewScenario
         {
@@ -393,7 +388,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         };
     }
 
-    private protected static async Task AssertAuthorizationErrorResponseAsync(HttpResponseMessage response)
+    internal static async Task AssertAuthorizationErrorResponseAsync(HttpResponseMessage response)
     {
         Assert.Null(response.Content.Headers.ContentType);
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
@@ -401,7 +396,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
     }
 
-    private protected static async Task AssertTrickplayFrameProbeSuccessAsync(HttpResponseMessage response, int expectedFrameIndex)
+    internal static async Task AssertTrickplayFrameProbeSuccessAsync(HttpResponseMessage response, int expectedFrameIndex)
     {
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         await AssertBodylessWithoutGetOnlyHeadersAsync(response);
@@ -412,7 +407,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         Assert.True(response.Headers.CacheControl?.NoCache);
     }
 
-    private protected static async Task AssertBodylessTrickplayFrameProbeFailureAsync(
+    internal static async Task AssertBodylessTrickplayFrameProbeFailureAsync(
         HttpResponseMessage response,
         HttpStatusCode expectedStatus)
     {
@@ -421,7 +416,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
     }
 
-    private protected static async Task AssertBodylessWithoutGetOnlyHeadersAsync(HttpResponseMessage response)
+    internal static async Task AssertBodylessWithoutGetOnlyHeadersAsync(HttpResponseMessage response)
     {
         await AssertBodylessAsync(response);
         Assert.False(response.Headers.Contains("ETag"));
@@ -429,7 +424,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
     }
 
-    private protected static async Task AssertBodylessAsync(HttpResponseMessage response)
+    internal static async Task AssertBodylessAsync(HttpResponseMessage response)
     {
         Assert.Null(response.Content.Headers.ContentType);
         Assert.Null(response.Content.Headers.ContentDisposition);
@@ -437,7 +432,7 @@ public abstract class TrickplayPreviewHttpSharedSpecs
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
     }
 
-    private protected static async Task AssertProblemDetailsResponseAsync(HttpResponseMessage response)
+    internal static async Task AssertProblemDetailsResponseAsync(HttpResponseMessage response)
     {
         Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);

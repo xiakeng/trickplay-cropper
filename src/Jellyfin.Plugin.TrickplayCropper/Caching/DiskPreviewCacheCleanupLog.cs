@@ -7,6 +7,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Caching;
 /// </summary>
 internal static partial class DiskPreviewCacheCleanupLog
 {
+    /// <summary>Logs a cache-file deletion or inspection failure.</summary>
     [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Warning,
@@ -16,6 +17,7 @@ internal static partial class DiskPreviewCacheCleanupLog
         string cachePath,
         Exception exception);
 
+    /// <summary>Logs a cache-directory inspection or deletion failure.</summary>
     [LoggerMessage(
         EventId = 3,
         Level = LogLevel.Warning,
@@ -25,12 +27,14 @@ internal static partial class DiskPreviewCacheCleanupLog
         string cachePath,
         Exception exception);
 
+    /// <summary>Logs a skipped reparse point.</summary>
     [LoggerMessage(
         EventId = 4,
         Level = LogLevel.Warning,
         Message = "Skipped Trickplay Cropper cache reparse point {CachePath}.")]
     public static partial void ReparsePointSkipped(ILogger logger, string cachePath);
 
+    /// <summary>Logs the aggregate cleanup-run outcome.</summary>
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Information,

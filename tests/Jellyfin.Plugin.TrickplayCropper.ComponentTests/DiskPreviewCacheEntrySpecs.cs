@@ -9,9 +9,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.DiskPreviewCacheSupport;
+
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public sealed class DiskPreviewCacheEntrySpecs : DiskPreviewCacheSharedSpecs
+public sealed class DiskPreviewCacheEntrySpecs
 {
     [Fact]
     public void RegistersOneCacheInstanceForRequestsAndMaintenance()

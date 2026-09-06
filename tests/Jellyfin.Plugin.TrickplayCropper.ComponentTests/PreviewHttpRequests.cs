@@ -2,7 +2,8 @@ using System.Globalization;
 using Jellyfin.Database.Implementations.Entities;
 using Microsoft.Extensions.DependencyInjection;
 
-using static global::Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewHttpSharedSpecs;
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.PreviewHttpTestValues;
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewHttpSupport;
 
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 

@@ -8,12 +8,12 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public abstract class TrickplayPreviewEncoderSharedSpecs
+internal static class TrickplayPreviewEncoderSupport
 {
-    private protected const int CellHeight = 24;
-    private protected const int CellWidth = 32;
-    private protected const int PixelTolerance = 18;
-    private protected const string BaselineJpeg = """
+    internal const int CellHeight = 24;
+    internal const int CellWidth = 32;
+    internal const int PixelTolerance = 18;
+    internal const string BaselineJpeg = """
         /9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoK
         CgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoK
         CgoKCgoKCgr/wAARCAAwAGADAREAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUF
@@ -37,13 +37,13 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         gCaaX7Bj5d+/3xjH/wCugD8s5pfsGPl37/fGMf8A66/6MD2Blpafe/eenagBk0v2/Hy7NnvnOf8A9VAE00v2DHy79/vjGP8A9dAH
         0pNL9gx8u/f74xj/APXX5Wf4PjLS0+9+89O1ADJpft+Pl2bPfOc//qoAmml+wY+Xfv8AfGMf/roA/9k=
         """;
-    private protected const string NonJpeg = """
+    internal const string NonJpeg = """
         iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwCAIAAABhdOiYAAAA60lEQVR4nO2ZsQkCQRQF924PEyswE0xsxYZMDIyvBFNLECuxA9tY
         EIwUA90R8SsLM9EefF4wvF34XHdaLtKNnPPTcynl45nVOA/N73djbH6SKgoCFAQMEff2nfO38vvo/CRVFAQoCBgi7u2rmYj8aXC+
         DQIUBCgIGFp8d36Zb4MABQEKAtzFKD9JFQUBCgLcxWDGBgEKAhQEdOfj7P4R8e4c1vvQ/M32EppvgwAFAQoCmt/FHo7uYv9AQYCC
         gOZ3sZwnofk2CFAQoCDA/2IwY4MABQEKAtzFYMYGAQoCFAS4i8GMDQIUBCgIuAJcOBeeCjh8vwAAAABJRU5ErkJggg==
         """;
-    private protected const string ProgressiveJpeg = """
+    internal const string ProgressiveJpeg = """
         /9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoK
         CgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoK
         CgoKCgoKCgr/wgARCAAwAGADAREAAhEBAxEB/8QAGAABAQEBAQAAAAAAAAAAAAAAAgEHCAX/xAAaAQEBAAIDAAAAAAAAAAAAAAAA
@@ -61,8 +61,8 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         hDttvCHbbeEO2ktKzhDttvCHbbeEO2ktKzhDttvCHbSWlZwh223hDtpLSHbSWlZwh223hDtpLSHbSWlZwh223hDtpLT/2Q==
         """;
 
-    private protected static readonly EventId DecodePermitWaiting = new(1007, "TrickplayPreviewDecodePermitWaiting");
-    private protected static async Task<IReadOnlyList<RecordedEvent>> RunSaturatedFifthEncodeAsync(
+    internal static readonly EventId DecodePermitWaiting = new(1007, "TrickplayPreviewDecodePermitWaiting");
+    internal static async Task<IReadOnlyList<RecordedEvent>> RunSaturatedFifthEncodeAsync(
         DebugProtocolLogger<TrickplayPreviewEncoder> logger,
         Action<IReadOnlyList<RecordedEvent>> observeWhileWaiting)
     {
@@ -117,13 +117,13 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         { JpegFixture.Progressive, 1, 2 },
     };
 
-    private protected static byte[] DecodeFixture(string fixture)
+    internal static byte[] DecodeFixture(string fixture)
     {
         string compactFixture = string.Concat(fixture.Where(character => !char.IsWhiteSpace(character)));
         return Convert.FromBase64String(compactFixture);
     }
 
-    private protected static byte[] GetFixture(JpegFixture fixture)
+    internal static byte[] GetFixture(JpegFixture fixture)
     {
         return fixture switch
         {
@@ -133,7 +133,7 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         };
     }
 
-    private protected static byte[] CreateTallJpeg(int height)
+    internal static byte[] CreateTallJpeg(int height)
     {
         using var bitmap = new SKBitmap(CellWidth, height, SKColorType.Rgba8888, SKAlphaType.Opaque);
         bitmap.Erase(SKColors.CornflowerBlue);
@@ -142,7 +142,7 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         return destination.ToArray();
     }
 
-    private protected static async Task AssertFullDecodeCapacityAvailableAsync(
+    internal static async Task AssertFullDecodeCapacityAvailableAsync(
         TrickplayPreviewEncoder encoder,
         ResolvedPreviewSource source)
     {
@@ -171,7 +171,7 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         }
     }
 
-    private protected static void AssertPixelsAgree(SKBitmap source, SKBitmap preview, int row, int column)
+    internal static void AssertPixelsAgree(SKBitmap source, SKBitmap preview, int row, int column)
     {
         int[] sampleCoordinatesX = [4, 16, 27];
         int[] sampleCoordinatesY = [4, 12, 19];
@@ -188,7 +188,7 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         }
     }
 
-    private protected sealed class SourceFixture : IDisposable
+    internal sealed class SourceFixture : IDisposable
     {
         private SourceFixture(string directoryPath, ResolvedPreviewSource source)
         {
@@ -234,7 +234,7 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         }
     }
 
-    private protected sealed class FailingWriteStream : MemoryStream
+    internal sealed class FailingWriteStream : MemoryStream
     {
         public override void Write(byte[] buffer, int offset, int count)
         {
@@ -247,7 +247,7 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         }
     }
 
-    private protected sealed class BlockingWriteStream : MemoryStream
+    internal sealed class BlockingWriteStream : MemoryStream
     {
         private readonly CountdownEvent blocked;
         private readonly ManualResetEventSlim release;
@@ -284,19 +284,4 @@ public abstract class TrickplayPreviewEncoderSharedSpecs
         }
     }
 
-    public enum JpegFixture
-    {
-        Baseline,
-        Progressive,
-    }
-
-    public enum InvalidCropInput
-    {
-        NegativeX,
-        NegativeY,
-        NegativeWidth,
-        NegativeHeight,
-        ZeroWidth,
-        ZeroHeight,
-    }
 }

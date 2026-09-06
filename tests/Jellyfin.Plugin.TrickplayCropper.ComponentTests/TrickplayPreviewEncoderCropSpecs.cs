@@ -6,12 +6,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SkiaSharp;
 using Xunit;
 
+using static Jellyfin.Plugin.TrickplayCropper.ComponentTests.TrickplayPreviewEncoderSupport;
+
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
-public sealed class TrickplayPreviewEncoderCropSpecs : TrickplayPreviewEncoderSharedSpecs
+public sealed class TrickplayPreviewEncoderCropSpecs
 {
     [Theory]
-    [MemberData(nameof(ValidCrops))]
+    [MemberData(nameof(ValidCrops), MemberType = typeof(TrickplayPreviewEncoderSupport))]
     public async Task CropsIndependentJpegFixtures(JpegFixture fixture, int row, int column)
     {
         using SourceFixture sourceFixture = SourceFixture.Create(GetFixture(fixture), row, column);

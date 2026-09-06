@@ -7,7 +7,10 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// </summary>
 internal sealed class GeneratedMetadataObservationState
 {
+    /// <summary>Gets the lifetime of reusable negative observations.</summary>
     public static readonly TimeSpan NegativeLifetime = TimeSpan.FromMinutes(5);
+
+    /// <summary>Gets the lifetime of reusable positive observations.</summary>
     public static readonly TimeSpan PositiveLifetime = TimeSpan.FromMinutes(30);
 
     private readonly HashSet<ReadRegistration> activeReads = [];
@@ -16,6 +19,11 @@ internal sealed class GeneratedMetadataObservationState
     private Coverage? coverage;
     private bool retired;
 
+    /// <summary>Resolves a reusable observation or reserves a new host read.</summary>
+    /// <param name="selectedResolution">The selected target width.</param>
+    /// <param name="access">The caller's metadata access kind.</param>
+    /// <param name="now">The current time.</param>
+    /// <returns>The lookup decision.</returns>
     public Lookup ResolveOrReserve(int selectedResolution, MetadataAccess access, DateTimeOffset now)
     {
         lock (gate)
@@ -38,6 +46,10 @@ internal sealed class GeneratedMetadataObservationState
         }
     }
 
+    /// <summary>Publishes one successful host observation in read-start order.</summary>
+    /// <param name="observation">The complete observed metadata rows and selected result.</param>
+    /// <param name="selectedResolution">The selected target width.</param>
+    /// <param name="stamp">The ordered read stamp.</param>
     public void Publish(
         Observation observation,
         int selectedResolution,
@@ -61,6 +73,9 @@ internal sealed class GeneratedMetadataObservationState
         }
     }
 
+    /// <summary>Rejects an unusable selected row without publishing it as reusable evidence.</summary>
+    /// <param name="selectedResolution">The selected target width.</param>
+    /// <param name="stamp">The ordered read stamp.</param>
     public void Reject(int selectedResolution, Stamp stamp)
     {
         lock (gate)
@@ -73,6 +88,10 @@ internal sealed class GeneratedMetadataObservationState
         }
     }
 
+    /// <summary>Completes an active read and reports whether this source state retired.</summary>
+    /// <param name="registration">The active read registration.</param>
+    /// <param name="now">The current time.</param>
+    /// <returns><see langword="true"/> when the state retired.</returns>
     public bool Complete(ReadRegistration registration, DateTimeOffset now)
     {
         lock (gate)
@@ -83,6 +102,9 @@ internal sealed class GeneratedMetadataObservationState
         }
     }
 
+    /// <summary>Prunes expired observations and retires empty source state.</summary>
+    /// <param name="now">The current time.</param>
+    /// <returns><see langword="true"/> when the state retired.</returns>
     public bool TryRetire(DateTimeOffset now)
     {
         lock (gate)
@@ -92,6 +114,11 @@ internal sealed class GeneratedMetadataObservationState
         }
     }
 
+    /// <summary>Determines whether a resolution is current for its observation kind.</summary>
+    /// <param name="resolution">The observed resolution.</param>
+    /// <param name="readStartedAt">The host read start time.</param>
+    /// <param name="now">The current time.</param>
+    /// <returns><see langword="true"/> when the observation remains reusable.</returns>
     public static bool IsCurrent(
         TrickplayMetadataResolution resolution,
         DateTimeOffset readStartedAt,
@@ -243,28 +270,45 @@ internal sealed class GeneratedMetadataObservationState
         }
     }
 
+    /// <summary>Identifies the caller's reuse contract.</summary>
     public enum MetadataAccess
     {
+        /// <summary>Allows reuse of positive and negative observations.</summary>
         Probe,
+
+        /// <summary>Allows reuse of negative observations only.</summary>
         Preview,
     }
 
+    /// <summary>Identifies one active host read.</summary>
     public sealed class ReadRegistration
     {
     }
 
+    /// <summary>Captures a complete host observation and the selected resolution result.</summary>
+    /// <param name="Resolutions">All observed metadata rows keyed by width.</param>
+    /// <param name="Resolution">The selected resolution result.</param>
     public sealed record Observation(
         IReadOnlyDictionary<int, TrickplayMetadata> Resolutions,
         TrickplayMetadataResolution Resolution);
 
+    /// <summary>Orders a host read by its start time and monotonic sequence.</summary>
+    /// <param name="ReadStartedAt">The host read start time.</param>
+    /// <param name="Sequence">The monotonic read sequence.</param>
     public sealed record Stamp(DateTimeOffset ReadStartedAt, long Sequence);
 
+    /// <summary>Represents the resolution or reservation decision for one lookup.</summary>
     public abstract record Lookup
     {
+        /// <summary>Returns a reusable cached resolution.</summary>
+        /// <param name="Resolution">The reusable resolution.</param>
         internal sealed record Cached(TrickplayMetadataResolution Resolution) : Lookup;
 
+        /// <summary>Returns ownership of a new host read.</summary>
+        /// <param name="Registration">The active read registration.</param>
         internal sealed record Reserved(ReadRegistration Registration) : Lookup;
 
+        /// <summary>Reports that this source state retired during the lookup.</summary>
         internal sealed record Retired : Lookup;
     }
 

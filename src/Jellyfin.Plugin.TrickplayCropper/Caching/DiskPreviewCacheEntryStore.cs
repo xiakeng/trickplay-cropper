@@ -12,12 +12,24 @@ internal sealed class DiskPreviewCacheEntryStore
     private readonly PreviewCacheCoordination coordination;
     private readonly PreviewCachePaths paths;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DiskPreviewCacheEntryStore"/> class.
+    /// </summary>
+    /// <param name="paths">The cache path boundary.</param>
+    /// <param name="coordination">The shared entry coordination.</param>
     public DiskPreviewCacheEntryStore(PreviewCachePaths paths, PreviewCacheCoordination coordination)
     {
         this.paths = paths;
         this.coordination = coordination;
     }
 
+    /// <summary>
+    /// Reads an existing entry or generates, publishes, and buffers a new entry.
+    /// </summary>
+    /// <param name="identity">The stable cache identity.</param>
+    /// <param name="writer">The encoder that writes a temporary entry.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <returns>The buffered cache result.</returns>
     public async Task<PreviewCacheResult> GetOrCreateAsync(
         PreviewIdentity identity,
         Func<Stream, CancellationToken, Task<PreviewEncodingTelemetry>> writer,

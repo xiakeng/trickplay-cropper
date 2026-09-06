@@ -11,6 +11,11 @@ internal sealed class PreviewCachePaths
 
     private readonly StringComparison pathComparison;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PreviewCachePaths"/> class.
+    /// </summary>
+    /// <param name="temporaryDirectory">The host temporary directory.</param>
+    /// <param name="pathComparison">The platform path comparison.</param>
     public PreviewCachePaths(string temporaryDirectory, StringComparison pathComparison)
     {
         PluginRoot = Path.GetFullPath(Path.Combine(temporaryDirectory, PluginDirectoryName));
@@ -18,10 +23,15 @@ internal sealed class PreviewCachePaths
         this.pathComparison = pathComparison;
     }
 
+    /// <summary>Gets the owned Preview Cache Tree root.</summary>
     public string CacheRoot { get; }
 
+    /// <summary>Gets the plugin-owned directory root.</summary>
     public string PluginRoot { get; }
 
+    /// <summary>Builds and validates the final path for a cache identity.</summary>
+    /// <param name="identity">The stable cache identity.</param>
+    /// <returns>The canonical final entry path.</returns>
     public string GetFinalPath(PreviewIdentity identity)
     {
         string finalPath = Path.GetFullPath(Path.Combine(CacheRoot, identity.RelativePath));
@@ -34,6 +44,8 @@ internal sealed class PreviewCachePaths
         return finalPath;
     }
 
+    /// <summary>Rejects reparse points along a request-owned path.</summary>
+    /// <param name="path">The path to validate.</param>
     public void EnsureRequestPathIsSafe(string path)
     {
         ThrowIfReparsePoint(PluginRoot);
@@ -48,6 +60,9 @@ internal sealed class PreviewCachePaths
         }
     }
 
+    /// <summary>Determines whether an existing path is a reparse point.</summary>
+    /// <param name="path">The path to inspect.</param>
+    /// <returns><see langword="true"/> when the path is a reparse point.</returns>
     public static bool IsReparsePoint(string path)
     {
         FileAttributes? attributes = GetExistingAttributes(path);
