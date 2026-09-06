@@ -79,6 +79,19 @@ Two structural rules follow from the layers' jobs:
   about eight ranks, splits an oversized view in two instead of stretching it, and never
   shares one terminal node across ranks.
 
+## Analysis base and deferred maintenance
+
+Business Documentation is maintained asynchronously from implementation pull requests.
+The base commit for the next analysis pass is:
+
+`d1af4327c0535649d578d6bbc57c7ec107891c08`
+
+After every pull request merges into `main`, the repository's merge workflow keeps at
+most one open `docs:business-analysis` issue directing the handler to analyze code
+changes after the recorded base and maintain the affected chapters — or to close the
+issue directly when no update is needed. Whoever completes an analysis pass advances
+this base.
+
 ## Language
 
 The terms used here — Trickplay Preview, Trickplay Frame Probe, Source Sprite, Trickplay
