@@ -109,7 +109,7 @@ public sealed class RepositoryStructureContractSpecs
 
         public ProcessResult Verify()
         {
-            return Run("/usr/bin/python3", ".github/scripts/verify_repository_structure.py");
+            return Run("python3", ".github/scripts/verify_repository_structure.py");
         }
 
         public void Dispose()
