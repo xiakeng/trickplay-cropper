@@ -14,6 +14,7 @@ public sealed class LocalJellyfin(HttpClient http)
     public async Task ValidateAsync(HarnessInput input, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(input);
+        using JsonDocument ready = await ReadStartedPluginsAsync(cancellationToken).ConfigureAwait(false);
         using JsonDocument user = await ReadJsonAsync("/Users/Me", cancellationToken).ConfigureAwait(false);
         Guid userId = Guid.Parse(user.RootElement.GetProperty("Id").GetString()!);
         JsonElement policy = user.RootElement.GetProperty("Policy");

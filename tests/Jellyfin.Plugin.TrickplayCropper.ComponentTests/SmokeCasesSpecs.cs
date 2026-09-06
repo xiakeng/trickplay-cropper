@@ -12,6 +12,42 @@ public sealed class SmokeCasesSpecs
          "invisibleItemId":"33333333333333333333333333333333"}
         """);
 
+    [Fact]
+    public async Task VerifiesSuppliedUserlessApiKeyOnlyForProbeAvailability()
+    {
+        HarnessInput input = HarnessInput.Parse("""
+            {"adminToken":"abc123","userlessApiKey":"apikey456",
+             "playableItemIds":["11111111111111111111111111111111","22222222222222222222222222222222"],
+             "invisibleItemId":"33333333333333333333333333333333"}
+            """);
+        using SmokeHostResponses handler = new();
+        using HttpClient http = new(handler) { BaseAddress = new Uri("http://localhost:8096") };
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("MediaBrowser", "Token=\"abc123\"");
+        using StringWriter output = new();
+        await new SmokeCases(http, output).RunAsync(input, CancellationToken.None);
+        Assert.Contains("PASS userless API key: HEAD=200, GET=403", output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("apikey456", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("api-user")]
+    [InlineData("api-head")]
+    [InlineData("api-get")]
+    [InlineData("api-frame")]
+    public async Task RejectsBrokenUserlessApiKeyContracts(string fault)
+    {
+        HarnessInput input = HarnessInput.Parse("""
+            {"adminToken":"abc123","userlessApiKey":"apikey456",
+             "playableItemIds":["11111111111111111111111111111111","22222222222222222222222222222222"],
+             "invisibleItemId":"33333333333333333333333333333333"}
+            """);
+        using SmokeHostResponses handler = new(fault);
+        using HttpClient http = new(handler) { BaseAddress = new Uri("http://localhost:8096") };
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("MediaBrowser", "Token=\"abc123\"");
+        using StringWriter output = new();
+        await Assert.ThrowsAsync<InvalidDataException>(() => new SmokeCases(http, output).RunAsync(input, CancellationToken.None));
+    }
+
     [Theory]
     [InlineData("HEAD")]
     [InlineData("GET")]
@@ -34,28 +70,34 @@ public sealed class SmokeCasesSpecs
         await Assert.ThrowsAsync<InvalidDataException>(() => new SmokeCases(http, output).RunAsync(Input, CancellationToken.None));
     }
 
-    [Fact]
-    public async Task ChecksConcealmentAndBothPlaybackBoundariesAgainstIndependentMetadata()
+    [Theory]
+    [InlineData("")]
+    [InlineData("stale-head")]
+    public async Task ChecksConcealmentAndBothPlaybackBoundariesAgainstIndependentMetadata(string fault)
     {
-        using SmokeHostResponses handler = new();
+        using SmokeHostResponses handler = new(fault);
         using HttpClient http = new(handler) { BaseAddress = new Uri("http://localhost:8096") };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("MediaBrowser", "Token=\"abc123\"");
         using StringWriter output = new();
         await new SmokeCases(http, output).RunAsync(Input, CancellationToken.None);
 
         Assert.Contains(
-            "PASS concealed visibility: GET=404; HEAD is not permission evidence",
+            "PASS concealed response: GET=404; generation is unverified",
             output.ToString(),
             StringComparison.Ordinal);
         Assert.Contains("PASS Item 1 start: ticks=0, Frame Index=0", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("PASS Item 1 beyond-end: ticks=180000001, Frame Index=6", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("PASS Item 2 start: ticks=0, Frame Index=0", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("PASS Item 2 beyond-end: ticks=990000001, Frame Index=4", output.ToString(), StringComparison.Ordinal);
-        Assert.Equal(12, handler.BoundaryRequests);
+        Assert.Equal(16, handler.BoundaryRequests);
         Assert.DoesNotContain("abc123", output.ToString(), StringComparison.Ordinal);
     }
 
     [Theory]
+    [InlineData("conditional-frame")]
+    [InlineData("conditional-status")]
+    [InlineData("conditional-body")]
+    [InlineData("conditional-tag")]
     [InlineData("timing")]
     [InlineData("missing-length")]
     [InlineData("concealed-get")]

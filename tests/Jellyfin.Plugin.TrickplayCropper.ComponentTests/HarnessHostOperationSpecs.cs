@@ -5,8 +5,10 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class HarnessHostOperationSpecs
 {
-    [Fact]
-    public async Task PreservesTheFilesystemBoundaryAndRestoresLoggingOnFailure()
+    [Theory]
+    [InlineData("host_operation_specs.py")]
+    [InlineData("request_cost_specs.py")]
+    public async Task PassesTheIsolatedPythonHarnessContracts(string script)
     {
         DirectoryInfo? root = new(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "TrickplayCropper.sln")))
@@ -22,7 +24,7 @@ public sealed class HarnessHostOperationSpecs
             UseShellExecute = false,
         };
         start.ArgumentList.Add("-B");
-        start.ArgumentList.Add(Path.Combine(root.FullName, "tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests/host_operation_specs.py"));
+        start.ArgumentList.Add(Path.Combine(root.FullName, "tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests", script));
         using Process process = Process.Start(start)!;
         Task<string> output = process.StandardOutput.ReadToEndAsync();
         Task<string> error = process.StandardError.ReadToEndAsync();
