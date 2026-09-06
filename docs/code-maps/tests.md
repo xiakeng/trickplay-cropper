@@ -22,6 +22,7 @@ Each file below lives in the named suite's directory.
 | Encoder crop, failure, cancellation, decode permits | `TrickplayPreviewEncoderSpecs.cs` (ComponentTests) |
 | Scheduled cleanup task | `ClearTrickplayCropperCacheTaskSpecs.cs` (UnitTests) |
 | Release tools | `ManifestBuilderSpecs.cs`, `PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs` (UnitTests) |
+| Build-manifest, runtime, and dependency-lock contracts | `ReleaseContractSpecs.cs` (UnitTests) |
 | Workflow contracts | `ReleaseWorkflowContractSpecs.cs`, `PublicationWorkflowContractSpecs.cs`, `ManifestWorkflowContractSpecs.cs`, `BusinessDocsWorkflowContractSpecs.cs` (UnitTests) |
 | Harness smoke cases, scrub storm, report, deployment, input | `SmokeCasesSpecs.cs`, `ScrubStormSpecs.cs`, `ScrubStormReportSpecs.cs`, `DeploymentCycleSpecs.cs`, `HarnessInputSpecs.cs`, `HarnessHostOperationSpecs.cs`, `host_operation_specs.py` (ComponentTests) |
 | Harness host gates and Debug-event reading | `LocalJellyfinSpecs.cs`, `DebugEventReaderSpecs.cs` (ComponentTests) |
