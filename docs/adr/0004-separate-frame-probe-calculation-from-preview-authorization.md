@@ -38,3 +38,9 @@ visibility, playback, response, and cache semantics. HEAD still avoids Source Sp
 Cache Tree, and encoder access. This boundary trades the default policy's user restrictions
 for a lighter authenticated calculation; a measured speedup still requires separate
 integration acceptance evidence.
+
+Keep the native challenge/forbid distinction: missing, invalid, or revoked credentials
+and disabled-user authentication failures return `401`; an authenticated device/session
+identity rejected by the claim-only guard returns `403`. HEAD remains bodyless, preserving
+its existing successful response headers and `400`, `404`, and `500` semantics. This
+contract does not introduce a custom mapping of guard failures to `401`.
