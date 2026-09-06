@@ -102,8 +102,9 @@ ComponentTests also runs the harness's Python filesystem, SQLite WAL, and
 Landlock checks against temporary fixtures. These checks require Python 3 and
 Linux Landlock ABI 3 or later; they never use the operator's `harness.json`,
 invoke sudo, or restart a service. UnitTests has no Integration Harness project
-reference. CI runs both test projects; actual host deployment remains a separate
-manual Integration Harness invocation.
+reference. The repository-structure contract cases additionally require
+`tiktoken` 0.12.0. CI runs both test projects; actual host deployment remains a
+separate manual Integration Harness invocation.
 
 ## Package
 

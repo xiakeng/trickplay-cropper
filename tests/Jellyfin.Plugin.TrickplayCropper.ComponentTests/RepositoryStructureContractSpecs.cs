@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Xunit;
 
-namespace Jellyfin.Plugin.TrickplayCropper.UnitTests;
+namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class RepositoryStructureContractSpecs
 {
@@ -87,7 +87,7 @@ public sealed class RepositoryStructureContractSpecs
             Directory.CreateDirectory(Path.Combine(root, ".github", "scripts"));
             Directory.CreateDirectory(Path.Combine(root, "docs", "code-maps"));
             File.Copy(
-                RepositoryFiles.GetPath(".github/scripts/verify_repository_structure.py"),
+                Path.Combine(FindRepositoryRoot(), ".github", "scripts", "verify_repository_structure.py"),
                 Path.Combine(root, ".github", "scripts", "verify_repository_structure.py"));
             File.WriteAllText(Path.Combine(root, "docs", "code-maps", "README.md"), "# Map\n");
             AssertCommandSucceeded(Run("git", "init", "--quiet"));
@@ -109,7 +109,7 @@ public sealed class RepositoryStructureContractSpecs
 
         public ProcessResult Verify()
         {
-            return Run("python3", ".github/scripts/verify_repository_structure.py");
+            return Run("/usr/bin/python3", ".github/scripts/verify_repository_structure.py");
         }
 
         public void Dispose()
@@ -137,6 +137,20 @@ public sealed class RepositoryStructureContractSpecs
             string standardError = process.StandardError.ReadToEnd();
             process.WaitForExit();
             return new ProcessResult(process.ExitCode, standardOutput, standardError);
+        }
+
+        private static string FindRepositoryRoot()
+        {
+            DirectoryInfo? directory = new(AppContext.BaseDirectory);
+            while (directory is not null
+                   && !File.Exists(Path.Combine(directory.FullName, "TrickplayCropper.sln")))
+            {
+                directory = directory.Parent;
+            }
+
+            return directory?.FullName
+                ?? throw new DirectoryNotFoundException(
+                    "Could not locate the Trickplay Cropper repository root.");
         }
 
         private static void AssertCommandSucceeded(ProcessResult result)
