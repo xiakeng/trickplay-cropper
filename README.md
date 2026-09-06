@@ -43,11 +43,11 @@ modifies, or repairs that data. What it adds on top:
 | Where a behavior lives in code, and which tests prove it | [Code Maps](docs/code-maps/README.md) |
 | How to install, build, test, package, or run the harness | This README and the workflows it references |
 
-Business documentation maintenance is deferred: after a pull request merges into
-`main`, the merge workflow keeps at most one open `docs:business-analysis` issue
-directing the next analysis pass from the base recorded in the Business Documentation
-index. The root README and the affected Code Maps are updated in the same pull request
-that changes documented behavior.
+Business documentation maintenance is deferred to the open `docs:business-analysis`
+issue the merge workflow maintains after every merge to `main`; the
+[Business Documentation index](docs/business/README.md) records the base and the
+rules. The root README and the affected Code Maps are updated in the same pull
+request that changes documented behavior.
 
 ## Compatibility
 

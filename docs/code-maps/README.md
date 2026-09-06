@@ -23,6 +23,7 @@ implementation details or business specifications — those live in the code and
 
 ## Size limit
 
-Every Markdown source in this collection — this index and any future nested map — is
-limited to 1,000 `cl100k_base` tokens over its complete source. The limit applies
+Every Markdown source in this collection — this index and any future nested map —
+stays within the repository's Code Map size limit, recorded in the
+[Code Standard Override](../agents/csharp-guidelines-overrides.md). The limit applies
 nowhere else in the repository.

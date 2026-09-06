@@ -23,7 +23,7 @@ manually invoked, no-mock verification against the local Jellyfin host.
 |---|---|---|
 | [HarnessApplication.cs](../../tools/TrickplayCropper.IntegrationHarness/HarnessApplication.cs) | `RunAsync` | Modes (`--check`, `--verify-restoration`), input parsing, run sequencing |
 | [SmokeCases.cs](../../tools/TrickplayCropper.IntegrationHarness/SmokeCases.cs) | `RunAsync` | Invalid token, concealed GET, playback boundaries |
-| [ScrubStorm.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStorm.cs) | `RunAsync`, `VerifyQuiescenceAsync` | Coordinated HEAD/GET storm across six lanes |
+| [ScrubStorm.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStorm.cs) | `RunAsync`, `VerifyQuiescenceAsync` | Coordinated HEAD/GET storm |
 | [ScrubStormReport.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStormReport.cs) | `WriteAsync`, `ToMarkdown` | Client-observed statistics and the gitignored Markdown report |
 | [DeploymentCycle.cs](../../tools/TrickplayCropper.IntegrationHarness/DeploymentCycle.cs) | `RunAsync` | Prepare, verify, and restore around each verification run |
 | [host_operation.py](../../tools/TrickplayCropper.IntegrationHarness/host_operation.py) | prepare, restore | Privileged deployment and logging restoration |
