@@ -1,7 +1,7 @@
 # Separate Frame Probe calculation from Preview authorization
 
 The v3 authentication boundary below is an accepted requirement-analysis decision;
-its implementation and native-host verification remain pending.
+its implementation and before/after response-time measurements remain pending.
 
 GET and HEAD answer different questions and must not share an authorization context.
 GET returns or revalidates a representation, so it resolves a current Jellyfin user,
@@ -20,7 +20,10 @@ policy in ADR 0005. Every successful GET `200` or `304` carries that final Frame
 of the representation ETag. This split keeps HEAD structurally unable to become permission
 evidence while preserving one deterministic calculation for both operations.
 
-For v3, HEAD uses a named policy selecting native `CustomAuthentication`, requiring an
+For v3, register the named `TrickplayFrameProbe` policy through
+`Configure<AuthorizationOptions>` without replacing Jellyfin's default policy or
+re-registering its authentication scheme. HEAD uses that policy, selecting native
+`CustomAuthentication`, requiring an
 authenticated identity and either the native `Jellyfin-IsApiKey` claim set to true or a
 `Jellyfin-UserId` claim parseable as a non-empty GUID. This claim-only guard rejects a
 device/session identity whose user could not be resolved during authentication, without
@@ -44,3 +47,15 @@ and disabled-user authentication failures return `401`; an authenticated device/
 identity rejected by the claim-only guard returns `403`. HEAD remains bodyless, preserving
 its existing successful response headers and `400`, `404`, and `500` semantics. This
 contract does not introduce a custom mapping of guard failures to `401`.
+
+Verification reuses the existing real integration tests: measure response time once
+before the code changes and once after completion under comparable conditions, and
+require a clearly visible decrease in HEAD response time. Do not add integration or
+unit tests for timing acceptance, and do not add authentication scenarios to integration
+tests. Authentication changes may add or update focused unit tests for native scheme
+selection, effective HEAD/GET policy composition, claim validation, and challenge/forbid
+behavior. Existing simulated assertions that depend on HEAD's old default policy must
+be reconciled with this contract; they do not establish real Jellyfin revocation or
+disabled-user behavior. The performance comparison is not evidence of an executed
+native authentication security matrix. Detailed measurement reporting remains in
+[Choose integration response-time reporting and HEAD improvement acceptance](https://github.com/xiakeng/trickplay-cropper/issues/105).
