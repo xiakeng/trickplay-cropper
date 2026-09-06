@@ -40,6 +40,10 @@ the same GET `404`. These gates finish before GET can return a representation or
 
 ### HEAD: user-independent calculation availability
 
+First consult source facts keyed by logical Item and requested Media Source. A current
+positive supplies verified membership, exact identities, and immutable matched-source
+width. A current explicit absence ends HEAD with `404`. On a miss or expiry:
+
 1. Resolve the logical video without a user and require its exact requested identity.
 2. Ask Jellyfin for the logical video's full playback Media Source enumeration with no
    user, `allowMediaProbe: false`, and path substitution disabled.
@@ -51,6 +55,30 @@ The full enumeration retains Jellyfin's default, local alternate, linked and eli
 dynamic sources while disabling explicit media probing. The matched Media Source's Video
 Stream width is the normalization input. HEAD performs no current-user resolution,
 user-visibility lookup, or playback authorization; its success is not permission evidence.
+
+### Source-fact observation lifetime
+
+Positive membership and matched width live for 30 minutes; explicit user-independent
+Item, membership, or Source Video absence lives for 5 minutes. Age begins before the
+authoritative logical Item lookup and never slides on HEAD access. Source deletion,
+relinking, or width changes may therefore remain invisible to HEAD for the positive's
+remaining lifetime. Current configuration targets still apply immediately.
+
+GET always executes its five current user-scoped gates and uses the newly matched width.
+Only after those gates succeed does it publish the verified positive source facts, using
+that source read's start time and order. It does not publish user-filtered lookup or
+membership failure as shared absence. Metadata verification alone never renews source
+age; a source publication never renews metadata. Width/configuration errors retain their
+existing classification and do not become absence.
+
+Source reads execute independently, including concurrent misses for the same pair.
+Older-started results cannot overwrite newer observations. Expired results are rejected
+at completion, and retained ordering evidence never makes an expired value servable.
+Cancellation is passed to host source enumeration; canceled or failed reads publish no
+absence. In-flight registrations remain until their reads settle. Expired idle facts and
+empty Item state are reclaimed on access and opportunistically across Items at most once
+per 5 minutes. No callback, eager scan, timer, capacity, load limit, queue, or coalescing
+is introduced.
 
 | Refusal | GET | HEAD |
 |---|---|---|
@@ -93,8 +121,8 @@ deliberate — and what gets logged so the mismatch is diagnosable — is in
 [resolution exactness](../design/resolution-exactness.md).
 
 Each request copies the current target array before selection. The copy, normalization
-width, position, user and Source Sprite facts remain request-local and never enter metadata
-identity.
+width, position, user and Source Sprite facts never enter metadata identity. Only the
+immutable source width is separately retained with its source-fact observation.
 
 ## Resolving generated metadata
 
@@ -113,8 +141,8 @@ whole-source or selected-width negative then ends GET with `404`, before another
 read, Source Sprite path lookup, JPEG access, or conditional success. Otherwise GET always
 issues a host metadata query, including when the eventual representation is a Preview Cache
 Entry HIT or `304`. It validates and publishes the returned rows, calculates from that same
-observation, and gives changed or unchanged checked metadata a new read-start age. It does
-not renew Source Sprite or other source facts.
+observation, and gives changed or unchanged checked metadata a new read-start age. This
+metadata read does not renew Source Sprite or source-fact age.
 
 An empty dictionary replaces older rows source-wide. Missing-width and no-thumbnail
 observations replace only their width; other checked rows remain usable. Invalid selected
@@ -175,7 +203,9 @@ flowchart TD
 ## Anchors
 
 `JellyfinPreviewContextResolver` owns GET's user-scoped gates;
-`JellyfinTrickplayFrameProbeContextResolver` owns HEAD's user-independent source facts.
+`JellyfinTrickplayFrameProbeContextResolver` resolves HEAD's user-independent source facts
+through `TrickplaySourceFactsCache`, which also receives independently verified GET
+positives and owns source-fact age, ordering, and reclamation.
 Both delegate target, metadata, and Frame Index calculation to
 `JellyfinTrickplayFrameCalculationResolver`; `TrickplayMetadataCache` owns observation
 freshness, scope, ordering, and reclamation. `TrickplayResolutionSelector` implements

@@ -3,8 +3,8 @@
 ## The promise
 
 A cached preview is served only while it still belongs to the Source Sprite version that
-produced it. A reused generated-metadata observation is served only within its explicit
-absolute lifetime.
+produced it. Reused source-fact and generated-metadata observations are served only within
+their separate explicit absolute lifetimes.
 
 ## What breaks without it
 
@@ -21,7 +21,10 @@ absolute lifetime.
 - **Two artifacts collide.** Different encoding qualities, or different Media Sources
   of the same video, would share one entry if identity did not cover them.
 - **Continuous probing preserves stale calculation data forever.** A sliding lifetime
-  would let popular media avoid an authoritative metadata read indefinitely.
+  would let popular media avoid authoritative source and metadata reads indefinitely.
+- **Metadata renewal hides a source change.** If source membership or matched width shared
+  metadata's age, refreshing one input could silently extend another input that was never
+  revalidated.
 - **Absence hides unrelated generated widths.** Treating one missing selected width as
   whole-source absence would refuse usable rows after the current target changes.
 - **A slow old read resurrects deleted or invalid data.** Completion order is not
@@ -66,11 +69,20 @@ made observable.
 whether bytes were reused or generated. It is diagnostic: no hit rate is promised, and
 a client that branches on it is depending on something the product does not commit to.
 
-**Generated metadata and Preview Cache Entries are different caches.** A metadata
-observation proves only interval, geometry, count, and recorded width for one effective
-Source Video. It says nothing about current user authority, Source Sprite existence or
-version, JPEG bytes, or ETag identity. Keeping those facts separate lets HEAD reuse the
-arithmetic input without turning that reuse into representation evidence.
+**Source facts, generated metadata, and Preview Cache Entries are different caches.** A
+source observation proves only user-independent Item/source membership and the matched
+Media Source video width. A metadata observation proves only interval, geometry, count,
+and recorded width for one effective Source Video. Neither says anything about current
+user authority, Source Sprite existence or version, JPEG bytes, or ETag identity. Keeping
+the three sets separate lets HEAD reuse calculation inputs without turning that reuse into
+representation evidence or allowing one input's renewal to extend another's age.
+
+**Source-fact age is absolute and begins before source I/O.** Verified membership and
+matched width live for 30 minutes; explicit user-independent Item, membership, or Source
+Video absence lives for 5 minutes. A warm HEAD does not renew either. GET performs all
+current user-scoped source checks and may publish only the positive facts it independently
+verifies. A user-filtered failure is not shared absence, and invalid width or configuration
+remains an error rather than becoming one.
 
 **Metadata age is absolute and begins before I/O.** Independently validated positive rows
 live for 30 minutes. Whole-source absence and selected-width absence or no-thumbnails live
@@ -78,34 +90,38 @@ for 5 minutes. Neither a HEAD hit nor a derived Frame Index renews age. Starting
 host query prevents a slow read from receiving a fresh full lifetime when it finally
 returns; a result already at its lifetime is rejected.
 
-**GET is the freshness bridge.** After its current user, visibility, playback, membership,
-Source Video, and target checks, GET may short-circuit only a current applicable negative.
-Every other GET reads authoritative metadata, even for a JPEG HIT or `304`, then publishes
-the checked observation from that read's start. This shortens HEAD staleness without
-allowing cached calculation data to authorize a representation.
+**GET is the freshness bridge.** It rereads current user, visibility, playback, membership,
+Source Video, and matched width without consulting retained source facts, then publishes
+the verified user-neutral positive from that source read's start. After current target
+selection, GET may short-circuit only a current applicable metadata negative. Every other
+GET reads authoritative metadata, even for a JPEG HIT or `304`, then publishes the checked
+metadata observation from its own read start. This shortens HEAD staleness without allowing
+cached calculation data to authorize a representation.
 
 **Absence has the narrowest truthful scope.** An empty dictionary is whole-source absence.
 A missing selected key or nonpositive count belongs only to that width, while other checked
 rows remain usable. Invalid data and operational failure are not negative facts. They
 renew nothing, and invalid selected data removes only the affected retained value.
 
-**Read start, not completion, orders publication.** Same-key and different-width reads may
-overlap. An older-started task can answer its own caller coherently, but cannot overwrite a
-newer positive or negative or resurrect a value a newer invalid observation removed. The
-ordering evidence remains until every older issued host read settles, then expires with
-the observations it protected.
+**Read start, not completion, orders publication.** Source reads and metadata reads use
+independent orders. Same-key reads may overlap without coalescing. An older-started task can
+answer its own caller coherently, but cannot overwrite a newer positive or negative or
+resurrect a value a newer invalid observation removed. The ordering evidence remains until
+every older issued host read settles, then expires with the observations it protected.
 
 ## Where it is enforced
 
 [Source resolution](../lifecycle/source-resolution.md) and
-[Trickplay Frame Probe](../lifecycle/frame-probe.md) enforce generated-metadata freshness.
+[Trickplay Frame Probe](../lifecycle/frame-probe.md) enforce source-fact and
+generated-metadata freshness.
 [Preview Cache Entry](../lifecycle/preview-cache.md) lists the independent representation
 identity inputs and the resulting layout, ETag, and stamp.
 
 ## How a caller observes it
 
 The representation half is visible as the ETag and a `304` when held bytes are still
-current. The metadata half is visible only through bounded Frame Index behavior: HEAD may
-temporarily report an older coherent index, while a non-negative-short-circuited GET reads
-current metadata and returns its actual index. After server-side regeneration, GET returns
-`200` with a changed ETag when the resulting representation identity changed.
+current. The calculation half is visible only through bounded Frame Index behavior: HEAD
+may temporarily report an index derived from older coherent source facts or metadata,
+while GET rechecks current source authority and returns its actual index. After server-side
+regeneration, GET returns `200` with a changed ETag when the resulting representation
+identity changed.

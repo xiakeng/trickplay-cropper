@@ -2,7 +2,7 @@
 
 - Status: Approved in GitHub issue #56; Frame Probe authorization, GET
   response, and metadata-freshness amendments approved in GitHub issues
-  #90, #92, and #93
+  #90, #92, #93, and #94
 - Source map: GitHub issue #43
 - Implementation tracker: GitHub issue #64
 - Baseline: v1.0.0.0
@@ -126,7 +126,7 @@ GET forbids it. HEAD may proceed when the ordinary endpoint policy accepts it be
 HEAD does not make a user authorization decision.
 
 HEAD must not resolve a current user, perform user-scoped lookup, or invoke playback
-authorization. It resolves the logical Item and effective Source Video through
+authorization. On a source-facts miss or expiry, it resolves the logical Item and effective Source Video through
 user-independent host APIs and requires exact requested identities. It enumerates the
 logical video's full playback Media Sources with `user: null`,
 `allowMediaProbe: false`, and path substitution disabled. This retains default,
@@ -246,7 +246,7 @@ required.
 
 This slice adds no capacity limit, load queue or concurrency bound, overload status,
 same-key coalescing, configuration/library event invalidation, or filesystem polling.
-Source-input caching is outside this contract.
+Source-input caching follows section 4.6 with separate age and publication state.
 
 ### 4.5 Frame Index
 
@@ -256,6 +256,35 @@ generated sequence to the final available Frame Index.
 
 GET and the Trickplay Frame Probe must produce the same Frame Index for equal
 calculation inputs. The common calculation carries no user or authorization context.
+
+### 4.6 Source facts observation freshness
+
+HEAD caches immutable facts by logical Item GUID and requested Media Source GUID: exact
+identity and membership plus the matched Media Source video-stream width. Positive facts
+have a 30-minute absolute lifetime; explicit user-independent Item, membership, or Source
+Video absence has 5 minutes. Age begins before the authoritative logical Item read. No
+mutable Video or user-specific playback DTO is retained. Hits never slide age, and loads
+already expired at completion cannot be served or published as fresh.
+
+Cold HEAD keeps section 3.2's full supported enumeration without a user and with explicit
+probing disabled. Warm HEAD performs no plugin user/library lookup, source enumeration,
+metadata query, filesystem polling, or image work after ordinary host policy. It requires
+no preceding GET. Current targets apply on every calculation without event callbacks.
+
+GET always rechecks current user authorization, logical visibility/playback, membership,
+Source Video visibility, and current matched width. It may publish only positive source
+facts it independently verifies, using that source read's start time and order. A
+user-filtered failure is never shared source absence. Invalid width/configuration keeps
+its existing error behavior. Metadata-only confirmation never renews source facts;
+source publication never renews metadata. Source deletion, relinking, and width changes
+may remain visible to HEAD for an older positive's remaining lifetime.
+
+Source reads may execute independently for the same or different pairs; older-started
+completion cannot overwrite newer evidence. Cancellation is passed to source enumeration,
+and operational failure/cancellation is not absence. Registrations protect ordering until
+actual read settlement; expired idle facts and empty logical Item state are reclaimed
+opportunistically without library/configuration callbacks, eager scanning, capacity,
+concurrency limits, queues, or coalescing.
 
 ## 5. Outcome mapping
 
@@ -344,8 +373,9 @@ lookup, invoke playback authorization, resolve or inspect a Source Sprite, creat
 Preview Identity, evaluate conditional GET, access the Cache Tree, acquire a
 decode permit, snapshot the filesystem, calculate sprite/cell/row/column/crop
 geometry, acquire a representation lock, retry, or invoke the encoder. The shared
-calculation may read and publish only the bounded generated-metadata observations in
-section 4.4; it has no dependency on authorization or any GET-only facility. GET alone
+calculation may read and publish the bounded generated-metadata observations in
+section 4.4, and the probe front may reuse the source facts in section 4.6; neither
+depends on authorization or any GET-only facility. GET alone
 computes sprite index, cell, row, column, and crop geometry after Source Sprite resolution.
 
 Unsupported methods advertise `Allow: GET, HEAD`.

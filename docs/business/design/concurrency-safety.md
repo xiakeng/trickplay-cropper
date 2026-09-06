@@ -4,7 +4,7 @@
 
 No caller reads a partially written entry, two callers asking for the same frame pay
 for one generation, emptying the Cache Tree never disturbs a request in flight, and a
-caller that gives up leaves nothing held behind. An older generated-metadata read never
+caller that gives up leaves nothing held behind. An older source-fact or generated-metadata read never
 overwrites a newer observation merely because it completes later.
 
 ## What breaks without it
@@ -85,6 +85,13 @@ removed once no in-progress publication can need them.
 coalesced, so concurrent requests may issue concurrent host queries. Preview Cache Entry
 misses remain single-flight because duplicate JPEG decoding is the expensive work this
 chapter promises to avoid. Neither rule is generalized into a global lock.
+
+**Source reads have their own order and age.** Source misses also execute independently.
+GET's current source checks and HEAD's user-independent cold reads publish immutable
+facts under the same source order, without borrowing metadata age. In-flight source reads
+keep their registration until settlement so reclamation cannot allow a late old result
+to replace newer evidence. Host source enumeration receives the caller's cancellation
+token; failure or cancellation does not turn user-filtered refusal into global absence.
 
 **Paths are re-checked, and reparse points are refused.** The tree lives in storage the
 plugin does not control, and entry paths are built from values derived from server

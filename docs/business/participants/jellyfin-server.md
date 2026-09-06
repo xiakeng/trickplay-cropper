@@ -6,8 +6,8 @@ Everything durable. The plugin derives from all of it and owns none of it.
 
 | Owned | Supplied to the plugin as |
 |---|---|
-| The library, Items, users, and playback authorization | User-scoped GET lookups and authorization, plus user-independent HEAD identity lookups |
-| Media Sources, including local, linked, and dynamic forms | User-shaped GET membership and full user-independent HEAD membership, plus the effective Source Video |
+| The library, Items, users, and playback authorization | User-scoped GET lookups and authorization, plus authoritative reads behind bounded user-independent HEAD facts |
+| Media Sources, including local, linked, and dynamic forms | User-shaped GET membership and full user-independent HEAD membership, plus the matched width and effective Source Video |
 | The trickplay configuration | The current Trickplay Resolution Targets |
 | Generated trickplay metadata | Interval, tile geometry, thumbnail count, and recorded width per Media Source |
 | The Source Sprites | JPEG files the plugin crops frames out of |

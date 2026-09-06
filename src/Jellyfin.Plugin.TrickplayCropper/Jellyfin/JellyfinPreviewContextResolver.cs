@@ -20,6 +20,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
     private readonly ILibraryManager libraryManager;
     private readonly IMediaSourceManager mediaSourceManager;
     private readonly ITrickplayFrameCalculationResolver calculationResolver;
+    private readonly TrickplaySourceFactsCache sourceFactsCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JellyfinPreviewContextResolver"/> class.
@@ -28,16 +29,19 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
     /// <param name="libraryManager">Resolves user-visible logical and Source Videos.</param>
     /// <param name="mediaSourceManager">Enumerates the authorized logical video's Media Sources.</param>
     /// <param name="calculationResolver">Performs the shared resolution and Frame Index calculation.</param>
+    /// <param name="sourceFactsCache">Publishes independently verified user-neutral source facts.</param>
     public JellyfinPreviewContextResolver(
         IUserManager userManager,
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
-        ITrickplayFrameCalculationResolver calculationResolver)
+        ITrickplayFrameCalculationResolver calculationResolver,
+        TrickplaySourceFactsCache sourceFactsCache)
     {
         this.userManager = userManager;
         this.libraryManager = libraryManager;
         this.mediaSourceManager = mediaSourceManager;
         this.calculationResolver = calculationResolver;
+        this.sourceFactsCache = sourceFactsCache;
     }
 
     /// <inheritdoc />
@@ -64,6 +68,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
                 : new PreviewContextResolution.Unauthorized();
         }
 
+        using TrickplaySourceFactsCache.PreviewObservation sourceObservation = sourceFactsCache.BeginForPreview(query);
         Video? logicalVideo = libraryManager.GetItemById<Video>(query.ItemId, user);
         if (logicalVideo?.Id != query.ItemId)
         {
@@ -75,7 +80,12 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             return new PreviewContextResolution.Forbidden();
         }
 
-        return await ResolveMediaSourceAsync(query, user, logicalVideo, cancellationToken).ConfigureAwait(false);
+        return await ResolveMediaSourceAsync(
+            query,
+            user,
+            logicalVideo,
+            sourceObservation,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private User? ResolveUser(ClaimsPrincipal principal)
@@ -99,6 +109,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         PreviewQuery query,
         User user,
         Video logicalVideo,
+        TrickplaySourceFactsCache.PreviewObservation sourceObservation,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<MediaSourceInfo> mediaSources = await mediaSourceManager.GetPlaybackMediaSources(
@@ -120,8 +131,10 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             return Concealed();
         }
 
+        int? normalizationSourceWidth = matchedSource.VideoStream?.Width;
+        sourceFactsCache.PublishForPreview(sourceObservation, normalizationSourceWidth);
         TrickplayFrameCalculationResolution calculation = await calculationResolver
-            .ResolveForPreviewAsync(query, matchedSource.VideoStream?.Width, cancellationToken)
+            .ResolveForPreviewAsync(query, normalizationSourceWidth, cancellationToken)
             .ConfigureAwait(false);
         return calculation switch
         {

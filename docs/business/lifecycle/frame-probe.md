@@ -16,9 +16,9 @@ only the Selected Trickplay Resolution and Frame Selection calculation with GET.
 
 The probe runs its user-independent source path and the shared calculation. It reads:
 
-- the unscoped logical Item and effective Source Video identities,
-- the logical Item's full playback Media Source enumeration, without a user and with
-  explicit media probing disabled,
+- an immutable source-fact observation establishing exact logical Item and Source Video
+  identities, membership, and matched-source width; on a miss or expiry it reads the
+  unscoped identities and full Media Source enumeration with explicit probing disabled,
 - the server's current Trickplay Resolution Targets,
 - a current generated-metadata observation for the effective Source Video and Selected
   Trickplay Resolution, reused from memory or loaded from Jellyfin,
@@ -27,8 +27,12 @@ The probe runs its user-independent source path and the shared calculation. It r
 Usable positive metadata remains current for 30 minutes from its authoritative read start;
 whole-source and selected-width absence remains current for 5 minutes. Probe hits and Frame
 Index calculations do not renew those absolute ages. A cold or expired observation issues
-a host metadata query, but a warm one performs no metadata database read. The Item and Media
-Source checks above still run on every probe; source-input caching is a separate concern.
+a host metadata query, but a warm one performs no metadata database read. Source positives
+and explicit absence have their own 30/5-minute read-start ages. With both sets warm,
+HEAD performs no plugin user lookup, library lookup, source enumeration, metadata query,
+filesystem polling, or image work after the ordinary host policy. Current targets are
+still copied on each calculation. See [source resolution](source-resolution.md) for
+independent renewal, GET publication, cancellation, ordering, and reclamation.
 
 The enumeration retains Jellyfin's supported default, local alternate, linked and
 eligible dynamic source forms. The requested GUID must be a member of that enumeration,
@@ -77,7 +81,7 @@ following preview request can be served.
 ```mermaid
 flowchart TD
     In["HEAD: Item, optional<br/>Media Source, position"] --> Policy["Jellyfin ordinary<br/>endpoint policy"]
-    Policy --> Source["Unscoped Item and full<br/>Media Source membership"]
+    Policy --> Source["Current source facts<br/>reuse or cold host read"]
     Source --> Res["Selected Trickplay<br/>Resolution"]
     Res --> Metadata["Current generated-metadata<br/>observation"]
     Metadata --> Sel["Frame Selection"]
@@ -109,7 +113,8 @@ error. `TrickplayFrameProbe` implements `ITrickplayFrameProbe` and returns the c
 `NotModified`. It resolves source facts through
 `JellyfinTrickplayFrameProbeContextResolver`; that resolver and the GET-only
 `JellyfinPreviewContextResolver` both delegate calculation to
-`JellyfinTrickplayFrameCalculationResolver`; `TrickplayMetadataCache` owns the bounded
-in-memory observations and their ordered publication. The probe never takes a
+`JellyfinTrickplayFrameCalculationResolver`; `TrickplaySourceFactsCache` and
+`TrickplayMetadataCache` own the independently aged observations and ordered publication.
+The probe never takes a
 representation lock or retries. The HTTP shape is recorded normatively in
 [the HEAD endpoint research note](../../research/head-endpoint-contract.md).

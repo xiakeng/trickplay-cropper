@@ -28,6 +28,10 @@ _Avoid_: Effective resolution, normalized width
 An immutable read of Jellyfin's generated trickplay metadata for one effective Source Video, with read-start age and ordered publication; positive rows and scoped absence may be reused only for their defined lifetimes.
 _Avoid_: Metadata cache entry, calculation cache, metadata version
 
+**Source Facts Observation**:
+An immutable, user-independent observation of a Media Source's membership in a logical Item and its matched-source video width, or of explicit Item, membership, or Source Video absence. Each observation has its own read-start age and publication order.
+_Avoid_: Source cache entry, cached Video, cached playback source
+
 **Frame Index**:
 The zero-based ordinal of the preview frame a playback position selects from the generated trickplay sequence, clamped to the last available frame.
 _Avoid_: Frame number, thumbnail index, frame position

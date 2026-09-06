@@ -33,8 +33,8 @@ current-user resolver, a user-scoped Item lookup, playback authorization, a spri
 the Cache Tree, or the encoder — not routes it declines to take. A guarantee that
 depends on a code path choosing not to call something is a guarantee that the next
 change can silently break; one that depends on there being nothing to call is not.
-The probe and preview share only the resolution and Frame Index calculation, rather
-than sharing a request context or turning preview behavior off with flags.
+The probe and preview share immutable source-fact publication and the resolution and
+Frame Index calculation. Their request contexts remain separate.
 
 **The rejected alternative was the framework default.** An HTTP framework will
 typically answer HEAD by running the GET handler and discarding the body. That is
@@ -55,8 +55,10 @@ Frame Index every time it succeeds and ignores representation conditions.
 **Metadata reuse does not cross the image boundary.** The in-memory observation contains
 only generated interval, geometry, count, width, and scoped absence. It has no Source
 Sprite path or fingerprint, Preview Cache Entry, ETag, user, or authorization state. A
-warm probe may therefore avoid a metadata database query while remaining structurally
-unable to touch image work.
+warm probe therefore avoids a metadata database query while remaining structurally
+unable to touch image work. Separate immutable membership and matched-width facts also
+let warm probes avoid host source enumeration and library lookups. Their independent
+age prevents a metadata refresh from extending stale source inputs.
 
 **The non-promise is stated, not left to be discovered.** "A successful probe is not
 proof a preview can be served" is uncomfortable to document and worse to omit. The
@@ -75,7 +77,8 @@ truncated and the unreachable remainder.
 
 An empty body and exactly two plugin-owned headers, whatever else is happening on the
 server. A probe never touches the Cache Tree or image work, whether the cache is cold or
-the disk is busy. Its current Item and Media Source checks, full source enumeration, and
-a cold or expired metadata observation can still perform I/O and affect latency. The
+the disk is busy. Cold or expired source facts and metadata can still perform host I/O
+and affect latency. With both warm, plugin work after the host policy uses memory only.
+The
 answer establishes calculation availability, not user visibility, playback permission,
 or preview deliverability.
