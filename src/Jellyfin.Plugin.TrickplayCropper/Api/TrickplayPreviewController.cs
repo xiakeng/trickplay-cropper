@@ -65,7 +65,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     /// <param name="positionTicks">The raw playback position in Jellyfin ticks.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <returns>The mapped bodyless HTTP response.</returns>
-    [Authorize(Policy = "TrickplayFrameProbe")]
+    [Authorize(Policy = nameof(TrickplayFrameProbe))]
     [HttpHead]
     public async Task<IActionResult> HeadAsync(
         [FromRoute] string? itemId,

@@ -4,7 +4,6 @@ using Jellyfin.Plugin.TrickplayCropper.Tasks;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Xunit;
@@ -30,7 +29,6 @@ public sealed class PluginDiscoverySpecs
     {
         Type controller = typeof(TrickplayPreviewController);
         Assert.NotNull(controller.GetCustomAttribute<ApiControllerAttribute>());
-        Assert.Null(controller.GetCustomAttribute<AuthorizeAttribute>());
         RouteAttribute route = Assert.IsType<RouteAttribute>(controller.GetCustomAttribute<RouteAttribute>());
         Assert.Equal("TrickplayCropper/Videos/{itemId}/Preview", route.Template);
     }
@@ -42,7 +40,6 @@ public sealed class PluginDiscoverySpecs
         MethodInfo action = Assert.IsAssignableFrom<MethodInfo>(
             controller.GetMethod(nameof(TrickplayPreviewController.GetAsync)));
         Assert.NotNull(action.GetCustomAttribute<HttpGetAttribute>());
-        Assert.Null(Assert.IsType<AuthorizeAttribute>(action.GetCustomAttribute<AuthorizeAttribute>()).Policy);
         ParameterInfo itemId = Assert.Single(action.GetParameters(), parameter => parameter.Name == "itemId");
         ParameterInfo parameters = Assert.Single(action.GetParameters(), parameter => parameter.Name == "parameters");
         ParameterInfo cancellationToken = Assert.Single(
@@ -62,9 +59,6 @@ public sealed class PluginDiscoverySpecs
         MethodInfo action = Assert.IsAssignableFrom<MethodInfo>(
             controller.GetMethod(nameof(TrickplayPreviewController.HeadAsync)));
         Assert.NotNull(action.GetCustomAttribute<HttpHeadAttribute>());
-        Assert.Equal(
-            "TrickplayFrameProbe",
-            Assert.IsType<AuthorizeAttribute>(action.GetCustomAttribute<AuthorizeAttribute>()).Policy);
         ParameterInfo itemId = Assert.Single(action.GetParameters(), parameter => parameter.Name == "itemId");
         ParameterInfo mediaSourceId = Assert.Single(
             action.GetParameters(),

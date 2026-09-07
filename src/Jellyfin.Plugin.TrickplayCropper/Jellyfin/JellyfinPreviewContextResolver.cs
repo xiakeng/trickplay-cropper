@@ -13,8 +13,11 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// </summary>
 internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
 {
-    private const string JellyfinIsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string JellyfinUserIdClaim = "Jellyfin-UserId";
+    /// <summary>The native API-key identity claim type.</summary>
+    internal const string JellyfinIsApiKeyClaim = "Jellyfin-IsApiKey";
+
+    /// <summary>The native user identity claim type.</summary>
+    internal const string JellyfinUserIdClaim = "Jellyfin-UserId";
 
     private readonly IUserManager userManager;
     private readonly ILibraryManager libraryManager;

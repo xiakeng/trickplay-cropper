@@ -16,9 +16,6 @@ namespace Jellyfin.Plugin.TrickplayCropper;
 /// </summary>
 public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 {
-    private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string UserIdClaim = "Jellyfin-UserId";
-
     /// <summary>
     /// Registers all process-wide Trickplay Cropper modules as singletons.
     /// </summary>
@@ -29,6 +26,11 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         ArgumentNullException.ThrowIfNull(applicationHost);
         serviceCollection.Configure<AuthorizationOptions>(ConfigureAuthorization);
         serviceCollection.TryAddSingleton(TimeProvider.System);
+        RegisterPreviewServices(serviceCollection);
+    }
+
+    private static void RegisterPreviewServices(IServiceCollection serviceCollection)
+    {
         serviceCollection.AddSingleton<ITrickplayPreview, TrickplayPreview>();
         serviceCollection.AddSingleton<ITrickplayFrameProbe, TrickplayFrameProbe>();
         serviceCollection.AddSingleton<IPreviewContextResolver, JellyfinPreviewContextResolver>();
@@ -48,7 +50,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     private static void ConfigureAuthorization(AuthorizationOptions options)
     {
         options.AddPolicy(
-            "TrickplayFrameProbe",
+            nameof(TrickplayFrameProbe),
             policy => policy
                 .AddAuthenticationSchemes("CustomAuthentication")
                 .RequireAuthenticatedUser()
@@ -58,14 +60,18 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     private static bool HasNativeIdentity(AuthorizationHandlerContext context)
     {
         Claim? apiKeyClaim = context.User.FindFirst(
-            claim => claim.Type.Equals(IsApiKeyClaim, StringComparison.OrdinalIgnoreCase));
+            claim => claim.Type.Equals(
+                JellyfinPreviewContextResolver.JellyfinIsApiKeyClaim,
+                StringComparison.OrdinalIgnoreCase));
         if (bool.TryParse(apiKeyClaim?.Value, out bool isApiKey) && isApiKey)
         {
             return true;
         }
 
         Claim? userIdClaim = context.User.FindFirst(
-            claim => claim.Type.Equals(UserIdClaim, StringComparison.OrdinalIgnoreCase));
+            claim => claim.Type.Equals(
+                JellyfinPreviewContextResolver.JellyfinUserIdClaim,
+                StringComparison.OrdinalIgnoreCase));
         return Guid.TryParse(userIdClaim?.Value, out Guid userId) && userId != Guid.Empty;
     }
 }
