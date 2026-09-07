@@ -10,6 +10,7 @@ Each file below lives in the named suite's directory.
 | To prove or change… | Entry point |
 |---|---|
 | GET response and authorization behavior | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
+| Effective GET and Frame Probe policy composition | `TrickplayPreviewAuthorizationPolicySpecs.cs` (ComponentTests) |
 | Probe HTTP behavior and real Kestrel | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | Source Facts Observation behavior | `TrickplaySourceFactsObservationHttpSpecs.cs` (ComponentTests) |
 | Generated Metadata Observation behavior | `TrickplayGeneratedMetadataObservationHttpSpecs.cs`, `TrickplayGeneratedMetadataScopeHttpSpecs.cs` (ComponentTests) |

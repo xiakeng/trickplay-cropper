@@ -273,14 +273,61 @@ public sealed class TrickplayFrameProbeHttpSpecs
     }
 
     [Fact]
-    public async Task ForbidsTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
+    public async Task AcceptsNativeUserWhenTheApiKeyClaimIsMalformed()
+    {
+        var scenario = new PreviewScenario
+        {
+            Authentication = AuthenticationState.UserSessionWithMalformedApiKey,
+        };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.HeadAsync();
+
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
+    }
+
+    [Theory]
+    [InlineData(AuthenticationState.UserlessFalseApiKey)]
+    [InlineData(AuthenticationState.UserlessMalformedApiKey)]
+    [InlineData(AuthenticationState.MissingUserId)]
+    [InlineData(AuthenticationState.EmptyUserId)]
+    [InlineData(AuthenticationState.MalformedUserId)]
+    [InlineData(AuthenticationState.UnrelatedIdentity)]
+    public async Task ForbidsAuthenticatedIdentityWithoutNativeUserOrApiKeyClaims(
+        AuthenticationState authentication)
+    {
+        var scenario = new PreviewScenario { Authentication = authentication };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.HeadAsync();
+
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ReusesNativeAuthenticationWithinEachRequestOnly()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage first = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(first, 0);
+        Assert.Equal(1, scenario.AuthenticationCount);
+
+        using HttpResponseMessage second = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(second, 0);
+        Assert.Equal(2, scenario.AuthenticationCount);
+    }
+
+    [Fact]
+    public async Task OmitsDefaultAuthorizationPolicyFromTrickplayFrameProbe()
     {
         var scenario = new PreviewScenario { DeniesDefaultAuthorizationPolicy = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
     [Fact]

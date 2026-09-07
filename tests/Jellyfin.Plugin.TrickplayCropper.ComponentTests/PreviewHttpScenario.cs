@@ -41,6 +41,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 internal sealed class PreviewScenario
 {
+    private int authenticationCount;
     private int metadataReadCount;
     private readonly Queue<MetadataReadPlan> metadataReadPlans = [];
     private readonly Queue<SourceReadPlan> sourceReadPlans = [];
@@ -52,6 +53,8 @@ internal sealed class PreviewScenario
     private int userScopedSourceEnumerations;
 
     public AuthenticationState Authentication { get; init; } = AuthenticationState.UserSession;
+
+    public int AuthenticationCount => Volatile.Read(ref authenticationCount);
 
     public bool BlocksCacheAccessUntilCancellation { get; init; }
 
@@ -129,6 +132,11 @@ internal sealed class PreviewScenario
     public void RecordSourceSpritePathRequest()
     {
         Interlocked.Increment(ref sourceSpritePathRequests);
+    }
+
+    public void RecordAuthentication()
+    {
+        Interlocked.Increment(ref authenticationCount);
     }
 
     public void RecordMetadataRead()

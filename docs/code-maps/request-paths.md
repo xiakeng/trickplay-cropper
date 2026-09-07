@@ -1,14 +1,16 @@
 # Request paths map
 
-`TrickplayCropper/Videos/{itemId}/Preview` routes GET and the Frame Probe. GET resolves
-an authorized image; the probe returns its Frame Index before image work. Both share the
-[observation caches](caching/observations.md).
+`TrickplayCropper/Videos/{itemId}/Preview` routes GET behind Jellyfin's default policy and
+the Frame Probe behind `TrickplayFrameProbe`. The latter reuses
+request-local native authentication, validates native claims without default authorization,
+and returns its Frame Index before image work. Both share the [observation caches](caching/observations.md).
 
 ## Controller
 
 HTTP routing lives in
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
-`GetAsync` binds the query; `HeadAsync` rejects malformed input through `TryCreateQuery`.
+`GetAsync` binds under default authorization; `HeadAsync` rejects malformed input under
+the named policy through `TryCreateQuery`.
 `MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
 `TrickplayFrameProbeOutcome` sets to status, headers, and body.
 
@@ -48,7 +50,7 @@ Suite locations are on the [tests map](tests.md).
 | Behavior | Entry point |
 |---|---|
 | GET responses, authorization, and failures | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
-| Probe HTTP contract and warm reuse | `TrickplayFrameProbeHttpSpecs.cs` (ComponentTests) |
+| Probe HTTP contract, policy, and warm reuse | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayPreviewAuthorizationPolicySpecs.cs` (ComponentTests) |
 | Real Kestrel wiring | `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | GET outcome mapping and conditional requests | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
