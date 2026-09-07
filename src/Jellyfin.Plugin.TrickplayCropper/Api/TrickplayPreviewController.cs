@@ -17,7 +17,6 @@ public sealed class TrickplayPreviewController : ControllerBase
 {
     private const string CacheControlHeaderValue = "private, no-cache";
     private const string FrameIndexHeaderName = "X-Trickplay-Frame-Index";
-    private const string FrameProbePolicyName = "TrickplayFrameProbe";
 
     private readonly ITrickplayFrameProbe trickplayFrameProbe;
     private readonly ITrickplayPreview trickplayPreview;
@@ -66,7 +65,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     /// <param name="positionTicks">The raw playback position in Jellyfin ticks.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <returns>The mapped bodyless HTTP response.</returns>
-    [Authorize(Policy = FrameProbePolicyName)]
+    [Authorize(Policy = nameof(TrickplayFrameProbe))]
     [HttpHead]
     public async Task<IActionResult> HeadAsync(
         [FromRoute] string? itemId,

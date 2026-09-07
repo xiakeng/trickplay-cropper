@@ -15,10 +15,7 @@ namespace Jellyfin.Plugin.TrickplayCropper;
 /// </summary>
 public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 {
-    private const string FrameProbePolicyName = "TrickplayFrameProbe";
     private const string JellyfinAuthenticationScheme = "CustomAuthentication";
-    private const string JellyfinIsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string JellyfinUserIdClaim = "Jellyfin-UserId";
 
     /// <summary>
     /// Registers all process-wide Trickplay Cropper modules as singletons.
@@ -48,7 +45,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 
     private static void ConfigureFrameProbeAuthorization(AuthorizationOptions options)
     {
-        options.AddPolicy(FrameProbePolicyName, policy =>
+        options.AddPolicy(nameof(TrickplayFrameProbe), policy =>
         {
             policy.AddAuthenticationSchemes(JellyfinAuthenticationScheme);
             policy.RequireAuthenticatedUser();
@@ -58,13 +55,13 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 
     private static bool HasNativeIdentity(AuthorizationHandlerContext context)
     {
-        string? apiKeyValue = context.User.FindFirst(JellyfinIsApiKeyClaim)?.Value;
+        string? apiKeyValue = context.User.FindFirst(JellyfinPreviewContextResolver.IsApiKeyClaimName)?.Value;
         if (bool.TryParse(apiKeyValue, out bool isApiKey) && isApiKey)
         {
             return true;
         }
 
-        string? userIdValue = context.User.FindFirst(JellyfinUserIdClaim)?.Value;
+        string? userIdValue = context.User.FindFirst(JellyfinPreviewContextResolver.UserIdClaimName)?.Value;
         return Guid.TryParse(userIdValue, out Guid userId) && userId != Guid.Empty;
     }
 }

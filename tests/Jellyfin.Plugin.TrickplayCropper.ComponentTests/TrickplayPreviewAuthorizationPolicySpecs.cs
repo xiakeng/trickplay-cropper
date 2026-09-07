@@ -22,7 +22,7 @@ public sealed class TrickplayPreviewAuthorizationPolicySpecs
 
         Assert.Contains(getPolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
         Assert.DoesNotContain(probePolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
-        Assert.Equal([TestAuthenticationHandler.SchemeName], probePolicy.AuthenticationSchemes);
+        Assert.Equal(["CustomAuthentication"], probePolicy.AuthenticationSchemes);
     }
 
     private static async Task<AuthorizationPolicy> ResolvePolicyAsync(

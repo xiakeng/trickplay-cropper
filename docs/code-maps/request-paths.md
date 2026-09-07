@@ -1,18 +1,19 @@
 # Request paths map
 
-`TrickplayCropper/Videos/{itemId}/Preview` routes GET behind Jellyfin's default policy and
-the Frame Probe behind `TrickplayFrameProbe`. The latter reuses
-request-local native authentication, validates native claims without default authorization,
-and returns its Frame Index before image work. Both share the [observation caches](caching/observations.md).
+GET uses Jellyfin's default policy. The Frame Probe uses `TrickplayFrameProbe` to reuse
+request-local native authentication and validate claims without default authorization.
+Both share the [observation caches](caching/observations.md).
 
 ## Controller
 
 HTTP routing lives in
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
-`GetAsync` binds under default authorization; `HeadAsync` rejects malformed input under
-the named policy through `TryCreateQuery`.
+`GetAsync` binds under default authorization; `HeadAsync` validates through `TryCreateQuery`.
 `MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
 `TrickplayFrameProbeOutcome` sets to status, headers, and body.
+
+[PluginServiceRegistrator.cs](../../src/Jellyfin.Plugin.TrickplayCropper/PluginServiceRegistrator.cs)
+owns `ConfigureFrameProbeAuthorization` and its `HasNativeIdentity` claim guard.
 
 ## GET chain
 
@@ -50,7 +51,7 @@ Suite locations are on the [tests map](tests.md).
 | Behavior | Entry point |
 |---|---|
 | GET responses, authorization, and failures | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
-| Probe HTTP contract, policy, and warm reuse | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayPreviewAuthorizationPolicySpecs.cs` (ComponentTests) |
+| Probe HTTP contract and warm reuse | `TrickplayFrameProbeHttpSpecs.cs` (ComponentTests) |
 | Real Kestrel wiring | `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | GET outcome mapping and conditional requests | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract | `TrickplayFrameProbeSpecs.cs` (UnitTests) |

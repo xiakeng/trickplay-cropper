@@ -13,8 +13,11 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// </summary>
 internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
 {
-    private const string JellyfinIsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string JellyfinUserIdClaim = "Jellyfin-UserId";
+    /// <summary>The native claim that distinguishes Jellyfin API keys.</summary>
+    internal const string IsApiKeyClaimName = "Jellyfin-IsApiKey";
+
+    /// <summary>The native claim that identifies the resolved Jellyfin user.</summary>
+    internal const string UserIdClaimName = "Jellyfin-UserId";
 
     private readonly IUserManager userManager;
     private readonly ILibraryManager libraryManager;
@@ -91,7 +94,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
     private User? ResolveUser(ClaimsPrincipal principal)
     {
         Claim? userIdClaim = principal.Claims.FirstOrDefault(
-            claim => claim.Type.Equals(JellyfinUserIdClaim, StringComparison.OrdinalIgnoreCase));
+            claim => claim.Type.Equals(UserIdClaimName, StringComparison.OrdinalIgnoreCase));
         bool hasUserId = Guid.TryParse(userIdClaim?.Value, out Guid userId) && userId != Guid.Empty;
         return hasUserId
             ? userManager.GetUserById(userId)
@@ -101,7 +104,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
     private static bool IsApiKey(ClaimsPrincipal principal)
     {
         Claim? apiKeyClaim = principal.Claims.FirstOrDefault(
-            claim => claim.Type.Equals(JellyfinIsApiKeyClaim, StringComparison.OrdinalIgnoreCase));
+            claim => claim.Type.Equals(IsApiKeyClaimName, StringComparison.OrdinalIgnoreCase));
         return bool.TryParse(apiKeyClaim?.Value, out bool isApiKey) && isApiKey;
     }
 
