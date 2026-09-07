@@ -4,16 +4,42 @@ Use this contract for C# production code, tests, tools, and build configuration.
 
 ## Prepare
 
-1. Identify the review base and inspect the complete diff.
+1. Identify the review base and inspect the complete diff.  
+   Do not increase the diff context by tweak --unified.  
+   If lack context to do proper review, search and read required contents only.
 2. Read the governing issue or specification.
 3. Apply `docs/agents/csharp-guidelines/SKILL.md`, every reference category
-   touched by the change, and `docs/agents/csharp-guidelines-overrides.md`.
+   touched by the change, and `docs/agents/csharp-guidelines-overrides.md`.   
+   Do not bulk-read all references files, read only matching sections.
 4. Inspect affected call sites, configuration, and tests.
 5. Identify the documentation that describes the changed behavior: the affected Code
    Maps under `docs/code-maps/`.
 
 Preparation is complete when every changed behavior maps to the requested
 contract or is identified as unintended scope.
+
+## Incremental /code-review rule
+
+Within one `/implementation` task, the first `/code-review` reviews the complete
+branch diff against its original fixed point and runs both Standards and Spec.
+
+After that review, record the reviewed `HEAD` commit as the review checkpoint.
+For every subsequent review:
+
+1. Review only `git diff <last-reviewed-head>..HEAD` and its commits.
+2. Review only the affected axis:
+   - Run Standards for changes made solely to resolve Standards findings.
+   - Run Spec for changes made solely to resolve Spec findings or acceptance
+     requirements.
+   - Run both only when the new changes affect both axes.
+3. Do not review unchanged hunks from before the checkpoint.
+4. After the required review axes pass, advance the checkpoint to the current
+   `HEAD`.
+
+This incremental-review rule overrides `/code-review`'s default full-diff,
+two-axis behavior for repeated reviews within the same implementation task.
+If the checkpoint is missing, is not an ancestor of `HEAD`, or the review scope
+is uncertain, perform the complete two-axis review again.
 
 ## Review
 
@@ -54,7 +80,7 @@ Exclude subjective preferences, diagnostics already emitted by configured
 tooling, unrelated pre-existing problems, and concerns without a plausible
 failure scenario.
 
-Present findings first, ordered by severity and file location. For each finding,
+Present findings first, ordered by file location. For each finding,
 report its title, location, trigger, impact, evidence, and remediation. If there
 are no actionable findings, say so explicitly.
 
