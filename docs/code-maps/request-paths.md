@@ -10,7 +10,9 @@ HTTP routing lives in
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
 `GetAsync` binds the query; `HeadAsync` rejects malformed input through `TryCreateQuery`.
 `MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
-`TrickplayFrameProbeOutcome` sets to status, headers, and body.
+`TrickplayFrameProbeOutcome` sets to HTTP responses. GET uses Jellyfin's default
+policy; HEAD uses `TrickplayFrameProbe`: native `CustomAuthentication` plus an authenticated
+Boolean-true `Jellyfin-IsApiKey` or non-empty GUID `Jellyfin-UserId`.
 
 ## GET chain
 

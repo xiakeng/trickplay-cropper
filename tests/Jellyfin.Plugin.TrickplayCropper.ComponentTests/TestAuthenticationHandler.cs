@@ -11,7 +11,7 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
     private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
     private const string UserIdClaim = "Jellyfin-UserId";
 
-    public const string SchemeName = "ComponentTest";
+    public const string SchemeName = "CustomAuthentication";
 
     private readonly PreviewScenario scenario;
 
@@ -31,6 +31,18 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         {
             AuthenticationState.UserSession => CreateUserSessionResult(scenario.UserId),
             AuthenticationState.ApiKeyWithoutCurrentUser => CreateApiKeyResult(),
+            AuthenticationState.MissingUserId => CreateAuthenticatedResult(
+                [new Claim(IsApiKeyClaim, bool.FalseString)]),
+            AuthenticationState.EmptyUserId => CreateAuthenticatedResult(
+                [new Claim(UserIdClaim, string.Empty), new Claim(IsApiKeyClaim, bool.FalseString)]),
+            AuthenticationState.MalformedUserId => CreateAuthenticatedResult(
+                [new Claim(UserIdClaim, "not-a-guid"), new Claim(IsApiKeyClaim, bool.FalseString)]),
+            AuthenticationState.FalseApiKeyWithoutCurrentUser => CreateAuthenticatedResult(
+                [new Claim(UserIdClaim, Guid.Empty.ToString("N")), new Claim(IsApiKeyClaim, bool.FalseString)]),
+            AuthenticationState.MalformedApiKeyWithoutCurrentUser => CreateAuthenticatedResult(
+                [new Claim(UserIdClaim, Guid.Empty.ToString("N")), new Claim(IsApiKeyClaim, "not-a-boolean")]),
+            AuthenticationState.UnrelatedIdentity => CreateAuthenticatedResult(
+                [new Claim(ClaimTypes.NameIdentifier, "component-user")]),
             AuthenticationState.Missing => AuthenticateResult.NoResult(),
             AuthenticationState.Invalid => AuthenticateResult.Fail("The component-test session is invalid."),
             AuthenticationState.UnusableUserSession => AuthenticateResult.Fail(

@@ -26,6 +26,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -249,6 +252,23 @@ public sealed class TrickplayFrameProbeHttpSpecs
         await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Unauthorized);
     }
 
+    [Theory]
+    [InlineData(AuthenticationState.MissingUserId)]
+    [InlineData(AuthenticationState.EmptyUserId)]
+    [InlineData(AuthenticationState.MalformedUserId)]
+    [InlineData(AuthenticationState.FalseApiKeyWithoutCurrentUser)]
+    [InlineData(AuthenticationState.MalformedApiKeyWithoutCurrentUser)]
+    [InlineData(AuthenticationState.UnrelatedIdentity)]
+    public async Task ForbidsAuthenticatedIdentityWithoutValidNativeClaims(AuthenticationState authentication)
+    {
+        var scenario = new PreviewScenario { Authentication = authentication };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.HeadAsync();
+
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+    }
+
     [Fact]
     public async Task AllowsApiKeyWithoutCurrentUserToProbeButNotFetchThePreview()
     {
@@ -273,14 +293,28 @@ public sealed class TrickplayFrameProbeHttpSpecs
     }
 
     [Fact]
-    public async Task ForbidsTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
+    public async Task OmitsDefaultAuthorizationPolicyFromTheTrickplayFrameProbe()
     {
         var scenario = new PreviewScenario { DeniesDefaultAuthorizationPolicy = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
+    }
+
+    [Fact]
+    public async Task ComposesDistinctEffectiveGetAndTrickplayFrameProbePolicies()
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+
+        AuthorizationPolicy getPolicy = await GetEffectivePolicyAsync(fixture, nameof(TrickplayPreviewController.GetAsync));
+        AuthorizationPolicy headPolicy = await GetEffectivePolicyAsync(fixture, nameof(TrickplayPreviewController.HeadAsync));
+
+        Assert.Contains(getPolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
+        Assert.Equal([TestAuthenticationHandler.SchemeName], getPolicy.AuthenticationSchemes);
+        Assert.DoesNotContain(headPolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
+        Assert.Equal(["CustomAuthentication"], headPolicy.AuthenticationSchemes);
     }
 
     [Fact]
@@ -409,6 +443,20 @@ public sealed class TrickplayFrameProbeHttpSpecs
         Assert.Equal(["GET", "HEAD"], response.Content.Headers.Allow);
         Assert.Null(response.Content.Headers.ContentType);
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
+    }
+
+    private static async Task<AuthorizationPolicy> GetEffectivePolicyAsync(
+        PreviewHostFixture fixture,
+        string actionName)
+    {
+        Endpoint endpoint = Assert.Single(
+            fixture.Services.GetRequiredService<EndpointDataSource>().Endpoints,
+            endpoint => endpoint.Metadata.GetMetadata<ControllerActionDescriptor>()?.MethodInfo.Name == actionName);
+        IAuthorizationPolicyProvider provider = fixture.Services.GetRequiredService<IAuthorizationPolicyProvider>();
+        AuthorizationPolicy? policy = await AuthorizationPolicy.CombineAsync(
+            provider,
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>());
+        return Assert.IsType<AuthorizationPolicy>(policy);
     }
 
 }
