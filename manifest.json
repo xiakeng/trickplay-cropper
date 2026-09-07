@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "630fb758-9a29-4f2c-a54c-95793651bb8a",
+    "name": "Trickplay Cropper",
+    "description": "Provides authenticated, single-frame Trickplay Previews from Jellyfin-owned Source Sprites.",
+    "overview": "Return authenticated Trickplay Previews from Jellyfin-owned Source Sprites.",
+    "owner": "xiakeng",
+    "category": "General",
+    "versions": [
+      {
+        "version": "1.0.1.0",
+        "changelog": "- fix: [issue-126] correct auto-release prerequisite detection (#127)\n- update (#124)\n- rule update (#122)\n- Document local tooling prerequisites (#120) (#121)\n- Agent instruction update (#118)\n- Restructure oversized responsibilities and enforce size limits (#115)\n- Establish Code Maps and deferred business documentation maintenance (#113)\n- Document the authenticated-only Frame Probe contract (#108)\n- Document native HEAD authentication reuse and boundaries (#101) (#107)\n- Wait for Jellyfin API readiness before harness validation (#99)\n- Cache source facts for the warm Trickplay Frame Probe (#98)\n- Share positive and negative Trickplay metadata caching with GET (#97)\n- Implement the #92 Frame Probe authorization split (#96)\n- Publish the three-layer Business Documentation and operator README (#91)\n- Complete Scrub Storm verification and timing reports (#89)\n- Verify authentication and playback boundaries against local Jellyfin (#88)\n- Make local Debug deployment and restoration safe (#87)\n- Submit the protected Jellyfin repository manifest update (#86)\n- Publish a stable GitHub Release from the approved Release Pull Request (#85)\n- Open one human-gated Release Pull Request from main (#72) (#84)\n- Expose stable cache and concurrency coordination events (#83)\n- Expose stable Preview decision events and redacted diagnostics (#82)\n- Expose the Trickplay Frame Probe on the Preview route (#81)\n- Serve GET from the exact Selected Trickplay Resolution (#80)\n- Separate shared Preview context from GET-only Preview work (#79)\n- Record the approved next-stage specification and observability ADR (#66)\n- Define Trickplay Frame Probe terminology (#62)\n- Document Jellyfin administration API contract (#47)\n- Document Jellyfin release contract (#46)\n- Document Jellyfin trickplay resolution contract (#57)\n- Document lightweight HEAD endpoint contract (#59)\n- Define Trickplay resolution terminology (#60)\n- Prove the complete v1 release contract (#42)\n- Make Cache Tree cleanup race-safe (#41)\n- Clear eligible cached previews from the scheduled task (#39)\n- Coordinate concurrent Preview Cache Entry access (#38)\n- Bound and cancel JPEG scanline encoding (#37)\n- Serve validated HIT and 304 responses (#36)\n- Make frame selection and Preview Identity exact (#35)\n- Enforce user-scoped authorization and media-source membership (#34)\n- Serve the first generated default-source Trickplay Preview (#33)\n- Simplify issue branch freshness rule (#31)\n- Assign worktree bootstrap to coordinator (#31)\n- Require isolated implementation worktrees (#31)\n- Require final pull request review loop (#31)\n- Simplify C# review guidance entry point\n- Align repository with CSharpGuidelines\n- Adopt official CSharpGuidelines agent skill\n- Preserve existing agent skill structure\n- Adopt C# coding and review standards\n- Use build manifest in validator tests\n- Simplify package validator around manifest\n- fix: strengthen package contract validation (#16)\n- feat: bootstrap reproducible plugin package (#16)\n- docs: approve v1 implementation handoff\n- docs: consolidate v1 implementation specification\n- docs: record preview cache coordination\n- prototype: model preview cache races\n- docs: configure engineering skill metadata\n- Initial commit",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/xiakeng/trickplay-cropper/releases/download/v1.0.1.0/trickplay-cropper_1.0.1.0.zip",
+        "checksum": "3839d2a690b1d4fcfc74a40cbb65c7f0",
+        "timestamp": "2026-09-07T14:28:41Z"
+      }
+    ]
+  }
+]
