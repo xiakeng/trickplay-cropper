@@ -54,16 +54,6 @@ Exclude subjective preferences, diagnostics already emitted by configured
 tooling, unrelated pre-existing problems, and concerns without a plausible
 failure scenario.
 
-Severity:
-
-- **P0:** active compromise, unrecoverable data loss, or system-wide outage.
-- **P1:** authorization bypass, common-path failure, broken compatibility, or
-  likely system-wide unavailability.
-- **P2:** reproducible edge-case defect, race, leak, unsafe boundary behavior, or
-  a concrete regression left unverified.
-- **P3:** narrow but concrete maintainability, diagnostics, or future correctness
-  risk.
-
 Present findings first, ordered by severity and file location. For each finding,
 report its title, location, trigger, impact, evidence, and remediation. If there
 are no actionable findings, say so explicitly.

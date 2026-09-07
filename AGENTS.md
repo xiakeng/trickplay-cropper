@@ -6,14 +6,11 @@
    change there.
 4. Open a pull request to this repository's `main` branch unless explicitly told otherwise.
 5. End the pull request description with:
-
    `Closes #<issue-number>`
-6. After opening the pull request, run `/code-review` against its exact base and
-   current head, and publish every actionable finding on the pull request.
-7. Resolve every actionable finding and push the fixes to the pull request branch.
-8. Repeat steps 6 and 7 until `/code-review` reports no actionable findings for
-   the pull request's current head.
-9. Leave the pull request open after review. Merge it only when the user explicitly
+6. After opening the pull request, verify again if the changed code matches the affected Code Maps under `docs/code-maps/`,
+   flag the mismatch in pr comment.
+7. Resolve every mismatch and push the fixes to the pull request branch.
+8. Leave the pull request open after previous steps finished. Merge it only when the user explicitly
    requests the merge.
 
 ## Agent skills
