@@ -1,44 +1,31 @@
-using System.Security.Claims;
+using Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Api;
 
+/// <summary>
+/// Requires a request-local Jellyfin identity with a resolved user or a userless API key.
+/// </summary>
 internal sealed class TrickplayFrameProbeIdentityRequirement
     : AuthorizationHandler<TrickplayFrameProbeIdentityRequirement>, IAuthorizationRequirement
 {
-    private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string UserIdClaim = "Jellyfin-UserId";
-
+    /// <summary>The Jellyfin authentication scheme selected by the Frame Probe policy.</summary>
     internal const string AuthenticationScheme = "CustomAuthentication";
+
+    /// <summary>The authorization policy applied only to Trickplay Frame Probe requests.</summary>
     internal const string PolicyName = "TrickplayFrameProbe";
 
+    /// <inheritdoc />
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         TrickplayFrameProbeIdentityRequirement requirement)
     {
-        if (IsNativeIdentity(context.User))
+        JellyfinNativeIdentityClaims claims = JellyfinNativeIdentityClaims.Parse(context.User);
+        if (claims.HasUsableIdentity)
         {
             context.Succeed(requirement);
         }
 
         return Task.CompletedTask;
-    }
-
-    private static bool IsNativeIdentity(ClaimsPrincipal principal)
-    {
-        Claim? apiKeyClaim = FindClaim(principal, IsApiKeyClaim);
-        if (bool.TryParse(apiKeyClaim?.Value, out bool isApiKey) && isApiKey)
-        {
-            return true;
-        }
-
-        Claim? userIdClaim = FindClaim(principal, UserIdClaim);
-        return Guid.TryParse(userIdClaim?.Value, out Guid userId) && userId != Guid.Empty;
-    }
-
-    private static Claim? FindClaim(ClaimsPrincipal principal, string claimType)
-    {
-        return principal.Claims.FirstOrDefault(
-            claim => claim.Type.Equals(claimType, StringComparison.OrdinalIgnoreCase));
     }
 }

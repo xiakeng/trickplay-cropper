@@ -12,9 +12,8 @@ HTTP routing lives in
 `MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
 `TrickplayFrameProbeOutcome` sets to status, headers, and body.
 
-GET uses the host default authorization policy. The plugin registrator adds the named
-`TrickplayFrameProbe` policy for HEAD: it selects only Jellyfin's
-`CustomAuthentication` scheme, requires authentication, and applies the claim-only
+GET uses the host default policy. HEAD's `TrickplayFrameProbe` policy selects only
+Jellyfin's `CustomAuthentication` scheme and applies the claim-only
 `TrickplayFrameProbeIdentityRequirement` without another user lookup.
 
 ## GET chain
@@ -43,9 +42,10 @@ snapshot) → `PreviewIdentity.Create` → conditional `If-None-Match` check →
 
 | Target | Key symbols | Responsibility |
 |---|---|---|
-| [PluginServiceRegistrator.cs](../../src/Jellyfin.Plugin.TrickplayCropper/PluginServiceRegistrator.cs) | `ConfigureAuthorization` | Registers the named Frame Probe policy without replacing host defaults or schemes |
+| [PluginServiceRegistrator.cs](../../src/Jellyfin.Plugin.TrickplayCropper/PluginServiceRegistrator.cs) | `ConfigureAuthorization` | Registers the named policy while preserving host defaults and schemes |
+| [JellyfinNativeIdentityClaims.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinNativeIdentityClaims.cs) | `Parse`, `HasUsableIdentity` | Parses native Boolean API-key and nonempty GUID user claims without a user load |
 | [TrickplayFrameProbe.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Preview/TrickplayFrameProbe.cs) | `ProbeAsync` | Probe module; no user, sprite, cache, or encoder access |
 | [JellyfinTrickplayFrameProbeContextResolver.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinTrickplayFrameProbeContextResolver.cs) | `ResolveAsync` | User-independent source-facts and calculation path |
-| [TrickplayFrameProbeIdentityRequirement.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayFrameProbeIdentityRequirement.cs) | `HandleRequirementAsync` | Accepts a native Boolean API-key claim or nonempty GUID user claim |
+| [TrickplayFrameProbeIdentityRequirement.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayFrameProbeIdentityRequirement.cs) | `HandleRequirementAsync` | Applies parsed native identity facts to the named policy |
 
 Test entry points for both paths are indexed on the [tests map](tests.md).
