@@ -20,23 +20,18 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     private const string NativeAuthenticationScheme = "CustomAuthentication";
     private const string UserIdClaim = "Jellyfin-UserId";
 
+    /// <summary>The named authorization policy applied to the Trickplay Frame Probe route.</summary>
     internal const string FrameProbePolicyName = "TrickplayFrameProbe";
 
     /// <summary>
-    /// Registers all process-wide Trickplay Cropper modules as singletons.
+    /// Configures Trickplay Frame Probe authorization and registers process-wide plugin modules.
     /// </summary>
     /// <param name="serviceCollection">The Jellyfin service collection.</param>
     /// <param name="applicationHost">The current Jellyfin application host.</param>
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         ArgumentNullException.ThrowIfNull(applicationHost);
-        serviceCollection.Configure<AuthorizationOptions>(options =>
-            options.AddPolicy(FrameProbePolicyName, policy =>
-            {
-                policy.AddAuthenticationSchemes(NativeAuthenticationScheme);
-                policy.RequireAuthenticatedUser();
-                policy.RequireAssertion(context => HasNativeIdentity(context.User));
-            }));
+        serviceCollection.Configure<AuthorizationOptions>(ConfigureFrameProbePolicy);
         serviceCollection.TryAddSingleton(TimeProvider.System);
         serviceCollection.AddSingleton<ITrickplayPreview, TrickplayPreview>();
         serviceCollection.AddSingleton<ITrickplayFrameProbe, TrickplayFrameProbe>();
@@ -54,10 +49,20 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ITrickplayPreviewEncoder, TrickplayPreviewEncoder>();
     }
 
+    private static void ConfigureFrameProbePolicy(AuthorizationOptions options)
+    {
+        options.AddPolicy(FrameProbePolicyName, policy =>
+        {
+            policy.AddAuthenticationSchemes(NativeAuthenticationScheme);
+            policy.RequireAuthenticatedUser();
+            policy.RequireAssertion(context => HasNativeIdentity(context.User));
+        });
+    }
+
     private static bool HasNativeIdentity(ClaimsPrincipal principal)
     {
-        string? apiKey = principal.FindFirst(IsApiKeyClaim)?.Value;
-        if (bool.TryParse(apiKey, out bool isApiKey) && isApiKey)
+        string? isApiKeyClaimValue = principal.FindFirst(IsApiKeyClaim)?.Value;
+        if (bool.TryParse(isApiKeyClaimValue, out bool isApiKey) && isApiKey)
         {
             return true;
         }
