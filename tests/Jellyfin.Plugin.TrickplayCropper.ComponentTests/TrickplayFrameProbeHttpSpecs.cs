@@ -26,6 +26,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -273,14 +276,70 @@ public sealed class TrickplayFrameProbeHttpSpecs
     }
 
     [Fact]
-    public async Task ForbidsTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
+    public async Task AllowsTrickplayFrameProbeWhenDefaultAuthorizationPolicyDenies()
     {
         var scenario = new PreviewScenario { DeniesDefaultAuthorizationPolicy = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
+    }
+
+    [Theory]
+    [InlineData(AuthenticationState.UserSessionWithoutUserId)]
+    [InlineData(AuthenticationState.UserSessionWithEmptyUserId)]
+    [InlineData(AuthenticationState.UserSessionWithEmptyGuid)]
+    [InlineData(AuthenticationState.UserSessionWithMalformedUserId)]
+    [InlineData(AuthenticationState.MalformedApiKeyWithoutCurrentUser)]
+    public async Task ForbidsAuthenticatedNativeIdentityWithoutAUserOrTrueApiKey(
+        AuthenticationState authentication)
+    {
+        var scenario = new PreviewScenario { Authentication = authentication };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.HeadAsync();
+
         await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task RejectsUnrelatedAuthenticatedIdentity()
+    {
+        var scenario = new PreviewScenario { Authentication = AuthenticationState.UnrelatedIdentity };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.HeadAsync();
+
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ReusesNativeAuthenticationOnlyWithinEachRequest()
+    {
+        var scenario = new PreviewScenario();
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage first = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(first, 0);
+        Assert.Equal(1, scenario.AuthenticationAttempts);
+
+        using HttpResponseMessage second = await fixture.HeadAsync();
+        await AssertTrickplayFrameProbeSuccessAsync(second, 0);
+        Assert.Equal(2, scenario.AuthenticationAttempts);
+    }
+
+    [Fact]
+    public async Task KeepsDefaultAuthorizationOnlyOnGet()
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
+
+        AuthorizationPolicy getPolicy = await GetEffectivePolicyAsync(fixture, nameof(TrickplayPreviewController.GetAsync));
+        AuthorizationPolicy headPolicy = await GetEffectivePolicyAsync(fixture, nameof(TrickplayPreviewController.HeadAsync));
+
+        Assert.Contains(getPolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
+        Assert.DoesNotContain(headPolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
+        Assert.Equal(["CustomAuthentication"], headPolicy.AuthenticationSchemes);
     }
 
     [Fact]
@@ -409,6 +468,18 @@ public sealed class TrickplayFrameProbeHttpSpecs
         Assert.Equal(["GET", "HEAD"], response.Content.Headers.Allow);
         Assert.Null(response.Content.Headers.ContentType);
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
+    }
+
+    private static async Task<AuthorizationPolicy> GetEffectivePolicyAsync(
+        PreviewHostFixture fixture,
+        string actionName)
+    {
+        Endpoint endpoint = fixture.Services.GetRequiredService<EndpointDataSource>().Endpoints.Single(candidate =>
+            candidate.Metadata.GetMetadata<ControllerActionDescriptor>()?.MethodInfo.Name == actionName);
+        IAuthorizationPolicyProvider provider = fixture.Services.GetRequiredService<IAuthorizationPolicyProvider>();
+        return Assert.IsType<AuthorizationPolicy>(await AuthorizationPolicy.CombineAsync(
+            provider,
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()));
     }
 
 }

@@ -156,6 +156,15 @@ internal sealed class PreviewHostFixture : IAsyncDisposable
             });
             application.UseRouting();
             application.UseAuthentication();
+            application.Use(async (request, next) =>
+            {
+                if (context.Scenario.Authentication == AuthenticationState.UnrelatedIdentity)
+                {
+                    request.User = new ClaimsPrincipal(new ClaimsIdentity([], "UnrelatedAuthentication"));
+                }
+
+                await next(request);
+            });
             application.UseAuthorization();
             application.UseEndpoints(endpoints => endpoints.MapControllers());
         });
