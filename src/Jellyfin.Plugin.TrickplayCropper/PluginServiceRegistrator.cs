@@ -41,12 +41,17 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<TrickplayMetadataCache>();
         serviceCollection.AddSingleton<ITrickplayFrameCalculationResolver, JellyfinTrickplayFrameCalculationResolver>();
         serviceCollection.AddSingleton<IPreviewSourceResolver, JellyfinPreviewSourceResolver>();
+        RegisterPreviewCache(serviceCollection);
+        serviceCollection.AddSingleton<ITrickplayPreviewEncoder, TrickplayPreviewEncoder>();
+    }
+
+    private static void RegisterPreviewCache(IServiceCollection serviceCollection)
+    {
         serviceCollection.AddSingleton<DiskPreviewCache>();
         serviceCollection.AddSingleton<IPreviewCache>(
             static services => services.GetRequiredService<DiskPreviewCache>());
         serviceCollection.AddSingleton<IPreviewCacheMaintenance>(
             static services => services.GetRequiredService<DiskPreviewCache>());
-        serviceCollection.AddSingleton<ITrickplayPreviewEncoder, TrickplayPreviewEncoder>();
     }
 
     private static void ConfigureFrameProbePolicy(AuthorizationOptions options)
