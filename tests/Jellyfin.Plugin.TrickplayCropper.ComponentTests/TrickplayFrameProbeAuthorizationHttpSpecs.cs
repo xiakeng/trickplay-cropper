@@ -14,7 +14,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 public sealed class TrickplayFrameProbeAuthorizationHttpSpecs
 {
     [Fact]
-    public async Task ComposesGetWithDefaultAuthorizationAndProbeWithOnlyItsNamedPolicy()
+    public async Task ComposesDistinctPoliciesByHttpMethod()
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
 
@@ -47,7 +47,7 @@ public sealed class TrickplayFrameProbeAuthorizationHttpSpecs
     }
 
     [Fact]
-    public async Task RetainsDefaultAuthorizationAndCurrentUserLoadsForGet()
+    public async Task RetainsGetDefaultAuthorizationWithCurrentUserLoads()
     {
         var scenario = new PreviewScenario();
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
