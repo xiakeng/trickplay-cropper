@@ -156,8 +156,8 @@ jobs:
       && github.event.pull_request.title == 'auto-release new version'
       && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
     env:
       MANIFEST_FILE: manifest.json
       MANIFEST_BRANCH: auto-manifest
@@ -199,6 +199,15 @@ jobs:
             echo "::error::main protection is incompatible: required pull request review and required status checks must both be enforced." >&2
             exit 1
           fi
+
+          while read -r ruleset_id; do
+            if ! bypass_mode="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api \
+              "repos/${repo}/rulesets/${ruleset_id}" --jq .current_user_can_bypass 2>/dev/null)" \
+              || [[ "${bypass_mode}" != "always" && "${bypass_mode}" != "pull_requests_only" ]]; then
+              echo "::error::RELEASE_BOT_PAT (${bot_login}) cannot bypass every active ruleset that applies to main." >&2
+              exit 1
+            fi
+          done < <(jq -r '.[].ruleset_id' <<<"${rules}" | sort -u)
 
           echo "Manifest prerequisites satisfied for bot ${bot_login}."
 
@@ -311,10 +320,11 @@ jobs:
 
           gh pr checks "${pr_number}" --required --watch --interval 30
 
-      - name: Approve and merge the manifest pull request
+      - name: Bypass review rules and merge the manifest pull request
         if: steps.pr.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_BOT_PAT }}
         run: |
           set -euo pipefail
           pr_number="${{ steps.pr.outputs.pr_number }}"
-          gh pr review "${pr_number}" --approve --body "Automated manifest entry for the published release."
-          gh pr merge "${pr_number}" --squash --delete-branch
+          gh pr merge "${pr_number}" --admin --squash --delete-branch

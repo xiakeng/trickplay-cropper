@@ -8,22 +8,6 @@
 5. Leave the pull request open after previous steps finished. Merge it only when the user explicitly
    requests the merge.
 
-## Subagent delegation
-
-Use a context-free subagent (`fork_turns: "none"`) for a self-contained leaf task
-that does not need conversation history and will not spawn or manage other
-subagents.
-Keep orchestration workflows such as `code-review` in the root
-session; they may spawn their own subagents.
-
-Give the subagent:
-
-- the task goal and scope;
-- required paths, identifiers, configuration, and constraints;
-- clear completion criteria.
-
-Ask it to return only the outcome, essential evidence, and any blocker.
-
 ## Agent skills
 
 ### Issue tracker

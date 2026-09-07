@@ -71,6 +71,15 @@ jobs:
             exit 1
           fi
 
+          while read -r ruleset_id; do
+            if ! bypass_mode="$(GH_TOKEN="${RELEASE_BOT_PAT}" gh api \
+              "repos/${repo}/rulesets/${ruleset_id}" --jq .current_user_can_bypass 2>/dev/null)" \
+              || [[ "${bypass_mode}" != "always" && "${bypass_mode}" != "pull_requests_only" ]]; then
+              echo "::error::RELEASE_BOT_PAT (${bot_login}) cannot bypass every active ruleset that applies to main." >&2
+              exit 1
+            fi
+          done < <(jq -r '.[].ruleset_id' <<<"${rules}" | sort -u)
+
           echo "Release prerequisites satisfied for bot ${bot_login}."
 
       - name: Set up .NET
