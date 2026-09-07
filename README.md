@@ -80,6 +80,17 @@ contents, then restart Jellyfin.
 
 ## Build and test
 
+Local builds require the .NET SDK version pinned in `global.json` (currently
+9.0.317) and Python 3 with `tiktoken` 0.12.0. ComponentTests launch the
+`python3` resolved from `PATH`, so that interpreter must provide `tiktoken`.
+On Ubuntu 26.04, install the Python prerequisite and verify both tool versions with:
+
+```bash
+sudo apt install python3-tiktoken
+dotnet --version
+python3 -c 'from importlib.metadata import version; print(version("tiktoken"))'
+```
+
 The committed NuGet lock files are enforced for every restore.
 CI also directly enforces repository file-size boundaries, compact Code Maps, and
 the existence of every local target linked by a Code Map.
