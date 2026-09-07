@@ -1,11 +1,9 @@
 # Tests map
 
-[UnitTests](../../tests/Jellyfin.Plugin.TrickplayCropper.UnitTests) proves pure contracts;
-[ComponentTests](../../tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests) proves
-server, filesystem, native-runtime, and external-tool behavior. Both run in CI; the
-live host remains the manual harness ([tooling map](tooling.md)).
-
-Each file below lives in the named suite's directory.
+[UnitTests](../../tests/Jellyfin.Plugin.TrickplayCropper.UnitTests) covers pure contracts;
+[ComponentTests](../../tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests) covers
+server, filesystem, native, and external-tool behavior. Both run in CI; live-host work
+uses the manual harness ([tooling map](tooling.md)).
 
 | To prove or change… | Entry point |
 |---|---|
@@ -13,7 +11,7 @@ Each file below lives in the named suite's directory.
 | Probe HTTP behavior and real Kestrel | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | Source Facts Observation behavior | `TrickplaySourceFactsObservationHttpSpecs.cs` (ComponentTests) |
 | Generated Metadata Observation behavior | `TrickplayGeneratedMetadataObservationHttpSpecs.cs`, `TrickplayGeneratedMetadataScopeHttpSpecs.cs` (ComponentTests) |
-| HTTP host, request, fake, authentication, scenario, observation, and assertion support | `PreviewHttpHostFixture.cs`, `PreviewHttpRequests.cs`, `PreviewHttpJellyfinFakes.cs`, `PreviewHttpAuthentication.cs`, `PreviewHttpScenario.cs`, `MetadataReadPlan.cs`, `SourceReadPlan.cs`, `TrickplayPreviewHttpSupport.cs` (ComponentTests) |
+| HTTP fixture and support seams | `PreviewHttpHostFixture.cs`, `PreviewHttpRequests.cs`, `PreviewHttpJellyfinFakes.cs`, `PreviewHttpAuthentication.cs`, `PreviewHttpScenario.cs`, `MetadataReadPlan.cs`, `SourceReadPlan.cs`, `TrickplayPreviewHttpSupport.cs` (ComponentTests) |
 | GET outcome mapping, conditional ETag comparison, Debug events | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract and Debug reasons | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
 | Authorization-split architectural boundary | `PreviewContextBoundarySpecs.cs` (UnitTests) |
@@ -26,6 +24,7 @@ Each file below lives in the named suite's directory.
 | Release tools | `ManifestBuilderSpecs.cs`, `PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs` (UnitTests) |
 | Build-manifest, runtime, and dependency-lock contracts | `ReleaseContractSpecs.cs` (UnitTests) |
 | Workflow contracts | `ReleaseWorkflowContractSpecs.cs`, `PublicationWorkflowContractSpecs.cs`, `ManifestWorkflowContractSpecs.cs` (UnitTests) |
+| Deferred documentation and Code Maps increment workflow | `BusinessDocumentationWorkflowContractSpecs.cs` (UnitTests) |
 | Repository line/script and Code Map token/link failure contracts | `RepositoryStructureContractSpecs.cs` (ComponentTests) |
 | Harness smoke cases, scrub storm, report, deployment, input | `SmokeCasesSpecs.cs`, `ScrubStormSpecs.cs`, `ScrubStormReportSpecs.cs`, `DeploymentCycleSpecs.cs`, `HarnessInputSpecs.cs`, `HarnessHostOperationSpecs.cs`, `host_operation_specs.py` (ComponentTests) |
 | Harness host gates and Debug-event reading | `LocalJellyfinSpecs.cs`, `DebugEventReaderSpecs.cs` (ComponentTests) |
