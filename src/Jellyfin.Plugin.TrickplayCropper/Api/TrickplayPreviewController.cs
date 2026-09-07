@@ -12,7 +12,6 @@ namespace Jellyfin.Plugin.TrickplayCropper.Api;
 /// Exposes authenticated Trickplay Previews over HTTP.
 /// </summary>
 [ApiController]
-[Authorize]
 [Route("TrickplayCropper/Videos/{itemId}/Preview")]
 public sealed class TrickplayPreviewController : ControllerBase
 {
@@ -40,6 +39,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     /// <param name="parameters">The normalized query-string parameters.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <returns>The mapped HTTP response.</returns>
+    [Authorize]
     [HttpGet]
     public async Task<IActionResult> GetAsync(
         [FromRoute] Guid itemId,
@@ -65,6 +65,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     /// <param name="positionTicks">The raw playback position in Jellyfin ticks.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <returns>The mapped bodyless HTTP response.</returns>
+    [Authorize(Policy = TrickplayFrameProbeIdentityRequirement.PolicyName)]
     [HttpHead]
     public async Task<IActionResult> HeadAsync(
         [FromRoute] string? itemId,

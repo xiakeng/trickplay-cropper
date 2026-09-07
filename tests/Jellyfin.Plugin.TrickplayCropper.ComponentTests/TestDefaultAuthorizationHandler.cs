@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
@@ -16,6 +17,11 @@ internal sealed class TestDefaultAuthorizationHandler
         AuthorizationHandlerContext context,
         TestDefaultAuthorizationRequirement requirement)
     {
+        if (HasResolvedUser(context.User))
+        {
+            scenario.RecordDefaultAuthorizationUserLoad();
+        }
+
         if (scenario.DeniesDefaultAuthorizationPolicy)
         {
             context.Fail();
@@ -26,5 +32,14 @@ internal sealed class TestDefaultAuthorizationHandler
         }
 
         return Task.CompletedTask;
+    }
+
+    private static bool HasResolvedUser(ClaimsPrincipal principal)
+    {
+        string? apiKey = principal.FindFirst("Jellyfin-IsApiKey")?.Value;
+        string? userId = principal.FindFirst("Jellyfin-UserId")?.Value;
+        return !(bool.TryParse(apiKey, out bool isApiKey) && isApiKey)
+            && Guid.TryParse(userId, out Guid parsedUserId)
+            && parsedUserId != Guid.Empty;
     }
 }

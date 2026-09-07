@@ -42,6 +42,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 internal sealed class PreviewScenario
 {
     private int metadataReadCount;
+    private int defaultAuthorizationUserLoads;
+    private int nativeAuthenticationUserLoads;
     private readonly Queue<MetadataReadPlan> metadataReadPlans = [];
     private readonly Queue<SourceReadPlan> sourceReadPlans = [];
     private int sourceSpritePathRequests;
@@ -71,9 +73,15 @@ internal sealed class PreviewScenario
 
     public bool FailsCacheAccess { get; init; }
 
+    public int DefaultAuthorizationUserLoads => Volatile.Read(ref defaultAuthorizationUserLoads);
+
     public HostSourceKind HostSource { get; init; } = HostSourceKind.Default;
 
     public List<Guid> LibraryLookupIds { get; } = [];
+
+    public Claim[]? NativeClaims { get; init; }
+
+    public int NativeAuthenticationUserLoads => Volatile.Read(ref nativeAuthenticationUserLoads);
 
     public Guid LogicalItemId { get; init; } = ItemId;
 
@@ -129,6 +137,16 @@ internal sealed class PreviewScenario
     public void RecordSourceSpritePathRequest()
     {
         Interlocked.Increment(ref sourceSpritePathRequests);
+    }
+
+    public void RecordDefaultAuthorizationUserLoad()
+    {
+        Interlocked.Increment(ref defaultAuthorizationUserLoads);
+    }
+
+    public void RecordNativeAuthenticationUserLoad()
+    {
+        Interlocked.Increment(ref nativeAuthenticationUserLoads);
     }
 
     public void RecordMetadataRead()

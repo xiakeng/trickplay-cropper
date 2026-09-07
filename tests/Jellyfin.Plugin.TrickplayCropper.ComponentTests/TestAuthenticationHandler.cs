@@ -11,7 +11,7 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
     private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
     private const string UserIdClaim = "Jellyfin-UserId";
 
-    public const string SchemeName = "ComponentTest";
+    public const string SchemeName = "CustomAuthentication";
 
     private readonly PreviewScenario scenario;
 
@@ -29,22 +29,24 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
     {
         AuthenticateResult result = scenario.Authentication switch
         {
-            AuthenticationState.UserSession => CreateUserSessionResult(scenario.UserId),
+            AuthenticationState.UserSession => CreateUserSessionResult(),
             AuthenticationState.ApiKeyWithoutCurrentUser => CreateApiKeyResult(),
             AuthenticationState.Missing => AuthenticateResult.NoResult(),
             AuthenticationState.Invalid => AuthenticateResult.Fail("The component-test session is invalid."),
             AuthenticationState.UnusableUserSession => AuthenticateResult.Fail(
                 "The component-test session is no longer usable."),
+            AuthenticationState.UnrelatedIdentity => AuthenticateResult.NoResult(),
             _ => throw new InvalidOperationException("Unknown authentication scenario."),
         };
         return Task.FromResult(result);
     }
 
-    private static AuthenticateResult CreateUserSessionResult(Guid authenticatedUserId)
+    private AuthenticateResult CreateUserSessionResult()
     {
-        Claim[] claims =
+        scenario.RecordNativeAuthenticationUserLoad();
+        Claim[] claims = scenario.NativeClaims ??
         [
-            new Claim(UserIdClaim, authenticatedUserId.ToString("N")),
+            new Claim(UserIdClaim, scenario.UserId.ToString("N")),
             new Claim(IsApiKeyClaim, bool.FalseString),
         ];
         return CreateAuthenticatedResult(claims);
