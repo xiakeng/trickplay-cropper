@@ -1,16 +1,20 @@
 # Request paths map
 
-`TrickplayCropper/Videos/{itemId}/Preview` routes GET and the Frame Probe. GET resolves
-an authorized image; the probe returns its Frame Index before image work. Both share the
+One controller routes both operations at `TrickplayCropper/Videos/{itemId}/Preview`.
+GET resolves a user-authorized representation; the Frame Probe answers *which frame
+this position selects* and stops before image work. Both share `PreviewQuery` and the
 [observation caches](caching/observations.md).
 
 ## Controller
 
 HTTP routing lives in
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
-`GetAsync` binds the query; `HeadAsync` rejects malformed input through `TryCreateQuery`.
-`MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
-`TrickplayFrameProbeOutcome` sets to status, headers, and body.
+`GetAsync` binds the query; `HeadAsync` rejects malformed raw input
+(`TryCreateQuery`), and `MapOutcome` with `CreateBodylessResult` map outcomes to wire
+responses and headers. Closed outcome sets are `PreviewOutcome` (GET) and
+`TrickplayFrameProbeOutcome` (HEAD); the
+[response contract](../business/lifecycle/response-contract.md) owns statuses and
+headers.
 
 ## GET chain
 

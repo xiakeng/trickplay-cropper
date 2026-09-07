@@ -3,8 +3,8 @@
 Compact navigation for contributors and coding agents: each map names repository
 targets, key symbols, responsibilities, relationships, and test entry points, so a
 reader can choose a route before opening implementation files. Maps never restate
-implementation details or product contracts. Their paths and relationships are derived
-directly from the current code, tests, workflows, and repository structure.
+implementation details or business specifications — those live in the code and in the
+[business documentation](../business/README.md).
 
 | Map | Answers |
 |---|---|

@@ -34,11 +34,12 @@ modifies, or repairs that data. What it adds on top:
   Release Pull Request; merging it publishes the installable ZIP as a stable
   GitHub Release and updates the Jellyfin repository manifest.
 
-Deferred product documentation — participants, lifecycle, and design — lives under
-[docs/business](docs/business/README.md) and may lag the current implementation.
-Current contributor navigation starts independently at the
-[Code Maps index](docs/code-maps/README.md), which derives its paths and relationships
-directly from the repository.
+The complete business documentation — participants, lifecycle, and design, with a
+reading path and a route-by-question table — lives under
+[docs/business](docs/business/README.md).
+Compact contributor navigation starts at the [Code Maps index](docs/code-maps/README.md),
+which routes request paths, caching, tests, and tooling without duplicating those
+business contracts.
 
 ## Compatibility
 

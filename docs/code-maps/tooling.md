@@ -1,7 +1,7 @@
 # Tooling map
 
-Three workflows gate and ship the repository, and a fourth queues deferred documentation
-and Code Map audits; four console tools support them and the manual Integration Harness.
+Three workflows gate and ship the repository, and a fourth keeps business-documentation
+analysis pending; four console tools support them and the manual Integration Harness.
 The build manifest `src/Jellyfin.Plugin.TrickplayCropper/build.yaml` is the single
 version source for release automation. Test locations are on the [tests map](tests.md).
 
@@ -13,7 +13,7 @@ version source for release automation. Test locations are on the [tests map](tes
 | [ci.yml](../../.github/workflows/ci.yml) | Every push and pull request: repository size/link contracts, restore, format, build, both test suites, JPRM package, validation, checksum |
 | [auto-release.yml](../../.github/workflows/auto-release.yml) | Every push to `main`: plan the next version and open or update the pending release pull request |
 | [publish-release.yml](../../.github/workflows/publish-release.yml) | On release-PR merge: re-run the gates, publish the stable GitHub Release, submit the manifest pull request |
-| [business-docs-analysis.yml](../../.github/workflows/business-docs-analysis.yml) | On every merged pull request: keep one deferred-documentation issue and record one idempotent Code Maps increment |
+| [business-docs-analysis.yml](../../.github/workflows/business-docs-analysis.yml) | On every pull-request merge to `main`: keep at most one open `docs:business-analysis` issue |
 
 ## Integration Harness
 

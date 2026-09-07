@@ -10,8 +10,8 @@ on:
 permissions:
   issues: write
 
-# Runs serialize so two merges cannot both pass the lookup before either creates.
-# Idempotent PR markers make the single open issue an incremental Code Map audit queue.
+# Runs serialize so two merges cannot both pass the lookup before either creates;
+# the open analysis issue itself is never used as a synchronization ledger.
 concurrency:
   group: business-docs-analysis
   cancel-in-progress: false
@@ -20,16 +20,16 @@ env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   GH_REPO: ${{ github.repository }}
   ANALYSIS_LABEL: docs:business-analysis
-  ANALYSIS_TITLE: Review deferred documentation and Code Map increments
+  ANALYSIS_TITLE: Review and maintain business documentation
 
 jobs:
   maintain-analysis-issue:
-    name: Maintain the pending documentation analysis issue
+    name: Maintain the pending business documentation analysis issue
     runs-on: ubuntu-24.04
     if: >-
       github.event.pull_request.merged == true
     steps:
-      - name: Find the pending documentation analysis issue
+      - name: Find the pending business documentation analysis issue
         id: pending
         run: |
           set -euo pipefail
@@ -38,57 +38,22 @@ jobs:
           echo "existing=${existing}" >> "${GITHUB_OUTPUT}"
 
           if [[ -n "${existing}" ]]; then
-            echo "Analysis issue #${existing} is already open; only a missing PR increment may be added."
+            echo "Analysis issue #${existing} is already open; it will not be touched."
           else
             echo "No open issue carries the dedicated analysis label."
           fi
 
-      - name: Create the pending documentation analysis issue
-        id: created
+      - name: Create the pending business documentation analysis issue
         if: steps.pending.outputs.existing == ''
         run: |
           set -euo pipefail
           cat > "${RUNNER_TEMP}/analysis-issue-body.md" <<'BODY'
-          Treat Business Documentation and Code Maps as independent documentation surfaces.
-
           Using the base commit recorded in `docs/business/README.md`, analyze subsequent code changes and maintain the relevant documentation under `docs/business/`.
 
-          Independently process every Code Maps increment recorded in this issue's comments. For each merged pull request, verify `docs/code-maps/` directly against the current code, tests, and workflows. Code Maps must not link to or rely on `docs/business/`.
-
-          Close this issue only after the deferred Business Documentation analysis and every recorded Code Maps increment are complete. If neither surface needs an update, close it directly.
+          If no documentation updates are needed, close this issue directly.
           BODY
 
-          created_url="$(gh issue create \
+          gh issue create \
             --title "${ANALYSIS_TITLE}" \
             --body-file "${RUNNER_TEMP}/analysis-issue-body.md" \
-            --label "${ANALYSIS_LABEL}")"
-          echo "number=${created_url##*/}" >> "${GITHUB_OUTPUT}"
-
-      - name: Record the merged pull request as a Code Maps increment
-        env:
-          ANALYSIS_ISSUE: ${{ steps.pending.outputs.existing || steps.created.outputs.number }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          set -euo pipefail
-          marker="<!-- code-maps-analysis-pr:${PR_NUMBER} -->"
-          existing_content="$(gh issue view "${ANALYSIS_ISSUE}" --json body,comments \
-            --jq '.body, (.comments[]?.body)')"
-          if grep -Fqx "${marker}" <<< "${existing_content}"; then
-            echo "Code Maps increment for pull request #${PR_NUMBER} is already recorded."
-            exit 0
-          fi
-
-          cat > "${RUNNER_TEMP}/code-maps-increment.md" <<BODY
-          ${marker}
-          ## Code Maps increment for [pull request #${PR_NUMBER}](${PR_URL})
-
-          Review the exact merged pull-request diff and the current repository. Verify affected paths, symbols, responsibilities, relationships, and test entry points under \`docs/code-maps/\`.
-
-          Use the current code, tests, and workflows as authority. Keep Code Maps independent from Business Documentation: do not link to or rely on \`docs/business/\`.
-
-          Record whether this increment required a Code Map update before closing the pending analysis issue.
-          BODY
-
-          gh issue comment "${ANALYSIS_ISSUE}" \
-            --body-file "${RUNNER_TEMP}/code-maps-increment.md"
+            --label "${ANALYSIS_LABEL}"
