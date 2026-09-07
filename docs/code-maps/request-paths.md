@@ -1,21 +1,16 @@
 # Request paths map
 
-One controller routes both operations at `TrickplayCropper/Videos/{itemId}/Preview`.
-After binding, the paths diverge: GET resolves a user-authorized context and serves a
-representation; the Trickplay Frame Probe answers *which frame this position selects*
-and stops before any image work. Both paths share `PreviewQuery` and the observation
-caches on the [caching map](caching.md).
+`TrickplayCropper/Videos/{itemId}/Preview` routes GET and the Frame Probe. GET resolves
+an authorized image; the probe returns its Frame Index before image work. Both share the
+[observation caches](caching/observations.md).
 
 ## Controller
 
-The only HTTP surface is
+HTTP routing lives in
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
-`GetAsync` binds the query, `HeadAsync` binds raw strings and rejects malformed input
-(`TryCreateQuery`), and `MapOutcome` with `CreateBodylessResult` map outcomes to wire
-responses and headers. Closed outcome sets: `PreviewOutcome` (GET) and
-`TrickplayFrameProbeOutcome` (HEAD, no conditional variant); the
-[response contract](../business/lifecycle/response-contract.md) owns statuses and
-headers.
+`GetAsync` binds the query; `HeadAsync` rejects malformed input through `TryCreateQuery`.
+`MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
+`TrickplayFrameProbeOutcome` sets to status, headers, and body.
 
 ## GET chain
 
@@ -52,7 +47,9 @@ Suite locations are on the [tests map](tests.md).
 
 | Behavior | Entry point |
 |---|---|
-| GET and probe HTTP contracts, authorization split, warm reuse | `TrickplayPreviewHttpSpecs.cs` (ComponentTests) |
+| GET responses, authorization, and failures | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
+| Probe HTTP contract and warm reuse | `TrickplayFrameProbeHttpSpecs.cs` (ComponentTests) |
+| Real Kestrel wiring | `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | GET outcome mapping and conditional requests | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
 | Authorization-split boundary | `PreviewContextBoundarySpecs.cs` (UnitTests) |

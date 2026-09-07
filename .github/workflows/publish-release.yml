@@ -47,6 +47,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
+      - name: Install pinned Code Map tokenizer
+        run: python3 -m pip install --disable-pip-version-check tiktoken==0.12.0
+
+      - name: Verify repository structure contracts
+        run: python3 .github/scripts/verify_repository_structure.py
+
 
       - name: Set up .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0

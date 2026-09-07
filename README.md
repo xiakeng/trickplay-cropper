@@ -37,6 +37,9 @@ modifies, or repairs that data. What it adds on top:
 The complete business documentation — participants, lifecycle, and design, with a
 reading path and a route-by-question table — lives under
 [docs/business](docs/business/README.md).
+Compact contributor navigation starts at the [Code Maps index](docs/code-maps/README.md),
+which routes request paths, caching, tests, and tooling without duplicating those
+business contracts.
 
 ## Compatibility
 
@@ -78,6 +81,8 @@ contents, then restart Jellyfin.
 ## Build and test
 
 The committed NuGet lock files are enforced for every restore.
+CI also directly enforces repository file-size boundaries, compact Code Maps, and
+the existence of every local target linked by a Code Map.
 
 ```bash
 dotnet restore TrickplayCropper.sln --locked-mode
@@ -97,8 +102,9 @@ ComponentTests also runs the harness's Python filesystem, SQLite WAL, and
 Landlock checks against temporary fixtures. These checks require Python 3 and
 Linux Landlock ABI 3 or later; they never use the operator's `harness.json`,
 invoke sudo, or restart a service. UnitTests has no Integration Harness project
-reference. CI runs both test projects; actual host deployment remains a separate
-manual Integration Harness invocation.
+reference. The repository-structure contract cases additionally require
+`tiktoken` 0.12.0. CI runs both test projects; actual host deployment remains a
+separate manual Integration Harness invocation.
 
 ## Package
 

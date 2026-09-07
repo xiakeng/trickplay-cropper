@@ -1,29 +1,32 @@
 # Tests map
 
-[UnitTests](../../tests/Jellyfin.Plugin.TrickplayCropper.UnitTests) proves pure contracts
-with no host dependency: math, outcome mapping, release tools, and repository-file
-contracts. [ComponentTests](../../tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests)
-proves Jellyfin-server behavior — HTTP contracts, disk and encoder behavior, host
-activation, and the harness's own machinery — with test doubles instead of a live host.
-Both suites run in CI; the live host is the manually invoked harness
-([tooling map](tooling.md)).
+[UnitTests](../../tests/Jellyfin.Plugin.TrickplayCropper.UnitTests) proves pure contracts;
+[ComponentTests](../../tests/Jellyfin.Plugin.TrickplayCropper.ComponentTests) proves
+server, filesystem, native-runtime, and external-tool behavior. Both run in CI; the
+live host remains the manual harness ([tooling map](tooling.md)).
 
 Each file below lives in the named suite's directory.
 
 | To prove or change… | Entry point |
 |---|---|
-| GET/HEAD HTTP behavior: authorization, concealment, conditional requests, warm probe reuse, real Kestrel | `TrickplayPreviewHttpSpecs.cs` (ComponentTests) |
+| GET response and authorization behavior | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
+| Probe HTTP behavior and real Kestrel | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
+| Source Facts Observation behavior | `TrickplaySourceFactsObservationHttpSpecs.cs` (ComponentTests) |
+| Generated Metadata Observation behavior | `TrickplayGeneratedMetadataObservationHttpSpecs.cs`, `TrickplayGeneratedMetadataScopeHttpSpecs.cs` (ComponentTests) |
+| HTTP host, request, fake, authentication, scenario, observation, and assertion support | `PreviewHttpHostFixture.cs`, `PreviewHttpRequests.cs`, `PreviewHttpJellyfinFakes.cs`, `PreviewHttpAuthentication.cs`, `PreviewHttpScenario.cs`, `MetadataReadPlan.cs`, `SourceReadPlan.cs`, `TrickplayPreviewHttpSupport.cs` (ComponentTests) |
 | GET outcome mapping, conditional ETag comparison, Debug events | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract and Debug reasons | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
 | Authorization-split architectural boundary | `PreviewContextBoundarySpecs.cs` (UnitTests) |
 | Resolution selection, frame selection, metadata validation | `TrickplayResolutionSelectorSpecs.cs`, `FrameSelectionSpecs.cs`, `TrickplayMetadataSpecs.cs` (UnitTests) |
-| Disk cache behavior | `DiskPreviewCacheSpecs.cs` (ComponentTests) |
+| Disk cache entry, path, cleanup, and failure behavior | `DiskPreviewCacheEntrySpecs.cs`, `DiskPreviewCachePathSafetySpecs.cs`, `DiskPreviewCacheCleanupEligibilitySpecs.cs`, `DiskPreviewCacheCleanupCoordinationSpecs.cs`, `DiskPreviewCacheFailureSpecs.cs`, `DiskPreviewCacheSupport.cs` (ComponentTests) |
 | Coordination, tree, and entry locks | `PreviewCacheCoordinationSpecs.cs`, `CacheTreeLockSpecs.cs`, `PreviewEntryLockRegistrySpecs.cs` (ComponentTests) |
-| Encoder crop, failure, cancellation, decode permits | `TrickplayPreviewEncoderSpecs.cs` (ComponentTests) |
+| Encoder crop, input, and failure behavior | `TrickplayPreviewEncoderCropSpecs.cs`, `TrickplayPreviewEncoderSupport.cs` (ComponentTests) |
+| Encoder cancellation, decode permits, and telemetry | `TrickplayPreviewEncoderConcurrencySpecs.cs` (ComponentTests) |
 | Scheduled cleanup task | `ClearTrickplayCropperCacheTaskSpecs.cs` (UnitTests) |
 | Release tools | `ManifestBuilderSpecs.cs`, `PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs` (UnitTests) |
 | Build-manifest, runtime, and dependency-lock contracts | `ReleaseContractSpecs.cs` (UnitTests) |
 | Workflow contracts | `ReleaseWorkflowContractSpecs.cs`, `PublicationWorkflowContractSpecs.cs`, `ManifestWorkflowContractSpecs.cs` (UnitTests) |
+| Repository line/script and Code Map token/link failure contracts | `RepositoryStructureContractSpecs.cs` (ComponentTests) |
 | Harness smoke cases, scrub storm, report, deployment, input | `SmokeCasesSpecs.cs`, `ScrubStormSpecs.cs`, `ScrubStormReportSpecs.cs`, `DeploymentCycleSpecs.cs`, `HarnessInputSpecs.cs`, `HarnessHostOperationSpecs.cs`, `host_operation_specs.py` (ComponentTests) |
 | Harness host gates and Debug-event reading | `LocalJellyfinSpecs.cs`, `DebugEventReaderSpecs.cs` (ComponentTests) |
 | Plugin discovery, identity, and host activation | `PluginDiscoverySpecs.cs`, `PluginIdentitySpecs.cs` (UnitTests), `PluginHostActivationSpecs.cs` (ComponentTests) |
