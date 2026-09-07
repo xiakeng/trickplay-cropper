@@ -25,13 +25,9 @@ Each file below lives in the named suite's directory.
 | Scheduled cleanup task | `ClearTrickplayCropperCacheTaskSpecs.cs` (UnitTests) |
 | Release tools | `ManifestBuilderSpecs.cs`, `PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs` (UnitTests) |
 | Build-manifest, runtime, and dependency-lock contracts | `ReleaseContractSpecs.cs` (UnitTests) |
-| Workflow contracts | `ReleaseWorkflowContractSpecs.cs`, `PublicationWorkflowContractSpecs.cs`, `ManifestWorkflowContractSpecs.cs` (UnitTests) |
 | Repository line/script and Code Map token/link failure contracts | `RepositoryStructureContractSpecs.cs` (ComponentTests) |
 | Harness smoke cases, scrub storm, report, deployment, input | `SmokeCasesSpecs.cs`, `ScrubStormSpecs.cs`, `ScrubStormReportSpecs.cs`, `DeploymentCycleSpecs.cs`, `HarnessInputSpecs.cs`, `HarnessHostOperationSpecs.cs`, `host_operation_specs.py` (ComponentTests) |
 | Harness host gates and Debug-event reading | `LocalJellyfinSpecs.cs`, `DebugEventReaderSpecs.cs` (ComponentTests) |
 | Plugin discovery, identity, and host activation | `PluginDiscoverySpecs.cs`, `PluginIdentitySpecs.cs` (UnitTests), `PluginHostActivationSpecs.cs` (ComponentTests) |
 | Native Skia runtime | `SkiaRuntimeSpecs.cs` (ComponentTests) |
 | Observation semantics without HTTP | `PreviewObservationSpecs.cs` (UnitTests) |
-
-Repository-file contract tests load files through `RepositoryFiles` and parse workflow
-YAML as text through `WorkflowFiles` (both in UnitTests).

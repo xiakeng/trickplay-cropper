@@ -5,10 +5,7 @@
 3. Create `issue-<number>` from the fetched `origin/main` commit and make the
    change there.
 4. Open a pull request to this repository's `main` branch unless explicitly told otherwise.
-5. After opening the pull request, verify again if the changed code matches the affected Code Maps under `docs/code-maps/`,
-   flag the mismatch in pr comment.
-6. Resolve every mismatch and push the fixes to the pull request branch.
-7. Leave the pull request open after previous steps finished. Merge it only when the user explicitly
+5. Leave the pull request open after previous steps finished. Merge it only when the user explicitly
    requests the merge.
 
 ## Agent skills
