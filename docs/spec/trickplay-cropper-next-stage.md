@@ -511,7 +511,8 @@ a separate development-docs tree.
 
 Every push to `main`, including documentation-, test-, tooling-, and
 Actions-only changes, opens or updates one fixed-branch pull request titled
-`auto-release new version`. An ordinary push never publishes a release.
+`auto-release new version`, except when every changed path is the plugin build
+manifest or repository manifest. An ordinary push never publishes a release.
 
 The Release Pull Request is authored with `GITHUB_TOKEN`. Its body contains the
 changelog from the previous Release tag to current `HEAD`, or from the root
@@ -566,8 +567,10 @@ approval. After the final push and successful checks, use `GITHUB_TOKEN` as a
 distinct actor to approve and merge it. Do not configure a ruleset bypass actor
 and do not use the PAT for the merge.
 
-Rely on the non-recursive behavior of `GITHUB_TOKEN` so that the bot-merged
-manifest change does not open another Release Pull Request.
+Exclude build-manifest-only Release merges and repository-manifest-only
+maintenance merges from Release Pull Request preparation. `GITHUB_TOKEN`
+remains the normal manifest merge actor, while the path exclusions also keep a
+manual recovery merge from opening another Release Pull Request.
 
 The contribution workflow in `AGENTS.md` continues to govern implementation of
 this contract and every ordinary human- or agent-authored change. The Release

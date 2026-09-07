@@ -294,7 +294,22 @@ jobs:
         if: steps.pr.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          gh pr checks "${{ steps.pr.outputs.pr_number }}" --watch --interval 30
+          pr_number="${{ steps.pr.outputs.pr_number }}"
+
+          for attempt in {1..60}; do
+            check_count="$(gh pr view "${pr_number}" --json statusCheckRollup \
+              --jq '.statusCheckRollup | length')"
+            if (( check_count > 0 )); then
+              break
+            fi
+            if (( attempt == 60 )); then
+              echo "::error::Required checks did not register within five minutes." >&2
+              exit 1
+            fi
+            sleep 5
+          done
+
+          gh pr checks "${pr_number}" --required --watch --interval 30
 
       - name: Approve and merge the manifest pull request
         if: steps.pr.outputs.changed == 'true'
