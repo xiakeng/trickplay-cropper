@@ -60,7 +60,7 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         User? user = ResolveUser(principal);
         if (user is null)
         {
-            return IsApiKey(principal)
+            return principal.IsJellyfinApiKey()
                 ? new PreviewContextResolution.Forbidden()
                 : new PreviewContextResolution.Unauthorized();
         }
@@ -90,11 +90,6 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         return principal.TryGetJellyfinUserId(out Guid userId)
             ? userManager.GetUserById(userId)
             : null;
-    }
-
-    private static bool IsApiKey(ClaimsPrincipal principal)
-    {
-        return principal.IsJellyfinApiKey();
     }
 
     private async Task<PreviewContextResolution> ResolveMediaSourceAsync(

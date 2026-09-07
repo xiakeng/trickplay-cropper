@@ -1,30 +1,29 @@
 # Request paths map
 
-`TrickplayCropper/Videos/{itemId}/Preview` routes GET and the Frame Probe. GET resolves
-an authorized image; the probe returns its Frame Index before image work. Both share the
+`TrickplayCropper/Videos/{itemId}/Preview` routes GET and the Frame Probe. GET returns a
+Preview; the probe returns its Frame Index. Both share the
 [observation caches](caching/observations.md).
 
 ## Controller
 
 HTTP routing lives in
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
-`GetAsync` retains default authorization and binds the query; `HeadAsync` uses the named
-`TrickplayFrameProbe` native-identity policy and rejects malformed input through `TryCreateQuery`.
-`MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
-`TrickplayFrameProbeOutcome` sets to status, headers, and body.
+`GetAsync` retains default authorization; `HeadAsync` uses the named `TrickplayFrameProbe`
+native-identity policy. Mapping methods turn their closed outcomes into HTTP responses.
 
 ## GET chain
 
-`GetAsync` → `TrickplayPreview.ProcessAsync` → `JellyfinPreviewContextResolver.ResolveAsync`
-(user authority, concealment) → `ResolveForPreviewAsync` (Selected Trickplay
+`GetAsync` → `TrickplayPreview.ProcessAsync` → `JellyfinPreviewContextResolver.ResolveAsync` →
+`ResolveForPreviewAsync` (Selected Trickplay
 Resolution and Frame Index) → `JellyfinPreviewSourceResolver.ResolveAsync` (Source Sprite
 snapshot) → `PreviewIdentity.Create` → conditional `If-None-Match` check →
 `DiskPreviewCache.GetOrCreateAsync` → `TrickplayPreviewEncoder.EncodeAsync` → outcome.
 
 | Target | Key symbols | Responsibility |
 |---|---|---|
-| [TrickplayPreview.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Preview/TrickplayPreview.cs) | `ProcessAsync`, `PreviewFailureLog` | GET orchestration; unexpected failures become `InternalError` with one redacted Error log |
-| [JellyfinPreviewContextResolver.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinPreviewContextResolver.cs) | `ResolveAsync`, `JellyfinUserIdClaim`, `JellyfinIsApiKeyClaim` | User-scoped authorization with concealment; publishes only user-verified source facts |
+| [TrickplayPreview.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Preview/TrickplayPreview.cs) | `ProcessAsync`, `PreviewFailureLog` | GET orchestration; maps unexpected failures to one redacted Error |
+| [JellyfinPreviewContextResolver.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinPreviewContextResolver.cs) | `ResolveAsync` | User-scoped authorization with concealment; publishes only user-verified source facts |
+| [ClaimsPrincipalExtensions.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/ClaimsPrincipalExtensions.cs) | `TryGetJellyfinUserId`, `IsJellyfinApiKey` | Claim-only native identity parsing shared by GET and probe authorization |
 | [JellyfinTrickplayFrameCalculationResolver.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinTrickplayFrameCalculationResolver.cs) | `ResolveForPreviewAsync`, `ResolveForProbeAsync` | Resolution selection and Frame Index calculation shared by both paths |
 | [JellyfinPreviewSourceResolver.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinPreviewSourceResolver.cs) | `ResolveAsync` | Source Sprite path and version facts |
 | [TrickplayPreviewEncoder.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Imaging/TrickplayPreviewEncoder.cs) | `EncodeAsync` | JPEG crop and encode of the selected sprite cell |
@@ -43,8 +42,6 @@ snapshot) → `PreviewIdentity.Create` → conditional `If-None-Match` check →
 | [JellyfinTrickplayFrameProbeContextResolver.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Jellyfin/JellyfinTrickplayFrameProbeContextResolver.cs) | `ResolveAsync` | User-independent source-facts and calculation path |
 
 ## Test entry points
-
-Suite locations are on the [tests map](tests.md).
 
 | Behavior | Entry point |
 |---|---|
