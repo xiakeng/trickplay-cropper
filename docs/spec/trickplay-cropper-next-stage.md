@@ -525,8 +525,9 @@ floor, so the first automatic Release is `1.0.1.0`. A maintainer may edit major
 or minor components in the Release Pull Request.
 
 The workflows fail closed before mutation or publication if the required
-`main` branch protection, repository workflow permissions, bot review
-capability, or `RELEASE_BOT_PAT` secret is absent or incompatible.
+`main` branch protection, repository workflow permissions,
+`RELEASE_BOT_PAT` secret, or that identity's pull-request bypass capability is
+absent or incompatible.
 
 Publication requires a human to approve and merge the Release Pull Request
 using an allowed non-merge-commit method.
@@ -563,14 +564,15 @@ prereleases, failed builds, and Releases without the required asset.
 
 Submit the manifest change in a second pull request authored using the
 `RELEASE_BOT_PAT` identity so required checks run without manual workflow
-approval. After the final push and successful checks, use `GITHUB_TOKEN` as a
-distinct actor to approve and merge it. Do not configure a ruleset bypass actor
-and do not use the PAT for the merge.
+approval. After the final push and successful required checks, use that
+identity's existing pull-request bypass capability to perform an administrator
+squash merge. The bypass applies only to this generated Manifest Pull Request;
+the workflow does not bypass or skip its required checks.
 
 Exclude build-manifest-only Release merges and repository-manifest-only
-maintenance merges from Release Pull Request preparation. `GITHUB_TOKEN`
-remains the normal manifest merge actor, while the path exclusions also keep a
-manual recovery merge from opening another Release Pull Request.
+maintenance merges from Release Pull Request preparation. The path exclusions
+keep both the automatic PAT merge and a manual recovery merge from opening
+another Release Pull Request.
 
 The contribution workflow in `AGENTS.md` continues to govern implementation of
 this contract and every ordinary human- or agent-authored change. The Release
