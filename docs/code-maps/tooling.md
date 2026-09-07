@@ -39,6 +39,5 @@ manually invoked, no-mock verification against the local Jellyfin host.
 | [tools/TrickplayCropper.ManifestBuilder](../../tools/TrickplayCropper.ManifestBuilder) | Builds the Jellyfin repository manifest entry from a published release |
 
 Tool behavior is pinned by UnitTests (`PackageValidatorSpecs.cs`, `ReleasePlannerSpecs.cs`,
-`ManifestBuilderSpecs.cs`); workflow definitions by `ReleaseWorkflowContractSpecs.cs`,
-`PublicationWorkflowContractSpecs.cs`, and `ManifestWorkflowContractSpecs.cs`; harness
-machinery by the ComponentTests listed on the [tests map](tests.md).
+`ManifestBuilderSpecs.cs`); harness machinery by the ComponentTests listed on the
+[tests map](tests.md).

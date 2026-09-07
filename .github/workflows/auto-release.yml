@@ -62,7 +62,7 @@ jobs:
             exit 1
           fi
 
-          if ! jq -e 'any(.[]; .type == "required_pull_request_review")' <<<"${rules}" >/dev/null \
+          if ! jq -e 'any(.[]; .type == "pull_request")' <<<"${rules}" >/dev/null \
             || ! jq -e 'any(.[]; .type == "required_status_checks")' <<<"${rules}" >/dev/null; then
             echo "::error::main protection is incompatible: required pull request review and required status checks must both be enforced." >&2
             exit 1
