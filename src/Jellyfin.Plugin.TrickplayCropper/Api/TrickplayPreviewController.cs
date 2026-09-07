@@ -12,12 +12,14 @@ namespace Jellyfin.Plugin.TrickplayCropper.Api;
 /// Exposes authenticated Trickplay Previews over HTTP.
 /// </summary>
 [ApiController]
-[Authorize]
 [Route("TrickplayCropper/Videos/{itemId}/Preview")]
 public sealed class TrickplayPreviewController : ControllerBase
 {
     private const string CacheControlHeaderValue = "private, no-cache";
     private const string FrameIndexHeaderName = "X-Trickplay-Frame-Index";
+
+    /// <summary>The native authentication-only policy used by the Trickplay Frame Probe.</summary>
+    internal const string FrameProbeAuthorizationPolicy = "TrickplayFrameProbe";
 
     private readonly ITrickplayFrameProbe trickplayFrameProbe;
     private readonly ITrickplayPreview trickplayPreview;
@@ -41,6 +43,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <returns>The mapped HTTP response.</returns>
     [HttpGet]
+    [Authorize]
     public async Task<IActionResult> GetAsync(
         [FromRoute] Guid itemId,
         [FromQuery] PreviewQueryParameters parameters,
@@ -66,6 +69,7 @@ public sealed class TrickplayPreviewController : ControllerBase
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <returns>The mapped bodyless HTTP response.</returns>
     [HttpHead]
+    [Authorize(Policy = FrameProbeAuthorizationPolicy)]
     public async Task<IActionResult> HeadAsync(
         [FromRoute] string? itemId,
         [FromQuery] string? mediaSourceId,

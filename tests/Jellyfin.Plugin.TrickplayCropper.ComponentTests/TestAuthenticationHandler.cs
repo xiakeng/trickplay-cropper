@@ -11,7 +11,7 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
     private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
     private const string UserIdClaim = "Jellyfin-UserId";
 
-    public const string SchemeName = "ComponentTest";
+    public const string SchemeName = "CustomAuthentication";
 
     private readonly PreviewScenario scenario;
 
@@ -31,6 +31,13 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         {
             AuthenticationState.UserSession => CreateUserSessionResult(scenario.UserId),
             AuthenticationState.ApiKeyWithoutCurrentUser => CreateApiKeyResult(),
+            AuthenticationState.FalseApiKeyWithoutCurrentUser => CreateClaimResult(IsApiKeyClaim, bool.FalseString),
+            AuthenticationState.MalformedApiKeyWithoutCurrentUser => CreateClaimResult(IsApiKeyClaim, "not-a-Boolean"),
+            AuthenticationState.MalformedApiKeyWithValidUserId => CreateMalformedApiKeyUserSessionResult(scenario.UserId),
+            AuthenticationState.MissingUserId => CreateClaimResult(IsApiKeyClaim, bool.FalseString),
+            AuthenticationState.EmptyUserId => CreateUserSessionResult(Guid.Empty),
+            AuthenticationState.MalformedUserId => CreateClaimResult(UserIdClaim, "not-a-Guid"),
+            AuthenticationState.UnrelatedIdentity => CreateClaimResult(ClaimTypes.NameIdentifier, "unrelated-user"),
             AuthenticationState.Missing => AuthenticateResult.NoResult(),
             AuthenticationState.Invalid => AuthenticateResult.Fail("The component-test session is invalid."),
             AuthenticationState.UnusableUserSession => AuthenticateResult.Fail(
@@ -56,6 +63,21 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         [
             new Claim(UserIdClaim, Guid.Empty.ToString("N")),
             new Claim(IsApiKeyClaim, bool.TrueString),
+        ];
+        return CreateAuthenticatedResult(claims);
+    }
+
+    private static AuthenticateResult CreateClaimResult(string claimType, string value)
+    {
+        return CreateAuthenticatedResult([new Claim(claimType, value)]);
+    }
+
+    private static AuthenticateResult CreateMalformedApiKeyUserSessionResult(Guid authenticatedUserId)
+    {
+        Claim[] claims =
+        [
+            new Claim(UserIdClaim, authenticatedUserId.ToString("N")),
+            new Claim(IsApiKeyClaim, "not-a-Boolean"),
         ];
         return CreateAuthenticatedResult(claims);
     }

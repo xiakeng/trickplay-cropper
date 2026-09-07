@@ -273,14 +273,14 @@ public sealed class TrickplayFrameProbeHttpSpecs
     }
 
     [Fact]
-    public async Task ForbidsTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
+    public async Task IgnoresTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
     {
         var scenario = new PreviewScenario { DeniesDefaultAuthorizationPolicy = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
     [Fact]

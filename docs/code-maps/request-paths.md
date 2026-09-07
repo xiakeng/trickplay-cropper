@@ -8,7 +8,8 @@ an authorized image; the probe returns its Frame Index before image work. Both s
 
 HTTP routing lives in
 [TrickplayPreviewController.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayPreviewController.cs):
-`GetAsync` binds the query; `HeadAsync` rejects malformed input through `TryCreateQuery`.
+`GetAsync` retains default authorization and binds the query; `HeadAsync` uses the named
+`TrickplayFrameProbe` native-identity policy and rejects malformed input through `TryCreateQuery`.
 `MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
 `TrickplayFrameProbeOutcome` sets to status, headers, and body.
 
@@ -48,7 +49,7 @@ Suite locations are on the [tests map](tests.md).
 | Behavior | Entry point |
 |---|---|
 | GET responses, authorization, and failures | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
-| Probe HTTP contract and warm reuse | `TrickplayFrameProbeHttpSpecs.cs` (ComponentTests) |
+| Probe HTTP contract, authorization, and warm reuse | `TrickplayFrameProbeAuthorizationHttpSpecs.cs`, `TrickplayFrameProbeHttpSpecs.cs` (ComponentTests) |
 | Real Kestrel wiring | `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | GET outcome mapping and conditional requests | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
