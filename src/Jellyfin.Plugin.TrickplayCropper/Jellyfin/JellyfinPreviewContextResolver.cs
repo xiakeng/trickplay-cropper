@@ -13,9 +13,6 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// </summary>
 internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
 {
-    private const string JellyfinIsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string JellyfinUserIdClaim = "Jellyfin-UserId";
-
     private readonly IUserManager userManager;
     private readonly ILibraryManager libraryManager;
     private readonly IMediaSourceManager mediaSourceManager;
@@ -90,19 +87,14 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
 
     private User? ResolveUser(ClaimsPrincipal principal)
     {
-        Claim? userIdClaim = principal.Claims.FirstOrDefault(
-            claim => claim.Type.Equals(JellyfinUserIdClaim, StringComparison.OrdinalIgnoreCase));
-        bool hasUserId = Guid.TryParse(userIdClaim?.Value, out Guid userId) && userId != Guid.Empty;
-        return hasUserId
+        return principal.TryGetJellyfinUserId(out Guid userId)
             ? userManager.GetUserById(userId)
             : null;
     }
 
     private static bool IsApiKey(ClaimsPrincipal principal)
     {
-        Claim? apiKeyClaim = principal.Claims.FirstOrDefault(
-            claim => claim.Type.Equals(JellyfinIsApiKeyClaim, StringComparison.OrdinalIgnoreCase));
-        return bool.TryParse(apiKeyClaim?.Value, out bool isApiKey) && isApiKey;
+        return principal.IsJellyfinApiKey();
     }
 
     private async Task<PreviewContextResolution> ResolveMediaSourceAsync(

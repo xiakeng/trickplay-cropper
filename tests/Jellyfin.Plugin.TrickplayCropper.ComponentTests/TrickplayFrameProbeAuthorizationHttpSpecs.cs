@@ -26,9 +26,8 @@ public sealed class TrickplayFrameProbeAuthorizationHttpSpecs
     }
 
     [Theory]
-    [InlineData(AuthenticationState.FalseApiKeyWithoutCurrentUser)]
+    [InlineData(AuthenticationState.FalseApiKeyWithMissingUserId)]
     [InlineData(AuthenticationState.MalformedApiKeyWithoutCurrentUser)]
-    [InlineData(AuthenticationState.MissingUserId)]
     [InlineData(AuthenticationState.EmptyUserId)]
     [InlineData(AuthenticationState.MalformedUserId)]
     [InlineData(AuthenticationState.UnrelatedIdentity)]

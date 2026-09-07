@@ -31,10 +31,9 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         {
             AuthenticationState.UserSession => CreateUserSessionResult(scenario.UserId),
             AuthenticationState.ApiKeyWithoutCurrentUser => CreateApiKeyResult(),
-            AuthenticationState.FalseApiKeyWithoutCurrentUser => CreateClaimResult(IsApiKeyClaim, bool.FalseString),
+            AuthenticationState.FalseApiKeyWithMissingUserId => CreateClaimResult(IsApiKeyClaim, bool.FalseString),
             AuthenticationState.MalformedApiKeyWithoutCurrentUser => CreateClaimResult(IsApiKeyClaim, "not-a-Boolean"),
             AuthenticationState.MalformedApiKeyWithValidUserId => CreateMalformedApiKeyUserSessionResult(scenario.UserId),
-            AuthenticationState.MissingUserId => CreateClaimResult(IsApiKeyClaim, bool.FalseString),
             AuthenticationState.EmptyUserId => CreateUserSessionResult(Guid.Empty),
             AuthenticationState.MalformedUserId => CreateClaimResult(UserIdClaim, "not-a-Guid"),
             AuthenticationState.UnrelatedIdentity => CreateClaimResult(ClaimTypes.NameIdentifier, "unrelated-user"),

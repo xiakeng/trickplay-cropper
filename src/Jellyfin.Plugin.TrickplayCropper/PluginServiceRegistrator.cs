@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Jellyfin.Plugin.TrickplayCropper.Api;
 using Jellyfin.Plugin.TrickplayCropper.Caching;
 using Jellyfin.Plugin.TrickplayCropper.Imaging;
@@ -18,9 +17,6 @@ namespace Jellyfin.Plugin.TrickplayCropper;
 public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 {
     private const string CustomAuthenticationScheme = "CustomAuthentication";
-    private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string UserIdClaim = "Jellyfin-UserId";
-
     /// <summary>
     /// Registers all process-wide Trickplay Cropper modules as singletons.
     /// </summary>
@@ -29,15 +25,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         ArgumentNullException.ThrowIfNull(applicationHost);
-        serviceCollection.Configure<AuthorizationOptions>(options =>
-        {
-            options.AddPolicy(TrickplayPreviewController.FrameProbeAuthorizationPolicy, policy =>
-            {
-                policy.AddAuthenticationSchemes(CustomAuthenticationScheme);
-                policy.RequireAuthenticatedUser();
-                policy.RequireAssertion(HasNativeIdentity);
-            });
-        });
+        serviceCollection.Configure<AuthorizationOptions>(ConfigureAuthorization);
         serviceCollection.TryAddSingleton(TimeProvider.System);
         serviceCollection.AddSingleton<ITrickplayPreview, TrickplayPreview>();
         serviceCollection.AddSingleton<ITrickplayFrameProbe, TrickplayFrameProbe>();
@@ -55,17 +43,18 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ITrickplayPreviewEncoder, TrickplayPreviewEncoder>();
     }
 
+    private static void ConfigureAuthorization(AuthorizationOptions options)
+    {
+        options.AddPolicy(TrickplayPreviewController.FrameProbeAuthorizationPolicy, policy =>
+        {
+            policy.AddAuthenticationSchemes(CustomAuthenticationScheme);
+            policy.RequireAuthenticatedUser();
+            policy.RequireAssertion(HasNativeIdentity);
+        });
+    }
+
     private static bool HasNativeIdentity(AuthorizationHandlerContext context)
     {
-        Claim? apiKeyClaim = context.User.Claims.FirstOrDefault(
-            claim => claim.Type.Equals(IsApiKeyClaim, StringComparison.OrdinalIgnoreCase));
-        if (bool.TryParse(apiKeyClaim?.Value, out bool isApiKey) && isApiKey)
-        {
-            return true;
-        }
-
-        Claim? userIdClaim = context.User.Claims.FirstOrDefault(
-            claim => claim.Type.Equals(UserIdClaim, StringComparison.OrdinalIgnoreCase));
-        return Guid.TryParse(userIdClaim?.Value, out Guid userId) && userId != Guid.Empty;
+        return context.User.IsJellyfinApiKey() || context.User.TryGetJellyfinUserId(out _);
     }
 }

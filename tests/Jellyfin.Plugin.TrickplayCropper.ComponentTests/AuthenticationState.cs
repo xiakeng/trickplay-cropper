@@ -4,10 +4,9 @@ public enum AuthenticationState
 {
     UserSession,
     ApiKeyWithoutCurrentUser,
-    FalseApiKeyWithoutCurrentUser,
+    FalseApiKeyWithMissingUserId,
     MalformedApiKeyWithoutCurrentUser,
     MalformedApiKeyWithValidUserId,
-    MissingUserId,
     EmptyUserId,
     MalformedUserId,
     UnrelatedIdentity,
