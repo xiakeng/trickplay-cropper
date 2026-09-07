@@ -71,7 +71,8 @@ public sealed class PreviewObservationSpecs
             user.Permissions.Add(new Permission(PermissionKind.EnableMediaPlayback, true));
             Query = new PreviewQuery(logical.Id, source.Id, 30_000L * TimeSpan.TicksPerMillisecond);
             Principal = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim("Jellyfin-UserId", user.Id.ToString("N"))], "unit-authentication"));
+                [new Claim(JellyfinPreviewContextResolver.JellyfinUserIdClaim, user.Id.ToString("N"))],
+                "unit-authentication"));
             var configuration = new ServerConfiguration
             {
                 TrickplayOptions = new TrickplayOptions { WidthResolutions = [320] },

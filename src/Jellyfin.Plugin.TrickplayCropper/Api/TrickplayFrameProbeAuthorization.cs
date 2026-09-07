@@ -1,13 +1,13 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 
+using static Jellyfin.Plugin.TrickplayCropper.Jellyfin.JellyfinPreviewContextResolver;
+
 namespace Jellyfin.Plugin.TrickplayCropper.Api;
 
 internal static class TrickplayFrameProbeAuthorization
 {
     private const string AuthenticationScheme = "CustomAuthentication";
-    private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
-    private const string UserIdClaim = "Jellyfin-UserId";
 
     public const string PolicyName = "TrickplayFrameProbe";
 
@@ -23,13 +23,13 @@ internal static class TrickplayFrameProbeAuthorization
 
     private static bool HasNativeIdentity(ClaimsPrincipal principal)
     {
-        string? isApiKeyClaim = principal.FindFirst(IsApiKeyClaim)?.Value;
+        string? isApiKeyClaim = principal.FindFirst(JellyfinIsApiKeyClaim)?.Value;
         if (bool.TryParse(isApiKeyClaim, out bool isApiKey) && isApiKey)
         {
             return true;
         }
 
-        string? userIdClaim = principal.FindFirst(UserIdClaim)?.Value;
+        string? userIdClaim = principal.FindFirst(JellyfinUserIdClaim)?.Value;
         return Guid.TryParse(userIdClaim, out Guid userId) && userId != Guid.Empty;
     }
 }

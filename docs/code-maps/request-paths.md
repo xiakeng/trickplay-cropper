@@ -12,11 +12,9 @@ HTTP routing lives in
 `MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
 `TrickplayFrameProbeOutcome` sets to status, headers, and body.
 
-GET uses the host default authorization policy. HEAD uses the named `TrickplayFrameProbe`
-policy configured by
-[TrickplayFrameProbeAuthorization.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayFrameProbeAuthorization.cs),
-which selects Jellyfin's `CustomAuthentication` scheme and accepts only a true native
-API-key claim or a nonempty native user ID without another user lookup.
+GET keeps the default policy. HEAD's named policy is configured in
+[TrickplayFrameProbeAuthorization.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayFrameProbeAuthorization.cs):
+`CustomAuthentication`, a true API-key claim or nonempty user-ID GUID, and no user lookup.
 
 ## GET chain
 
@@ -49,14 +47,8 @@ snapshot) → `PreviewIdentity.Create` → conditional `If-None-Match` check →
 
 ## Test entry points
 
-Suite locations are on the [tests map](tests.md).
-
 | Behavior | Entry point |
 |---|---|
 | GET responses, authorization, and failures | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
-| Probe HTTP contract and warm reuse | `TrickplayFrameProbeHttpSpecs.cs` (ComponentTests) |
-| GET/HEAD effective authorization and native claims | `TrickplayFrameProbeAuthorizationHttpSpecs.cs` (ComponentTests) |
-| Real Kestrel wiring | `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
-| GET outcome mapping and conditional requests | `PreviewOutcomeSpecs.cs` (UnitTests) |
-| Probe outcome contract | `TrickplayFrameProbeSpecs.cs` (UnitTests) |
-| Authorization-split boundary | `PreviewContextBoundarySpecs.cs` (UnitTests) |
+| Probe HTTP, authorization, and Kestrel | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayFrameProbeAuthorizationHttpSpecs.cs`, `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
+| Outcome mapping and authorization split | `PreviewOutcomeSpecs.cs`, `TrickplayFrameProbeSpecs.cs`, `PreviewContextBoundarySpecs.cs` (UnitTests) |
