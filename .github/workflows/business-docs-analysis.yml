@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > "${RUNNER_TEMP}/analysis-issue-body.md" <<'BODY'
-          Using the base commit recorded in `docs/business/README.md`, analyze subsequent code changes and maintain the relevant documentation under `docs/business/`.
+          Using the base commit recorded in `docs/business/README.md`, analyze subsequent code changes and maintain the relevant documentation under `docs/business/` and `docs/code-maps/`.
 
           If no documentation updates are needed, close this issue directly.
           BODY

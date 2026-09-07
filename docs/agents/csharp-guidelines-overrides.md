@@ -1,12 +1,22 @@
 # CSharpGuidelines Repository Overrides
 
+## Rule overrides
+
 Automated formatting, naming, compiler, and analyzer diagnostics take
 precedence over subjective review comments about the same rule.
+
+## Code map updates
 
 Keep documentation synchronized with the code. When a change restructures code that a
 [Code Map](../code-maps/README.md) describes, update the affected maps in the same
 change. Documentation that no longer matches the code is a defect of the change, not
 follow-up work.
+
+Keep Code Maps and Business Documentation as independent surfaces. Derive every Code
+Map claim from the current code, tests, workflows, and repository structure. Code Maps
+must not link to, restate, or rely on `docs/business/`, because Business Documentation
+is maintained on a deferred schedule and may describe an older implementation. Do not
+add cross-links between `docs/code-maps/` and `docs/business/`.
 
 ## Unit tests guidelines
 Follow guidelines in `docs/agents/test-value-gate.md`
