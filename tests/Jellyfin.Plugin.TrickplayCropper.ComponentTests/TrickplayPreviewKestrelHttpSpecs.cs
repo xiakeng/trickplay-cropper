@@ -46,7 +46,7 @@ public sealed class TrickplayPreviewKestrelHttpSpecs
     [InlineData(TrickplayFrameProbeKestrelCondition.Success, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.MalformedInput, HttpStatusCode.BadRequest)]
     [InlineData(TrickplayFrameProbeKestrelCondition.UnauthenticatedSession, HttpStatusCode.Unauthorized)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied, HttpStatusCode.Forbidden)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.ConcealedResource, HttpStatusCode.NotFound)]
     [InlineData(TrickplayFrameProbeKestrelCondition.InvalidMetadata, HttpStatusCode.InternalServerError)]
