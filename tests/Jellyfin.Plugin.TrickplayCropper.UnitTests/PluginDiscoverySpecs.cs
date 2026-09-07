@@ -4,7 +4,6 @@ using Jellyfin.Plugin.TrickplayCropper.Tasks;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Tasks;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Xunit;
@@ -30,7 +29,6 @@ public sealed class PluginDiscoverySpecs
     {
         Type controller = typeof(TrickplayPreviewController);
         Assert.NotNull(controller.GetCustomAttribute<ApiControllerAttribute>());
-        Assert.NotNull(controller.GetCustomAttribute<AuthorizeAttribute>());
         RouteAttribute route = Assert.IsType<RouteAttribute>(controller.GetCustomAttribute<RouteAttribute>());
         Assert.Equal("TrickplayCropper/Videos/{itemId}/Preview", route.Template);
     }

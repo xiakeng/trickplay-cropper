@@ -12,6 +12,12 @@ HTTP routing lives in
 `MapOutcome` and `CreateBodylessResult` map the closed `PreviewOutcome` and
 `TrickplayFrameProbeOutcome` sets to status, headers, and body.
 
+GET uses the host default authorization policy. HEAD uses the named `TrickplayFrameProbe`
+policy configured by
+[TrickplayFrameProbeAuthorization.cs](../../src/Jellyfin.Plugin.TrickplayCropper/Api/TrickplayFrameProbeAuthorization.cs),
+which selects Jellyfin's `CustomAuthentication` scheme and accepts only a true native
+API-key claim or a nonempty native user ID without another user lookup.
+
 ## GET chain
 
 `GetAsync` → `TrickplayPreview.ProcessAsync` → `JellyfinPreviewContextResolver.ResolveAsync`
@@ -49,6 +55,7 @@ Suite locations are on the [tests map](tests.md).
 |---|---|
 | GET responses, authorization, and failures | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
 | Probe HTTP contract and warm reuse | `TrickplayFrameProbeHttpSpecs.cs` (ComponentTests) |
+| GET/HEAD effective authorization and native claims | `TrickplayFrameProbeAuthorizationHttpSpecs.cs` (ComponentTests) |
 | Real Kestrel wiring | `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | GET outcome mapping and conditional requests | `PreviewOutcomeSpecs.cs` (UnitTests) |
 | Probe outcome contract | `TrickplayFrameProbeSpecs.cs` (UnitTests) |

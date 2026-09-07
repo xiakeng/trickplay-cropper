@@ -10,7 +10,7 @@ Each file below lives in the named suite's directory.
 | To prove or change… | Entry point |
 |---|---|
 | GET response and authorization behavior | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
-| Probe HTTP behavior and real Kestrel | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
+| Probe HTTP behavior, authorization, and real Kestrel | `TrickplayFrameProbeHttpSpecs.cs`, `TrickplayFrameProbeAuthorizationHttpSpecs.cs`, `TrickplayPreviewKestrelHttpSpecs.cs` (ComponentTests) |
 | Source Facts Observation behavior | `TrickplaySourceFactsObservationHttpSpecs.cs` (ComponentTests) |
 | Generated Metadata Observation behavior | `TrickplayGeneratedMetadataObservationHttpSpecs.cs`, `TrickplayGeneratedMetadataScopeHttpSpecs.cs` (ComponentTests) |
 | HTTP host, request, fake, authentication, scenario, observation, and assertion support | `PreviewHttpHostFixture.cs`, `PreviewHttpRequests.cs`, `PreviewHttpJellyfinFakes.cs`, `PreviewHttpAuthentication.cs`, `PreviewHttpScenario.cs`, `MetadataReadPlan.cs`, `SourceReadPlan.cs`, `TrickplayPreviewHttpSupport.cs` (ComponentTests) |

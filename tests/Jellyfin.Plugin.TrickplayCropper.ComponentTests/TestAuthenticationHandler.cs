@@ -11,7 +11,7 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
     private const string IsApiKeyClaim = "Jellyfin-IsApiKey";
     private const string UserIdClaim = "Jellyfin-UserId";
 
-    public const string SchemeName = "ComponentTest";
+    public const string SchemeName = "CustomAuthentication";
 
     private readonly PreviewScenario scenario;
 
@@ -31,6 +31,18 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         {
             AuthenticationState.UserSession => CreateUserSessionResult(scenario.UserId),
             AuthenticationState.ApiKeyWithoutCurrentUser => CreateApiKeyResult(),
+            AuthenticationState.UserSessionWithoutUserIdClaim => CreateAuthenticatedResult(
+                [new Claim(IsApiKeyClaim, bool.FalseString)]),
+            AuthenticationState.UserSessionWithEmptyUserIdClaim => CreateUserSessionResult(string.Empty),
+            AuthenticationState.UserSessionWithMalformedUserIdClaim => CreateUserSessionResult("not-a-guid"),
+            AuthenticationState.SessionWithoutUserAndFalseApiKeyClaim => CreateUserSessionResult(
+                Guid.Empty.ToString("N")),
+            AuthenticationState.SessionWithoutUserAndMalformedApiKeyClaim => CreateAuthenticatedResult(
+                [
+                    new Claim(UserIdClaim, Guid.Empty.ToString("N")),
+                    new Claim(IsApiKeyClaim, "not-a-boolean"),
+                ]),
+            AuthenticationState.UnrelatedIdentity => CreateAuthenticatedResult([]),
             AuthenticationState.Missing => AuthenticateResult.NoResult(),
             AuthenticationState.Invalid => AuthenticateResult.Fail("The component-test session is invalid."),
             AuthenticationState.UnusableUserSession => AuthenticateResult.Fail(
@@ -42,9 +54,14 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
 
     private static AuthenticateResult CreateUserSessionResult(Guid authenticatedUserId)
     {
+        return CreateUserSessionResult(authenticatedUserId.ToString("N"));
+    }
+
+    private static AuthenticateResult CreateUserSessionResult(string authenticatedUserId)
+    {
         Claim[] claims =
         [
-            new Claim(UserIdClaim, authenticatedUserId.ToString("N")),
+            new Claim(UserIdClaim, authenticatedUserId),
             new Claim(IsApiKeyClaim, bool.FalseString),
         ];
         return CreateAuthenticatedResult(claims);
@@ -55,7 +72,7 @@ internal sealed class TestAuthenticationHandler : AuthenticationHandler<Authenti
         Claim[] claims =
         [
             new Claim(UserIdClaim, Guid.Empty.ToString("N")),
-            new Claim(IsApiKeyClaim, bool.TrueString),
+            new Claim(IsApiKeyClaim, "true"),
         ];
         return CreateAuthenticatedResult(claims);
     }
