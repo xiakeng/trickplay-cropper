@@ -7,4 +7,5 @@ public enum AuthenticationState
     Missing,
     Invalid,
     UnusableUserSession,
+    UnrelatedIdentity,
 }

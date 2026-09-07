@@ -110,6 +110,8 @@ public sealed class TrickplayFrameProbeHttpSpecs
         Assert.Equal(2, scenario.UserIndependentLibraryLookups);
         Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
         Assert.Equal(1, scenario.MetadataReadCount);
+        Assert.Equal(2, scenario.NativeAuthenticationUserLoads);
+        Assert.Equal(0, scenario.DefaultAuthorizationUserLoads);
         Assert.Equal(0, scenario.UserLookups);
         Assert.Equal(0, fixture.SourceSpritePathRequests);
         Assert.Equal(0, fixture.Cache.CallCount);
@@ -170,6 +172,8 @@ public sealed class TrickplayFrameProbeHttpSpecs
         await AssertTrickplayFrameProbeSuccessAsync(response, 0);
         using HttpResponseMessage warm = await fixture.HeadAsync();
         await AssertTrickplayFrameProbeSuccessAsync(warm, 0);
+        Assert.Equal(2, scenario.NativeAuthenticationUserLoads);
+        Assert.Equal(0, scenario.DefaultAuthorizationUserLoads);
         Assert.Equal(0, scenario.UserLookups);
         Assert.Equal(0, scenario.UserScopedSourceEnumerations);
         Assert.Equal(1, scenario.UserIndependentSourceEnumerations);
@@ -273,14 +277,14 @@ public sealed class TrickplayFrameProbeHttpSpecs
     }
 
     [Fact]
-    public async Task ForbidsTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
+    public async Task IgnoresTrickplayFrameProbeDefaultAuthorizationPolicyDenial()
     {
         var scenario = new PreviewScenario { DeniesDefaultAuthorizationPolicy = true };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
         using HttpResponseMessage response = await fixture.HeadAsync();
 
-        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+        await AssertTrickplayFrameProbeSuccessAsync(response, 0);
     }
 
     [Fact]

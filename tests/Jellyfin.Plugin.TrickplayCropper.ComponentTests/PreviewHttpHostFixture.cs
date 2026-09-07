@@ -156,6 +156,20 @@ internal sealed class PreviewHostFixture : IAsyncDisposable
             });
             application.UseRouting();
             application.UseAuthentication();
+            application.Use(async (request, next) =>
+            {
+                if (context.Scenario.Authentication == AuthenticationState.UnrelatedIdentity)
+                {
+                    Claim[] claims = context.Scenario.NativeClaims ??
+                    [
+                        new Claim("Jellyfin-UserId", context.Scenario.UserId.ToString("N")),
+                        new Claim("Jellyfin-IsApiKey", bool.FalseString),
+                    ];
+                    request.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "UnrelatedAuthentication"));
+                }
+
+                await next(request);
+            });
             application.UseAuthorization();
             application.UseEndpoints(endpoints => endpoints.MapControllers());
         });

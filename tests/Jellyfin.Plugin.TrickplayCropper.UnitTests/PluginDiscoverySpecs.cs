@@ -30,7 +30,7 @@ public sealed class PluginDiscoverySpecs
     {
         Type controller = typeof(TrickplayPreviewController);
         Assert.NotNull(controller.GetCustomAttribute<ApiControllerAttribute>());
-        Assert.NotNull(controller.GetCustomAttribute<AuthorizeAttribute>());
+        Assert.Null(controller.GetCustomAttribute<AuthorizeAttribute>());
         RouteAttribute route = Assert.IsType<RouteAttribute>(controller.GetCustomAttribute<RouteAttribute>());
         Assert.Equal("TrickplayCropper/Videos/{itemId}/Preview", route.Template);
     }
@@ -42,6 +42,9 @@ public sealed class PluginDiscoverySpecs
         MethodInfo action = Assert.IsAssignableFrom<MethodInfo>(
             controller.GetMethod(nameof(TrickplayPreviewController.GetAsync)));
         Assert.NotNull(action.GetCustomAttribute<HttpGetAttribute>());
+        AuthorizeAttribute authorization = Assert.IsType<AuthorizeAttribute>(
+            action.GetCustomAttribute<AuthorizeAttribute>());
+        Assert.Null(authorization.Policy);
         ParameterInfo itemId = Assert.Single(action.GetParameters(), parameter => parameter.Name == "itemId");
         ParameterInfo parameters = Assert.Single(action.GetParameters(), parameter => parameter.Name == "parameters");
         ParameterInfo cancellationToken = Assert.Single(
@@ -61,6 +64,9 @@ public sealed class PluginDiscoverySpecs
         MethodInfo action = Assert.IsAssignableFrom<MethodInfo>(
             controller.GetMethod(nameof(TrickplayPreviewController.HeadAsync)));
         Assert.NotNull(action.GetCustomAttribute<HttpHeadAttribute>());
+        AuthorizeAttribute authorization = Assert.IsType<AuthorizeAttribute>(
+            action.GetCustomAttribute<AuthorizeAttribute>());
+        Assert.Equal(TrickplayFrameProbeIdentityRequirement.PolicyName, authorization.Policy);
         ParameterInfo itemId = Assert.Single(action.GetParameters(), parameter => parameter.Name == "itemId");
         ParameterInfo mediaSourceId = Assert.Single(
             action.GetParameters(),
