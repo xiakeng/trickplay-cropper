@@ -1,7 +1,6 @@
 # Separate Frame Probe calculation from Preview authorization
 
-The v3 authentication boundary below is an accepted requirement-analysis decision;
-its implementation and before/after response-time measurements remain pending.
+The v3 authentication boundary below is an accepted decision.
 
 GET and HEAD answer different questions and must not share an authorization context.
 GET returns or revalidates a representation, so it resolves a current Jellyfin user,

@@ -26,6 +26,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,7 +49,7 @@ public sealed class TrickplayPreviewKestrelHttpSpecs
     [InlineData(TrickplayFrameProbeKestrelCondition.Success, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.MalformedInput, HttpStatusCode.BadRequest)]
     [InlineData(TrickplayFrameProbeKestrelCondition.UnauthenticatedSession, HttpStatusCode.Unauthorized)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied, HttpStatusCode.Forbidden)]
+    [InlineData(TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.OK)]
     [InlineData(TrickplayFrameProbeKestrelCondition.ConcealedResource, HttpStatusCode.NotFound)]
     [InlineData(TrickplayFrameProbeKestrelCondition.InvalidMetadata, HttpStatusCode.InternalServerError)]
@@ -88,6 +91,37 @@ public sealed class TrickplayPreviewKestrelHttpSpecs
         await AssertAuthorizationErrorResponseAsync(previewResponse);
     }
 
+    [Theory]
+    [InlineData(AuthenticationState.UserSessionWithoutUserId)]
+    [InlineData(AuthenticationState.UserSessionWithEmptyUserId)]
+    [InlineData(AuthenticationState.UserSessionWithMalformedUserId)]
+    [InlineData(AuthenticationState.UserSessionWithMalformedApiKeyClaim)]
+    [InlineData(AuthenticationState.UnrelatedIdentity)]
+    public async Task ForbidsAuthenticatedIdentitiesWithoutNativeUserOrApiKeyClaims(
+        AuthenticationState authentication)
+    {
+        var scenario = new PreviewScenario { Authentication = authentication };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.HeadAsync();
+
+        await AssertBodylessTrickplayFrameProbeFailureAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ComposesSeparateProbeAndPreviewAuthorizationPolicies()
+    {
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(
+            new PreviewScenario());
+
+        AuthorizationPolicy probePolicy = await GetPolicyAsync(fixture, nameof(TrickplayPreviewController.HeadAsync));
+        AuthorizationPolicy previewPolicy = await GetPolicyAsync(fixture, nameof(TrickplayPreviewController.GetAsync));
+
+        Assert.Equal([TestAuthenticationHandler.SchemeName], probePolicy.AuthenticationSchemes);
+        Assert.DoesNotContain(probePolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
+        Assert.Contains(previewPolicy.Requirements, requirement => requirement is TestDefaultAuthorizationRequirement);
+    }
+
     [Fact]
     public async Task ReturnsTheSelectedGetFrameIndexOverRealKestrelForImageAndConditionalSuccess()
     {
@@ -105,6 +139,21 @@ public sealed class TrickplayPreviewKestrelHttpSpecs
         using HttpResponseMessage conditionalResponse = await fixture.GetConditionalAsync(entityTag);
         Assert.Equal(HttpStatusCode.NotModified, conditionalResponse.StatusCode);
         Assert.Equal("3", conditionalResponse.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+    }
+
+    private static async Task<AuthorizationPolicy> GetPolicyAsync(
+        PreviewHostFixture fixture,
+        string actionName)
+    {
+        EndpointDataSource dataSource = fixture.Services.GetRequiredService<EndpointDataSource>();
+        Endpoint endpoint = Assert.Single(
+            dataSource.Endpoints,
+            candidate => candidate.Metadata.GetMetadata<ControllerActionDescriptor>()?.MethodInfo.Name == actionName);
+        IAuthorizationPolicyProvider provider = fixture.Services.GetRequiredService<IAuthorizationPolicyProvider>();
+        AuthorizationPolicy? policy = await AuthorizationPolicy.CombineAsync(
+            provider,
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>());
+        return Assert.IsType<AuthorizationPolicy>(policy);
     }
 
 }
