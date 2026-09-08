@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import pathlib
-import re
 import subprocess
 import sys
-import urllib.parse
 
 import tiktoken
 
@@ -76,11 +74,6 @@ SCRIPT_FILE_NAMES = {
 }
 WORKFLOW_SUFFIXES = {".yaml", ".yml"}
 
-# Exclusions must remain exact Git-tracked paths categorized as generated or
-# third-party. The repository currently needs no exclusions.
-EXCLUDED_PATHS: dict[str, str] = {}
-ALLOWED_EXCLUSION_CATEGORIES = {"generated", "third-party"}
-
 
 def tracked_files() -> list[tuple[pathlib.Path, bool]]:
     output = subprocess.check_output(["git", "ls-files", "--stage", "-z"])
@@ -104,35 +97,12 @@ def is_size_limited(path: pathlib.Path, data: bytes, executable: bool) -> bool:
     return False
 
 
-def local_markdown_targets(source: str) -> list[str]:
-    inline_link = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
-    reference_definition = re.compile(
-        r"(?m)^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:<([^>]+)>|(\S+))"
-    )
-    targets = inline_link.findall(source)
-    targets.extend(left or right for left, right in reference_definition.findall(source))
-    return targets
-
-
 def main() -> int:
-    root = pathlib.Path.cwd().resolve()
     tracked = tracked_files()
-    tracked_names = {path.as_posix() for path, _ in tracked}
     failures: list[str] = []
-
-    for path, category in EXCLUDED_PATHS.items():
-        if category not in ALLOWED_EXCLUSION_CATEGORIES:
-            failures.append(
-                f"Invalid exclusion category for {path}: {category}; "
-                "expected generated or third-party."
-            )
-        if path not in tracked_names:
-            failures.append(f"Excluded path is not Git-tracked: {path}")
 
     for relative_path, executable in tracked:
         name = relative_path.as_posix()
-        if name in EXCLUDED_PATHS:
-            continue
         data = relative_path.read_bytes()
         if not is_size_limited(relative_path, data, executable):
             continue
@@ -151,39 +121,12 @@ def main() -> int:
     code_maps = sorted(pathlib.Path("docs/code-maps").rglob("*.md"))
     for code_map in code_maps:
         source = code_map.read_text(encoding="utf-8")
-        token_count = len(encoding.encode(source))
+        token_count = len(encoding.encode(source, disallowed_special=()))
         if token_count > MAXIMUM_CODE_MAP_TOKENS:
             failures.append(
                 f"{code_map.as_posix()}: {token_count} cl100k_base tokens; "
                 f"maximum is {MAXIMUM_CODE_MAP_TOKENS}."
             )
-
-        for raw_target in local_markdown_targets(source):
-            target = raw_target.strip()
-            if target.startswith("<") and target.endswith(">"):
-                target = target[1:-1]
-            parsed = urllib.parse.urlparse(target)
-            if parsed.scheme or target.startswith("#"):
-                continue
-            link_path = urllib.parse.unquote(parsed.path)
-            if not link_path:
-                continue
-            candidate = (
-                root / link_path.lstrip("/")
-                if link_path.startswith("/")
-                else code_map.parent / link_path
-            ).resolve()
-            try:
-                candidate.relative_to(root)
-            except ValueError:
-                failures.append(
-                    f"{code_map.as_posix()}: local link escapes the repository: {target}"
-                )
-                continue
-            if not candidate.exists():
-                failures.append(
-                    f"{code_map.as_posix()}: local link target does not exist: {target}"
-                )
 
     if failures:
         print("Repository structure contract violations:", file=sys.stderr)

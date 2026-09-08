@@ -24,13 +24,18 @@ This repository uses a single-context domain docs layout. See `docs/agents/domai
 
 ### Code Maps
 
-Start codebase navigation from the Code Maps index. See `docs/code-maps/README.md`.
+Start codebase navigation from `docs/code-maps/README.md`. Use the semantic Code Maps to identify the relevant modules, entry points, and execution paths before performing broad repository searches.
+
+Treat Code Maps as navigation aids, not authoritative source code: verify conclusions against the current implementation. If a map is incomplete or stale, continue by searching the codebase; do not update `docs/code-maps/` unless the current issue is labeled `doc-maintain`.
 
 ### C# coding standard
-
-For C# code changes, apply `docs/agents/csharp-guidelines/SKILL.md` and
-`docs/agents/csharp-guidelines-overrides.md`.
+Not applicable for issues labeled `doc-maintain`  
+For C# code changes, apply `docs/agents/csharp-guidelines.md`.
 
 ### C# code review
-
+Not applicable for issues labeled `doc-maintain`  
 For C# code reviews, follow `docs/agents/csharp-code-review.md`.
+
+### Document maintenance
+
+For issues labeled `doc-maintain`, follow `docs/agents/doc-maintenance.md`.
