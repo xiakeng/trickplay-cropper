@@ -35,3 +35,7 @@ For C# code changes, apply `docs/agents/csharp-guidelines.md`.
 ### C# code review
 
 For C# code reviews, follow `docs/agents/csharp-code-review.md`.
+
+### Document maintenance
+
+For issues labeled `doc-maintain`, follow `docs/agents/doc-maintenance.md`.

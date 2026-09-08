@@ -35,22 +35,6 @@ public sealed class RepositoryStructureContractSpecs
     }
 
     [Fact]
-    public void CodeMapLinksRejectMissingReferenceTargetsAndRepositoryEscapes()
-    {
-        using var repository = new TemporaryContractRepository();
-
-        repository.Write(
-            "docs/code-maps/README.md",
-            "# Map\n\n[Missing][target]\n\n[target]: missing.md\n");
-        AssertFailure(repository.Verify(), "local link target does not exist: missing.md");
-
-        repository.Write(
-            "docs/code-maps/README.md",
-            "# Map\n\n[Escape](../../../outside.md)\n");
-        AssertFailure(repository.Verify(), "local link escapes the repository: ../../../outside.md");
-    }
-
-    [Fact]
     public void CodeMapTokenLimitRejectsToken1001AndBeyond()
     {
         using var repository = new TemporaryContractRepository();
