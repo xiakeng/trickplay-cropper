@@ -31,6 +31,11 @@ csharp_indent_case_contents_when_block = true
 csharp_indent_switch_labels = true
 csharp_indent_labels = one_less_than_current
 csharp_prefer_braces = true:warning
+# AV2400: keyword/operator spacing and braces on separate lines.
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_around_binary_operators = before_and_after
+csharp_preserve_single_line_blocks = false
+csharp_preserve_single_line_statements = false
 
 # Prefer language syntax and remove unnecessary qualification.
 dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
@@ -39,6 +44,8 @@ dotnet_style_qualification_for_field = false:warning
 dotnet_style_qualification_for_property = false:warning
 dotnet_style_qualification_for_method = false:warning
 dotnet_style_qualification_for_event = false:warning
+# AV1510: simplify type names already in scope (IDE-only).
+dotnet_diagnostic.IDE0001.severity = suggestion
 
 # Use var only when it does not hide useful type information.
 csharp_style_var_for_built_in_types = false:suggestion
@@ -59,12 +66,34 @@ csharp_style_throw_expression = true:suggestion
 csharp_style_expression_bodied_properties = when_on_single_line:suggestion
 csharp_style_expression_bodied_accessors = when_on_single_line:suggestion
 csharp_style_expression_bodied_methods = false:suggestion
+# AV2410: extend the single-line preference to the remaining member kinds.
+csharp_style_expression_bodied_constructors = when_on_single_line:suggestion
+csharp_style_expression_bodied_operators = when_on_single_line:suggestion
+csharp_style_expression_bodied_indexers = when_on_single_line:suggestion
+csharp_style_expression_bodied_local_functions = when_on_single_line:suggestion
+
+# AV1545: conditional assignment and null-coalescing assignment.
+dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
+dotnet_style_prefer_compound_assignment = true:suggestion
+
+# AV2202, AV2225: idiomatic null checks, collection expressions, tuple deconstruction.
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:suggestion
+csharp_style_prefer_not_pattern = true:suggestion
+dotnet_style_prefer_collection_expression = when_types_exactly_match:suggestion
+csharp_style_deconstructed_variable_declaration = true:suggestion
 
 # Build-visible style diagnostics.
 dotnet_diagnostic.IDE0011.severity = warning
 dotnet_diagnostic.IDE0055.severity = warning
 dotnet_diagnostic.IDE0065.severity = warning
 dotnet_diagnostic.IDE0161.severity = warning
+# AV1525: remove comparisons of Boolean expressions with true/false.
+dotnet_diagnostic.IDE0100.severity = warning
+
+# AV1501, AV1800, AV1840: seal internal leaf types, check emptiness, consume ValueTask safely.
+dotnet_diagnostic.CA1852.severity = warning
+dotnet_diagnostic.CA1827.severity = warning
+dotnet_diagnostic.CA2012.severity = warning
 
 # Naming rules.
 dotnet_naming_rule.interfaces_start_with_i.severity = warning
@@ -74,6 +103,15 @@ dotnet_naming_rule.interfaces_start_with_i.style = interface_style
 dotnet_naming_rule.types_are_pascal_case.severity = warning
 dotnet_naming_rule.types_are_pascal_case.symbols = types
 dotnet_naming_rule.types_are_pascal_case.style = pascal_case
+
+# AV1702, AV1709: namespace casing and generic type parameter prefixes.
+dotnet_naming_rule.namespaces_are_pascal_case.severity = warning
+dotnet_naming_rule.namespaces_are_pascal_case.symbols = namespaces
+dotnet_naming_rule.namespaces_are_pascal_case.style = pascal_case
+
+dotnet_naming_rule.type_parameters_start_with_t.severity = warning
+dotnet_naming_rule.type_parameters_start_with_t.symbols = type_parameters
+dotnet_naming_rule.type_parameters_start_with_t.style = type_parameter_style
 
 dotnet_naming_rule.members_are_pascal_case.severity = warning
 dotnet_naming_rule.members_are_pascal_case.symbols = members
@@ -105,6 +143,8 @@ dotnet_naming_rule.local_functions_are_pascal_case.style = pascal_case
 
 dotnet_naming_symbols.interfaces.applicable_kinds = interface
 dotnet_naming_symbols.types.applicable_kinds = class, struct, enum, delegate
+dotnet_naming_symbols.namespaces.applicable_kinds = namespace
+dotnet_naming_symbols.type_parameters.applicable_kinds = type_parameter
 dotnet_naming_symbols.members.applicable_kinds = method, property, event
 dotnet_naming_symbols.non_private_fields.applicable_kinds = field
 dotnet_naming_symbols.non_private_fields.applicable_accessibilities = public, internal, protected, protected_internal, private_protected
@@ -118,6 +158,8 @@ dotnet_naming_symbols.local_functions.applicable_kinds = local_function
 
 dotnet_naming_style.interface_style.required_prefix = I
 dotnet_naming_style.interface_style.capitalization = pascal_case
+dotnet_naming_style.type_parameter_style.required_prefix = T
+dotnet_naming_style.type_parameter_style.capitalization = pascal_case
 dotnet_naming_style.pascal_case.capitalization = pascal_case
 dotnet_naming_style.camel_case.capitalization = camel_case
 

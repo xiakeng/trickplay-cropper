@@ -37,9 +37,6 @@ modifies, or repairs that data. What it adds on top:
 The complete business documentation — participants, lifecycle, and design, with a
 reading path and a route-by-question table — lives under
 [docs/business](docs/business/README.md).
-Compact contributor navigation starts at the [Code Maps index](docs/code-maps/README.md),
-which routes request paths, caching, tests, and tooling without duplicating those
-business contracts.
 
 ## Compatibility
 
