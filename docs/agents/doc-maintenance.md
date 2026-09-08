@@ -21,9 +21,14 @@ For each surface being maintained:
    Verify that the base commit is an ancestor of the target; stop without
    changing the base if it is not.
 3. Enumerate every first-parent commit in `<base>..origin/main`, oldest first.
-   For each commit, inspect the code, test, workflow, and repository-structure
-   changes it introduced and account for their effect on every relevant
-   document in this surface.
+   For each commit, identify its associated PR and read all linked tickets and
+   their parent spec tickets, including relevant discussion, to understand the
+   intent, acceptance criteria, and scope. If no PR or parent spec exists,
+   record that absence; unresolved or inaccessible references leave the review
+   incomplete. Then inspect the code, test, workflow, and repository-structure
+   changes it introduced in that context and account for their effect on every
+   relevant document in this surface. Verify intended behavior against the
+   target implementation before documenting it as delivered.
 4. Update stale documents so they describe the final target commit. Keep each
    claim within this surface's scope and verify it against the target's source,
    not against the other documentation surface.
