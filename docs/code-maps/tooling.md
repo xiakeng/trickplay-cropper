@@ -13,7 +13,6 @@ version source for release automation. Test locations are on the [tests map](tes
 | [ci.yml](../../.github/workflows/ci.yml) | Every push and pull request: repository size/link contracts, restore, format, build, both test suites, JPRM package, validation, checksum |
 | [auto-release.yml](../../.github/workflows/auto-release.yml) | Qualifying pushes to `main`: plan the next version and open or update the pending release pull request |
 | [publish-release.yml](../../.github/workflows/publish-release.yml) | On release-PR merge: re-run the gates, publish the stable GitHub Release, submit the manifest pull request |
-| [business-docs-analysis.yml](../../.github/workflows/business-docs-analysis.yml) | On every pull-request merge to `main`: keep at most one open `docs:business-analysis` issue |
 
 ## Integration Harness
 
