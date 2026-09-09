@@ -2,62 +2,15 @@
 
 Use this contract for C# production code, tests, tools, and build configuration.
 
-## Reviewer handoff
-
-The main agent must read this contract before dispatching reviewers. For each
-review invocation, create a fresh reviewer for each required axis without
-inheriting implementation or previous-review conversation history (for example,
-`fork_turns="none"` where supported). Keep the checkpoint and outstanding findings
-in the main agent's review record; do not reuse a reviewer session for re-review.
-
-Give each reviewer a compact handoff containing the repository path, review axis,
-fixed base and head SHAs, governing issue/specification link, relevant requirements,
-non-goals and explicit exceptions with their source, and paths to this contract
-and applicable repository instructions. Include the validation summary described
-below. For re-review, also include outstanding finding IDs, locations, triggers,
-and fix dispositions so unresolved findings survive the fresh context.
-
-Keep full diffs and logs in the repository or local artifacts; reviewers read the
-specified diff and relevant excerpts on demand. Batch independent reads when
-practical, and request additional context only to resolve a concrete review question.
-
 ## Prepare
 
-1. Inspect the complete diff within the supplied base/head scope using default
-   diff context. Do not expand it with `--unified`; read targeted source ranges
-   when a specific question needs more context.
-2. Read the governing issue or specification's relevant requirements, non-goals,
+1. Read the governing issue or specification's relevant requirements, non-goals,
    and explicit exceptions. Resolve missing or ambiguous details at the source.
-3. Apply `docs/agents/csharp-guidelines.md`.
-4. Inspect affected call sites, configuration, and tests.
+2. Apply `docs/agents/csharp-guidelines.md`.
+3. Inspect affected call sites, configuration, and tests.
 
 Preparation is complete when every changed behavior maps to the requested
 contract or is identified as unintended scope.
-
-## Incremental /code-review rule
-
-Within one `/implementation` task, the first `/code-review` reviews the complete
-branch diff against its original fixed point and runs both Standards and Spec.
-
-After that review, record the reviewed `HEAD` commit as the review checkpoint.
-For every subsequent review:
-
-1. Review only `git diff <last-reviewed-head>..HEAD` and its commits.
-2. Review only the affected axis:
-   - Run Standards for changes made solely to resolve Standards findings.
-   - Run Spec for changes made solely to resolve Spec findings or acceptance
-     requirements.
-   - Run both only when the new changes affect both axes.
-3. Do not re-review unchanged hunks from before the checkpoint. Read unchanged
-   code only as context for the new diff or to verify an outstanding finding.
-4. After the required review axes pass, advance the checkpoint to the current
-   `HEAD`. Retain unresolved findings until verified as fixed or explicitly
-   dispositioned; an empty incremental diff does not clear them.
-
-This incremental-review rule overrides `/code-review`'s default full-diff,
-two-axis behavior for repeated reviews within the same implementation task.
-If the checkpoint is missing, is not an ancestor of `HEAD`, or the review scope
-is uncertain, perform the complete two-axis review again.
 
 ## Review
 
