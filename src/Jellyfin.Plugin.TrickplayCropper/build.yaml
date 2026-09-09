@@ -1,7 +1,7 @@
 {
   "name": "Trickplay Cropper",
   "guid": "630fb758-9a29-4f2c-a54c-95793651bb8a",
-  "version": "1.0.4.0",
+  "version": "1.0.5.0",
   "targetAbi": "10.11.0.0",
   "framework": "net9.0",
   "overview": "Return authenticated Trickplay Previews from Jellyfin-owned Source Sprites.",
@@ -11,5 +11,5 @@
   "artifacts": [
     "Jellyfin.Plugin.TrickplayCropper.dll"
   ],
-  "changelog": "- fix: [issue-142] authenticate manifest push with release bot (#143)"
+  "changelog": "- update (#161)\n- docs: [issue-159] scope incremental review and require ticket context (#160)\n- docs: [issue-149] verify direct Frame Index path (#153)\n- chore: repo instructions update (#146)\n- Publish repository manifest for v1.0.4.0 (#145)"
 }
