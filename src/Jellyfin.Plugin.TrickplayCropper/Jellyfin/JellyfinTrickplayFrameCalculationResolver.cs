@@ -44,6 +44,52 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         return ResolveAsync(request, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<TrickplayTimelineCalculationResolution> ResolveForTimelineAsync(
+        Guid sourceVideoId,
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken)
+    {
+        int[]? configuredTargets = serverConfigurationManager.Configuration?
+            .TrickplayOptions?
+            .WidthResolutions?
+            .ToArray();
+        int? selectedResolution = SelectResolution(configuredTargets, normalizationSourceWidth);
+        if (selectedResolution is null)
+        {
+            return new TrickplayTimelineCalculationResolution.NotFound(
+                PreviewUnavailableReason.NoConfiguredTarget);
+        }
+
+        PreviewConfigurationDiagnostics configuration = CreateConfiguration(
+            configuredTargets!,
+            normalizationSourceWidth,
+            selectedResolution.Value);
+        try
+        {
+            TrickplayMetadataResolution metadata = await metadataCache
+                .ReadAuthoritativeTimelineAsync(sourceVideoId, selectedResolution.Value, cancellationToken)
+                .ConfigureAwait(false);
+            return metadata switch
+            {
+                TrickplayMetadataResolution.Available available =>
+                    new TrickplayTimelineCalculationResolution.Selected(available.Metadata),
+                TrickplayMetadataResolution.NotFound notFound =>
+                    new TrickplayTimelineCalculationResolution.NotFound(notFound.Reason),
+                _ => throw new InvalidOperationException(
+                    $"Unknown Trickplay metadata resolution {metadata.GetType().Name}."),
+            };
+        }
+        catch (InvalidTrickplayMetadataException failure)
+        {
+            failure.Configuration = configuration with
+            {
+                GeneratedKeys = failure.Configuration?.GeneratedKeys,
+            };
+            throw;
+        }
+    }
+
     private async Task<TrickplayFrameCalculationResolution> ResolveAsync(
         CalculationRequest request,
         CancellationToken cancellationToken)

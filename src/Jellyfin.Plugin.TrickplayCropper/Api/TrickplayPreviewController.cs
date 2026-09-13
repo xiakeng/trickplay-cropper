@@ -20,16 +20,21 @@ public sealed class TrickplayPreviewController : ControllerBase
 
     private readonly ITrickplayFrameProbe trickplayFrameProbe;
     private readonly ITrickplayPreview trickplayPreview;
+    private readonly IFrameTimeline frameTimeline;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayPreviewController"/> class.
     /// </summary>
     /// <param name="trickplayFrameProbe">The Trickplay Frame Probe module.</param>
     /// <param name="trickplayPreview">The Trickplay Preview request module.</param>
-    public TrickplayPreviewController(ITrickplayFrameProbe trickplayFrameProbe, ITrickplayPreview trickplayPreview)
+    public TrickplayPreviewController(
+        ITrickplayFrameProbe trickplayFrameProbe,
+        ITrickplayPreview trickplayPreview,
+        IFrameTimeline frameTimeline)
     {
         this.trickplayFrameProbe = trickplayFrameProbe;
         this.trickplayPreview = trickplayPreview;
+        this.frameTimeline = frameTimeline;
     }
 
     /// <summary>
@@ -55,6 +60,27 @@ public sealed class TrickplayPreviewController : ControllerBase
             cancellationToken).ConfigureAwait(false);
 
         return MapOutcome(outcome);
+    }
+
+    /// <summary>
+    /// Gets the current generated frame interval and count for an authorized playback source.
+    /// </summary>
+    /// <param name="itemId">The logical video identifier.</param>
+    /// <param name="mediaSourceId">The optional alternate media source identifier.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <returns>The mapped HTTP response.</returns>
+    [Authorize]
+    [HttpGet("~/TrickplayCropper/Videos/{itemId}/FrameTimeline")]
+    public async Task<IActionResult> GetFrameTimelineAsync(
+        [FromRoute] Guid itemId,
+        [FromQuery] Guid? mediaSourceId,
+        CancellationToken cancellationToken)
+    {
+        FrameTimelineOutcome outcome = await frameTimeline.GetAsync(
+            new PreviewSourceQuery(itemId, mediaSourceId),
+            User,
+            cancellationToken).ConfigureAwait(false);
+        return MapFrameTimelineOutcome(outcome);
     }
 
     /// <summary>
@@ -131,6 +157,32 @@ public sealed class TrickplayPreviewController : ControllerBase
             TrickplayFrameProbeOutcome.InternalError => CreateBodylessResult(StatusCodes.Status500InternalServerError),
             _ => throw new InvalidOperationException($"Unknown Trickplay Frame Probe outcome {outcome.GetType().Name}."),
         };
+    }
+
+    private IActionResult MapFrameTimelineOutcome(FrameTimelineOutcome outcome)
+    {
+        return outcome switch
+        {
+            FrameTimelineOutcome.Success success => MapFrameTimelineSuccess(success),
+            FrameTimelineOutcome.BadRequest => BadRequest(),
+            FrameTimelineOutcome.Unauthorized => Unauthorized(),
+            FrameTimelineOutcome.Forbidden => Forbid(),
+            FrameTimelineOutcome.NotFound => NotFound(),
+            FrameTimelineOutcome.InternalError => StatusCode(StatusCodes.Status500InternalServerError),
+            _ => throw new InvalidOperationException(
+                $"Unknown Frame Timeline outcome {outcome.GetType().Name}."),
+        };
+    }
+
+    private JsonResult MapFrameTimelineSuccess(FrameTimelineOutcome.Success outcome)
+    {
+        Response.Headers.CacheControl = CacheControlHeaderValue;
+        return new JsonResult(
+            new
+            {
+                intervalTicks = outcome.IntervalTicks,
+                frameCount = outcome.FrameCount,
+            });
     }
 
     private EmptyResult CreateFrameIndexResult(int frameIndex)
