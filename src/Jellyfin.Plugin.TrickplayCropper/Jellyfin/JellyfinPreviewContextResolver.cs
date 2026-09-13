@@ -58,37 +58,97 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             return new PreviewContextResolution.BadRequest();
         }
 
+        AuthorizedSourceResolution authorization = await ResolveAuthorizedSourceAsync(
+            new PreviewSourceQuery(query.ItemId, query.MediaSourceId),
+            principal,
+            publishSourceFacts: true,
+            cancellationToken).ConfigureAwait(false);
+        if (authorization is not AuthorizedSourceResolution.Resolved resolved)
+        {
+            return MapAuthorization(authorization);
+        }
+
+        TrickplayFrameCalculationResolution calculation = await calculationResolver
+            .ResolveForPreviewAsync(query, resolved.NormalizationSourceWidth, cancellationToken)
+            .ConfigureAwait(false);
+        return calculation switch
+        {
+            TrickplayFrameCalculationResolution.Selected selected => new PreviewContextResolution.Resolved(
+                new PreviewContext(query.ResolvedMediaSourceId, resolved.SourceVideo, selected.Metadata, selected.FrameIndex)),
+            TrickplayFrameCalculationResolution.NotFound notFound => new PreviewContextResolution.NotFound(
+                notFound.Reason),
+            _ => throw new InvalidOperationException(
+                $"Unknown Trickplay Frame calculation {calculation.GetType().Name}."),
+        };
+    }
+
+    /// <summary>
+    /// Resolves the current-user authorization and selected source without calculation or image work.
+    /// </summary>
+    /// <param name="query">The logical Item and selected Media Source.</param>
+    /// <param name="principal">The current request principal.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <param name="publishSourceFacts">Whether to publish the verified source width observation.</param>
+    /// <returns>The authorized source or a closed failure.</returns>
+    internal async Task<AuthorizedSourceResolution> ResolveAuthorizedSourceAsync(
+        PreviewSourceQuery query,
+        ClaimsPrincipal principal,
+        bool publishSourceFacts,
+        CancellationToken cancellationToken)
+    {
         if (principal.Identity?.IsAuthenticated != true)
         {
-            return new PreviewContextResolution.Unauthorized();
+            return new AuthorizedSourceResolution.Unauthorized();
         }
 
         User? user = ResolveUser(principal);
         if (user is null)
         {
             return IsApiKey(principal)
-                ? new PreviewContextResolution.Forbidden()
-                : new PreviewContextResolution.Unauthorized();
+                ? new AuthorizedSourceResolution.Forbidden()
+                : new AuthorizedSourceResolution.Unauthorized();
         }
 
-        using TrickplaySourceFactsCache.PreviewObservation sourceObservation = sourceFactsCache.BeginForPreview(query);
+        using TrickplaySourceFactsCache.PreviewObservation? sourceObservation = publishSourceFacts
+            ? sourceFactsCache.BeginForPreview(query.ItemId, query.ResolvedMediaSourceId)
+            : null;
         Video? logicalVideo = libraryManager.GetItemById<Video>(query.ItemId, user);
         if (logicalVideo?.Id != query.ItemId)
         {
-            return Concealed();
+            return new AuthorizedSourceResolution.NotFound();
         }
 
         if (logicalVideo.GetPlayAccess(user) != PlayAccess.Full)
         {
-            return new PreviewContextResolution.Forbidden();
+            return new AuthorizedSourceResolution.Forbidden();
         }
 
-        return await ResolveMediaSourceAsync(
-            query,
-            user,
+        IReadOnlyList<MediaSourceInfo> mediaSources = await mediaSourceManager.GetPlaybackMediaSources(
             logicalVideo,
-            sourceObservation,
+            user,
+            allowMediaProbe: true,
+            enablePathSubstitution: false,
             cancellationToken).ConfigureAwait(false);
+        MediaSourceInfo? matchedSource = mediaSources.FirstOrDefault(
+            source => IsSelectedSource(source, query.ResolvedMediaSourceId));
+        if (matchedSource is null)
+        {
+            return new AuthorizedSourceResolution.NotFound();
+        }
+
+        Video? sourceVideo = libraryManager.GetItemById<Video>(query.ResolvedMediaSourceId, user);
+        if (sourceVideo?.Id != query.ResolvedMediaSourceId)
+        {
+            return new AuthorizedSourceResolution.NotFound();
+        }
+
+        int? normalizationSourceWidth = matchedSource.VideoStream?.Width;
+        if (sourceObservation is not null)
+        {
+            sourceFactsCache.PublishForPreview(sourceObservation, normalizationSourceWidth);
+        }
+
+        return new AuthorizedSourceResolution.Resolved(sourceVideo, normalizationSourceWidth);
     }
 
     private User? ResolveUser(ClaimsPrincipal principal)
@@ -108,51 +168,18 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
         return bool.TryParse(apiKeyClaim?.Value, out bool isApiKey) && isApiKey;
     }
 
-    private async Task<PreviewContextResolution> ResolveMediaSourceAsync(
-        PreviewQuery query,
-        User user,
-        Video logicalVideo,
-        TrickplaySourceFactsCache.PreviewObservation sourceObservation,
-        CancellationToken cancellationToken)
+    private static PreviewContextResolution MapAuthorization(AuthorizedSourceResolution resolution)
     {
-        IReadOnlyList<MediaSourceInfo> mediaSources = await mediaSourceManager.GetPlaybackMediaSources(
-            logicalVideo,
-            user,
-            allowMediaProbe: true,
-            enablePathSubstitution: false,
-            cancellationToken).ConfigureAwait(false);
-        MediaSourceInfo? matchedSource = mediaSources.FirstOrDefault(
-            source => IsSelectedSource(source, query.ResolvedMediaSourceId));
-        if (matchedSource is null)
+        return resolution switch
         {
-            return Concealed();
-        }
-
-        Video? sourceVideo = libraryManager.GetItemById<Video>(query.ResolvedMediaSourceId, user);
-        if (sourceVideo?.Id != query.ResolvedMediaSourceId)
-        {
-            return Concealed();
-        }
-
-        int? normalizationSourceWidth = matchedSource.VideoStream?.Width;
-        sourceFactsCache.PublishForPreview(sourceObservation, normalizationSourceWidth);
-        TrickplayFrameCalculationResolution calculation = await calculationResolver
-            .ResolveForPreviewAsync(query, normalizationSourceWidth, cancellationToken)
-            .ConfigureAwait(false);
-        return calculation switch
-        {
-            TrickplayFrameCalculationResolution.Selected selected => new PreviewContextResolution.Resolved(
-                new PreviewContext(query.ResolvedMediaSourceId, sourceVideo, selected.Metadata, selected.FrameIndex)),
-            TrickplayFrameCalculationResolution.NotFound notFound => new PreviewContextResolution.NotFound(
-                notFound.Reason),
+            AuthorizedSourceResolution.BadRequest => new PreviewContextResolution.BadRequest(),
+            AuthorizedSourceResolution.Unauthorized => new PreviewContextResolution.Unauthorized(),
+            AuthorizedSourceResolution.Forbidden => new PreviewContextResolution.Forbidden(),
+            AuthorizedSourceResolution.NotFound => new PreviewContextResolution.NotFound(
+                PreviewUnavailableReason.Concealed),
             _ => throw new InvalidOperationException(
-                $"Unknown Trickplay Frame calculation {calculation.GetType().Name}."),
+                $"Unknown authorized source resolution {resolution.GetType().Name}."),
         };
-    }
-
-    private static PreviewContextResolution.NotFound Concealed()
-    {
-        return new PreviewContextResolution.NotFound(PreviewUnavailableReason.Concealed);
     }
 
     private static bool IsSelectedSource(MediaSourceInfo source, Guid mediaSourceId)

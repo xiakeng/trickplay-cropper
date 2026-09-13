@@ -18,6 +18,34 @@ internal static class PreviewHttpRequests
         return fixture.GetAsync(CancellationToken.None);
     }
 
+    public static Task<HttpResponseMessage> GetFrameTimelineAsync(this PreviewHostFixture fixture)
+    {
+        PreviewScenario scenario = fixture.Services.GetRequiredService<PreviewScenario>();
+        string mediaSourceQuery = scenario.UsesAlternateSource
+            ? $"?MediaSourceId={AlternateSourceId:D}"
+            : string.Empty;
+        string path = $"/TrickplayCropper/Videos/{scenario.LogicalItemId:D}/FrameTimeline{mediaSourceQuery}";
+        return fixture.Client.GetAsync(path);
+    }
+
+    public static Task<HttpResponseMessage> GetFrameTimelineRawAsync(
+        this PreviewHostFixture fixture,
+        string requestPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestPath);
+        return SendAsync(fixture, HttpMethod.Get, null, requestPath, CancellationToken.None);
+    }
+
+    public static Task<HttpResponseMessage> GetFrameTimelineConditionalAsync(
+        this PreviewHostFixture fixture,
+        string ifNoneMatch)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ifNoneMatch);
+        PreviewScenario scenario = fixture.Services.GetRequiredService<PreviewScenario>();
+        string path = $"/TrickplayCropper/Videos/{scenario.LogicalItemId:D}/FrameTimeline";
+        return SendAsync(fixture, HttpMethod.Get, ifNoneMatch, path, CancellationToken.None);
+    }
+
     public static Task<HttpResponseMessage> GetAsync(
         this PreviewHostFixture fixture,
         CancellationToken cancellationToken)

@@ -89,6 +89,8 @@ internal sealed class PreviewScenario
 
     public int MetadataReadCount => Volatile.Read(ref metadataReadCount);
 
+    public int MetadataIntervalMilliseconds { get; init; } = 10_000;
+
     public bool MutatesConfiguredTargetsDuringMetadataRead { get; init; }
 
     public long RequestPositionTicks { get; set; }
