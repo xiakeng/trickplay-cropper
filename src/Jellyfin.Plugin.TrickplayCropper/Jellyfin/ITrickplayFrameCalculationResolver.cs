@@ -8,6 +8,14 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 internal interface ITrickplayFrameCalculationResolver
 {
     /// <summary>
+    /// Reads one authoritative generated row and returns its Frame Timeline.
+    /// </summary>
+    Task<FrameTimelineCalculationResolution> ResolveForFrameTimelineAsync(
+        Guid sourceVideoId,
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Applies the shared resolution, metadata, and Frame Index rules to one effective Media Source.
     /// </summary>
     /// <param name="query">The normalized Preview query.</param>

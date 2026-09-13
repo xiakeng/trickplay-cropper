@@ -8,6 +8,10 @@ Trickplay Cropper is a Jellyfin server plugin that exposes authenticated, single
 A single JPEG frame selected for an authorized playback position and cropped from a Jellyfin-owned Source Sprite.
 _Avoid_: Thumbnail, cropped image, preview image
 
+**Frame Timeline**:
+The compact calculation model for one authorized logical Item and selected Media Source: a positive interval in Jellyfin ticks and the positive number of generated frames. A playback client may retain it for that playback and select Frame Index values locally; it is not permission evidence, a representation version, or a coherence token.
+_Avoid_: Timeline cache entry, frame ranges, metadata version
+
 **Trickplay Frame Probe**:
 The lightweight HTTP HEAD operation that computes a Frame Index for an Item and real Media Source for a natively authenticated user identity or userless API key. It makes no user-visibility or playback decision and does not apply per-user remote-access or parental-schedule restrictions; a successful probe is not evidence of permission to retrieve a Trickplay Preview.
 _Avoid_: HEAD probe, frame probe, preview probe

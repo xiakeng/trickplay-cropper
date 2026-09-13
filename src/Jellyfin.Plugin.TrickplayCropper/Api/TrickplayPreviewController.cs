@@ -9,7 +9,7 @@ using Microsoft.Net.Http.Headers;
 namespace Jellyfin.Plugin.TrickplayCropper.Api;
 
 /// <summary>
-/// Exposes authenticated Trickplay Previews over HTTP.
+/// Exposes authenticated Trickplay operations over HTTP.
 /// </summary>
 [ApiController]
 [Route("TrickplayCropper/Videos/{itemId}/Preview")]
@@ -18,18 +18,57 @@ public sealed class TrickplayPreviewController : ControllerBase
     private const string CacheControlHeaderValue = "private, no-cache";
     private const string FrameIndexHeaderName = "X-Trickplay-Frame-Index";
 
+    private readonly ITrickplayFrameTimeline trickplayFrameTimeline;
     private readonly ITrickplayFrameProbe trickplayFrameProbe;
     private readonly ITrickplayPreview trickplayPreview;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayPreviewController"/> class.
     /// </summary>
+    /// <param name="trickplayFrameTimeline">The Frame Timeline request module.</param>
     /// <param name="trickplayFrameProbe">The Trickplay Frame Probe module.</param>
     /// <param name="trickplayPreview">The Trickplay Preview request module.</param>
-    public TrickplayPreviewController(ITrickplayFrameProbe trickplayFrameProbe, ITrickplayPreview trickplayPreview)
+    public TrickplayPreviewController(
+        ITrickplayFrameTimeline trickplayFrameTimeline,
+        ITrickplayFrameProbe trickplayFrameProbe,
+        ITrickplayPreview trickplayPreview)
     {
+        this.trickplayFrameTimeline = trickplayFrameTimeline;
         this.trickplayFrameProbe = trickplayFrameProbe;
         this.trickplayPreview = trickplayPreview;
+    }
+
+    /// <summary>
+    /// Gets the Frame Timeline for one authorized Item and Media Source.
+    /// </summary>
+    /// <param name="itemId">The logical video identifier.</param>
+    /// <param name="mediaSourceId">The optional alternate media source identifier.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <returns>The mapped HTTP response.</returns>
+    [Authorize]
+    [HttpGet("~/TrickplayCropper/Videos/{itemId}/FrameTimeline")]
+    public async Task<IActionResult> GetFrameTimelineAsync(
+        [FromRoute] Guid itemId,
+        [FromQuery] Guid? mediaSourceId,
+        CancellationToken cancellationToken)
+    {
+        TrickplayFrameTimelineOutcome outcome = await trickplayFrameTimeline
+            .GetAsync(itemId, mediaSourceId, User, cancellationToken)
+            .ConfigureAwait(false);
+        if (outcome is TrickplayFrameTimelineOutcome.Ok ok)
+        {
+            Response.Headers.CacheControl = CacheControlHeaderValue;
+            return Ok(new { ok.IntervalTicks, ok.FrameCount });
+        }
+
+        return outcome switch
+        {
+            TrickplayFrameTimelineOutcome.Unauthorized => Unauthorized(),
+            TrickplayFrameTimelineOutcome.Forbidden => Forbid(),
+            TrickplayFrameTimelineOutcome.NotFound => NotFound(),
+            TrickplayFrameTimelineOutcome.InternalError => StatusCode(StatusCodes.Status500InternalServerError),
+            _ => throw new InvalidOperationException($"Unknown Frame Timeline outcome {outcome.GetType().Name}."),
+        };
     }
 
     /// <summary>

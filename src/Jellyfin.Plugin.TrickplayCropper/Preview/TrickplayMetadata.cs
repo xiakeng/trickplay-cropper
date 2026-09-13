@@ -31,6 +31,15 @@ internal sealed record TrickplayMetadata(
     }
 
     /// <summary>
+    /// Rejects metadata fields required by a Frame Timeline.
+    /// </summary>
+    public void ValidateFrameTimeline()
+    {
+        ValidatePositive(IntervalMilliseconds, "IntervalMillisecondsPositive");
+        ValidatePositive(ThumbnailCount, "ThumbnailCountPositive");
+    }
+
+    /// <summary>
     /// Selects the Frame Index that a Jellyfin playback position identifies.
     /// </summary>
     /// <param name="positionTicks">The non-negative playback position.</param>

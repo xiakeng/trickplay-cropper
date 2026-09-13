@@ -87,6 +87,8 @@ internal sealed class PreviewScenario
 
     public MetadataAvailability Metadata { get; set; } = MetadataAvailability.Available;
 
+    public int MetadataIntervalMilliseconds { get; init; } = 10_000;
+
     public int MetadataReadCount => Volatile.Read(ref metadataReadCount);
 
     public bool MutatesConfiguredTargetsDuringMetadataRead { get; init; }

@@ -25,6 +25,55 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
     }
 
     /// <inheritdoc />
+    public async Task<FrameTimelineCalculationResolution> ResolveForFrameTimelineAsync(
+        Guid sourceVideoId,
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken)
+    {
+        int[]? configuredTargets = serverConfigurationManager.Configuration?
+            .TrickplayOptions?
+            .WidthResolutions?
+            .ToArray();
+        int? selectedResolution = SelectResolution(configuredTargets, normalizationSourceWidth);
+        if (selectedResolution is null)
+        {
+            return new FrameTimelineCalculationResolution.NotFound(
+                PreviewUnavailableReason.NoConfiguredTarget);
+        }
+
+        PreviewConfigurationDiagnostics configuration = CreateConfiguration(
+            configuredTargets!,
+            normalizationSourceWidth,
+            selectedResolution.Value);
+        try
+        {
+            TrickplayMetadataResolution metadata = await metadataCache
+                .GetForFrameTimelineAsync(sourceVideoId, selectedResolution.Value, cancellationToken)
+                .ConfigureAwait(false);
+            return metadata switch
+            {
+                TrickplayMetadataResolution.Available available =>
+                    new FrameTimelineCalculationResolution.Available(
+                        checked((long)available.Metadata.IntervalMilliseconds
+                            * TimeSpan.TicksPerMillisecond),
+                        available.Metadata.ThumbnailCount),
+                TrickplayMetadataResolution.NotFound notFound =>
+                    new FrameTimelineCalculationResolution.NotFound(notFound.Reason),
+                _ => throw new InvalidOperationException(
+                    $"Unknown Trickplay metadata resolution {metadata.GetType().Name}."),
+            };
+        }
+        catch (InvalidTrickplayMetadataException failure)
+        {
+            failure.Configuration = configuration with
+            {
+                GeneratedKeys = failure.Configuration?.GeneratedKeys,
+            };
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
     public Task<TrickplayFrameCalculationResolution> ResolveForPreviewAsync(
         PreviewQuery query,
         int? normalizationSourceWidth,

@@ -11,6 +11,10 @@ modifies, or repairs that data. What it adds on top:
   Resolution from the server's current Trickplay Resolution Targets — minimum
   target, Jellyfin's own normalization rule for the Media Source, and an exact
   generated-metadata match. No fallback width, no nearest substitute.
+- **An authorized Frame Timeline.** A playback client can read the positive frame
+  interval and generated frame count once for its current Item and Media Source,
+  retain them for that playback, and select bounded Frame Index values locally.
+  The response is calculation data, not authority for a later Preview request.
 - **The Trickplay Frame Probe.** A bodyless HTTP HEAD operation answers *which
   frame does this position select?* for an Item and real Media Source accepted by
   Jellyfin's ordinary endpoint policy, then stops before user-scoped preview
@@ -45,6 +49,37 @@ reading path and a route-by-question table — lives under
 - Target framework: `net9.0`
 - .NET SDK: `9.0.317`
 - Plugin version: `1.0.0.0`
+
+## Frame Timeline API
+
+An authenticated playback client may request the current Frame Timeline for the
+default Item-ID source:
+
+```http
+GET /TrickplayCropper/Videos/{ItemId}/FrameTimeline
+```
+
+or select an alternate source already present in that user's playback Media Sources:
+
+```http
+GET /TrickplayCropper/Videos/{ItemId}/FrameTimeline?MediaSourceId={MediaSourceId}
+```
+
+A successful response is `200 application/json` with no validators and exactly:
+
+```json
+{"intervalTicks":100000000,"frameCount":120}
+```
+
+Clients may retain that response for the current playback and calculate
+`min(positionTicks / intervalTicks, frameCount - 1)`. Every Timeline request repeats
+the full current-user visibility, playback, membership, and Source Video checks and
+one authoritative generated-metadata read. It uses `Cache-Control: private, no-cache`
+and does no Source Sprite, Preview Cache, conditional representation, or encoding work.
+
+The current Preview GET still accepts `PositionTicks`, and the Trickplay Frame Probe
+HEAD remains available. Direct Frame Index Preview requests replace those contracts in
+the following delivery slice; this Timeline does not authorize or version them.
 
 ## Install, update, and roll back
 

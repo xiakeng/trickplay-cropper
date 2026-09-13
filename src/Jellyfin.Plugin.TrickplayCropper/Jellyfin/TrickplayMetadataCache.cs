@@ -37,6 +37,20 @@ internal sealed class TrickplayMetadataCache
     }
 
     /// <summary>
+    /// Reads one authoritative generated-metadata snapshot without observing or publishing it.
+    /// </summary>
+    public async Task<TrickplayMetadataResolution> GetForFrameTimelineAsync(
+        Guid sourceVideoId,
+        int selectedResolution,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Task<Dictionary<int, TrickplayInfo>> query = trickplayManager.GetTrickplayResolutions(sourceVideoId);
+        Dictionary<int, TrickplayInfo> resolutions = await query.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return ResolveFrameTimeline(selectedResolution, resolutions);
+    }
+
+    /// <summary>
     /// Reuses a current observation for a Trickplay Frame Probe or reads an authoritative replacement.
     /// </summary>
     public Task<TrickplayMetadataResolution> GetForProbeAsync(
@@ -211,6 +225,44 @@ internal sealed class TrickplayMetadataCache
         }
 
         ValidateMetadata(metadata, selectedResolution, resolutions.Keys);
+        return new TrickplayMetadataResolution.Available(metadata);
+    }
+
+    private static TrickplayMetadataResolution ResolveFrameTimeline(
+        int selectedResolution,
+        IReadOnlyDictionary<int, TrickplayInfo> resolutions)
+    {
+        Dictionary<int, TrickplayMetadata> snapshot = CopyMetadata(resolutions);
+        if (snapshot.Count == 0)
+        {
+            return new TrickplayMetadataResolution.NotFound(PreviewUnavailableReason.NoGeneratedMetadata);
+        }
+
+        if (!snapshot.TryGetValue(selectedResolution, out TrickplayMetadata? metadata))
+        {
+            return new TrickplayMetadataResolution.NotFound(PreviewUnavailableReason.SelectedResolutionMissing);
+        }
+
+        try
+        {
+            metadata.ValidateFrameTimeline();
+            if (metadata.FrameWidth != selectedResolution)
+            {
+                throw new InvalidTrickplayMetadataException(
+                    metadata,
+                    "FrameWidthMatchesResolutionKey",
+                    metadata.FrameWidth);
+            }
+        }
+        catch (InvalidTrickplayMetadataException failure)
+        {
+            failure.Configuration = new PreviewConfigurationDiagnostics
+            {
+                GeneratedKeys = snapshot.Keys.Order().ToArray(),
+            };
+            throw;
+        }
+
         return new TrickplayMetadataResolution.Available(metadata);
     }
 

@@ -2,7 +2,7 @@
 
 - Status: Approved in GitHub issue #56; Frame Probe authorization, GET
   response, and metadata-freshness amendments approved in GitHub issues
-  #90, #92, #93, and #94
+  #90, #92, #93, and #94; Frame Timeline transition amended in GitHub issue #156
 - Source map: GitHub issue #43
 - Implementation tracker: GitHub issue #64
 - Baseline: v1.0.0.0
@@ -16,6 +16,7 @@ stage of Trickplay Cropper. It extends the completed v1 server plugin with:
 
 - source-specific adaptive selection from Jellyfin's current Trickplay
   Resolution Targets;
+- an authorized Frame Timeline calculation model for per-playback client use;
 - a HEAD-based Trickplay Frame Probe on the existing Preview route;
 - bounded-lifetime generated-metadata observations shared with GET;
 - stable, structured Debug observability for cache and concurrency behavior;
@@ -137,6 +138,50 @@ set, and the matched Media Source's Video Stream width is the normalization inpu
 HEAD success establishes calculation availability only. It does not establish
 visibility, playback permission, representation availability, or that GET will succeed.
 
+### 3.3 Frame Timeline transition
+
+This delivery stage also exposes:
+
+```http
+GET /TrickplayCropper/Videos/{ItemId}/FrameTimeline
+```
+
+`MediaSourceId` is an optional GUID and defaults to `ItemId`. Typed ASP.NET GUID
+binding rejects malformed route or query values with `400`. Native authentication and
+the complete current-user GET boundary apply: resolve the current user, conceal an
+invisible logical Item, require `PlayAccess.Full` on that Item, prove exact membership
+in that user's playback Media Sources, and require the selected Source Video to remain
+visible. Do not perform a second playback-policy decision on the Source Video. An
+authenticated userless API key is forbidden.
+
+After authorization, the request copies the current targets, applies sections 4.1 and
+4.2, and requires the exact generated row. It performs one authoritative generated-
+metadata read and neither consumes nor publishes a Source Facts Observation or
+Generated Metadata Observation. Missing content or no configured target is `404`;
+invalid configuration, a contradictory row, or non-positive required Timeline data is
+`500`.
+
+Success is `200 application/json` with `Cache-Control: private, no-cache` and exactly
+two lower-camel-case properties:
+
+```json
+{"intervalTicks":100000000,"frameCount":120}
+```
+
+`intervalTicks` is `checked((long)Interval * TimeSpan.TicksPerMillisecond)` and
+`frameCount` is the generated `ThumbnailCount`, not a selected Frame Index. Both are
+positive. The endpoint ignores `If-None-Match`, emits no `ETag` or `Last-Modified`, and
+never returns `304`. It performs no Source Sprite lookup, Preview Cache access,
+conditional representation processing, crop, or encoding.
+
+A playback client may retain one Timeline for the logical Item and selected Media
+Source for that playback and calculate
+`min(positionTicks / intervalTicks, frameCount - 1)` locally. The Timeline is not
+permission evidence, a Sprite-availability promise, a representation version, or a
+coherence token. Until the following delivery stage switches Preview to direct Frame
+Index input, the existing `PositionTicks` Preview and Trickplay Frame Probe contracts
+in this specification remain in force.
+
 ## 4. Selected Trickplay Resolution
 
 ### 4.1 Configuration snapshot
@@ -197,6 +242,11 @@ observation. A concurrent configuration or generation change may therefore produ
 ordinary not-found or internal-error outcome. Whether the observation is loaded or
 reused follows the policy below.
 
+The Frame Timeline exception is defined in section 3.3: it requires only the selected
+row identity, positive `Interval`, and positive `ThumbnailCount`; Preview-only height
+and tile geometry do not affect its calculation model. A non-positive Timeline count
+is invalid server data (`500`), not an observation-backed unavailable result.
+
 ### 4.4 Generated metadata observation freshness
 
 Cache immutable generated metadata by effective Source Video GUID and exact Selected
@@ -247,6 +297,9 @@ required.
 This slice adds no capacity limit, load queue or concurrency bound, overload status,
 same-key coalescing, configuration/library event invalidation, or filesystem polling.
 Source-input caching follows section 4.6 with separate age and publication state.
+
+Frame Timeline requests do not participate in this observation policy. Each request
+performs one authoritative metadata read after its own current-user source checks.
 
 ### 4.5 Frame Index
 
@@ -756,6 +809,13 @@ malformed inputs, every status, exact present and absent headers, ignored
 
 Test the public Trickplay Frame Probe contract rather than internal shared
 pipeline stage methods.
+
+At the same real-Kestrel HTTP seam, prove the Frame Timeline's exact two-field JSON,
+including a valid tick value beyond 32-bit range; default and alternate source
+authorization; GUID binding and the `401`/`403`/`404`/`500` mapping; private no-cache
+headers with no validators or conditional `304`; one authoritative metadata read per
+request; no observation publication; and absence of Source Sprite and Preview Cache
+work. Do not add a parallel test host or test private helper layout.
 
 Add one real-Kestrel automated seam that proves an empty HEAD body for every
 success and failure status. TestServer alone is insufficient for transport-level
