@@ -1,7 +1,7 @@
 # Tooling map
 
-Three workflows gate and ship the repository, and a fourth keeps business-documentation
-analysis pending; four console tools support them and the manual Integration Harness.
+Three workflows gate and ship the repository; four console tools support them and the
+manual Integration Harness.
 The build manifest `src/Jellyfin.Plugin.TrickplayCropper/build.yaml` is the single
 version source for release automation. Test locations are on the [tests map](tests.md).
 
@@ -21,10 +21,11 @@ manually invoked, no-mock verification against the local Jellyfin host.
 
 | Target | Key symbols | Responsibility |
 |---|---|---|
-| [HarnessApplication.cs](../../tools/TrickplayCropper.IntegrationHarness/HarnessApplication.cs) | `RunAsync` | Modes (`--check`, `--verify-restoration`), input parsing, run sequencing |
-| [SmokeCases.cs](../../tools/TrickplayCropper.IntegrationHarness/SmokeCases.cs) | `RunAsync` | Invalid token, concealed GET, playback boundaries |
-| [ScrubStorm.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStorm.cs) | `RunAsync`, `VerifyQuiescenceAsync` | Coordinated HEAD/GET storm |
-| [ScrubStormReport.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStormReport.cs) | `WriteAsync`, `ToMarkdown` | Client-observed statistics and the gitignored Markdown report |
+| [HarnessApplication.cs](../../tools/TrickplayCropper.IntegrationHarness/HarnessApplication.cs) | `RunAsync` | Modes (`--check`, `--verify-restoration`), input parsing, build/deploy/restore sequencing |
+| [PlaybackMetadata.cs](../../tools/TrickplayCropper.IntegrationHarness/PlaybackMetadata.cs) | `ReadAsync`, `ReadTimelineAsync` | Independent Jellyfin metadata oracle and one retained Frame Timeline per Item |
+| [SmokeCases.cs](../../tools/TrickplayCropper.IntegrationHarness/SmokeCases.cs) | `RunAsync` | Invalid token, concealed GET, Timeline agreement, and direct-index boundaries |
+| [ScrubStorm.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStorm.cs) | `RunAsync`, `VerifyQuiescenceAsync` | Coordinated direct Preview GET storm and cache/Debug reconciliation |
+| [ScrubStormReport.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStormReport.cs) | `SendAsync`, `WriteAsync`, `ToMarkdown` | GET/cache outcome statistics and the gitignored Markdown report |
 | [DeploymentCycle.cs](../../tools/TrickplayCropper.IntegrationHarness/DeploymentCycle.cs) | `RunAsync` | Prepare, verify, and restore around each verification run |
 | [host_operation.py](../../tools/TrickplayCropper.IntegrationHarness/host_operation.py) | prepare, restore | Privileged deployment and logging restoration |
 | [LocalJellyfin.cs](../../tools/TrickplayCropper.IntegrationHarness/LocalJellyfin.cs) | `ValidateAsync`, `WaitForHealthAsync` | Read-only host gates and deployment verification |

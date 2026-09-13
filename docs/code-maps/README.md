@@ -1,6 +1,6 @@
 # Code Maps
 
-Documents are based on commit '7d7402e5f1bce03b80aeb1f4587cf6e676c92176'
+Documents are based on commit 'a0c24f109cb3bed28d970e6cad03f4c5c0a1f7ae'
 
 Compact navigation for contributors and coding agents: each map names repository
 targets, key symbols, responsibilities, relationships, and test entry points, so a
@@ -10,7 +10,7 @@ directly from the current code, tests, workflows, and repository structure.
 
 | Map | Answers |
 |---|---|
-| [Request paths](request-paths.md) | How a GET or Trickplay Frame Probe request travels from route to response |
-| [Caching](caching.md) | Where Preview Cache Coordination, both observation caches, and cleanup live |
+| [Request paths](request-paths.md) | How Frame Timeline and Preview GET requests travel from route to response |
+| [Caching](caching.md) | Where Preview Cache Coordination, disk entries, and cleanup live |
 | [Tests](tests.md) | Which suite and entry point proves which behavior |
-| [Tooling](tooling.md) | Where the Integration Harness and the build, release, and analysis tooling live |
+| [Tooling](tooling.md) | Where the Integration Harness and the build and release tooling live |
