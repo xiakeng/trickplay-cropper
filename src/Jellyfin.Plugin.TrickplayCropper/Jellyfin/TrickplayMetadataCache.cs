@@ -61,20 +61,6 @@ internal sealed class TrickplayMetadataCache
     }
 
     /// <summary>
-    /// Reads one authoritative generated-metadata row without publishing an observation.
-    /// </summary>
-    public async Task<TrickplayMetadataResolution> ReadAuthoritativeAsync(
-        Guid sourceVideoId,
-        int selectedResolution,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        Task<Dictionary<int, TrickplayInfo>> query = trickplayManager.GetTrickplayResolutions(sourceVideoId);
-        Dictionary<int, TrickplayInfo> resolutions = await query.WaitAsync(cancellationToken).ConfigureAwait(false);
-        return Resolve(selectedResolution, CopyMetadata(resolutions));
-    }
-
-    /// <summary>
     /// Reads one authoritative row for a Frame Timeline without requiring crop geometry.
     /// </summary>
     public async Task<TrickplayMetadataResolution> ReadAuthoritativeTimelineAsync(
