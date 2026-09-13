@@ -14,7 +14,7 @@ public sealed class TrickplayFrameTimelineHttpSpecs
         {
             MetadataIntervalMilliseconds = 300_000,
         };
-        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(scenario);
 
         using HttpResponseMessage response = await fixture.GetFrameTimelineAsync();
 
@@ -53,6 +53,25 @@ public sealed class TrickplayFrameTimelineHttpSpecs
 
         Assert.Equal(expectedStatus, response.StatusCode);
         Assert.Equal(0, fixture.Services.GetRequiredService<PreviewScenario>().MetadataReadCount);
+    }
+
+    [Fact]
+    public async Task SupportsAlternateSourceAndRejectsMalformedBinding()
+    {
+        await using PreviewHostFixture alternate = await PreviewHostFixture.CreateWithKestrelAsync(
+            new PreviewScenario { UsesAlternateSource = true });
+        using (HttpResponseMessage response = await alternate.GetFrameTimelineAsync())
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(1, alternate.Services.GetRequiredService<PreviewScenario>().MetadataReadCount);
+        }
+
+        await using PreviewHostFixture malformed = await PreviewHostFixture.CreateWithKestrelAsync(
+            new PreviewScenario());
+        using HttpResponseMessage badRequest = await malformed.GetFrameTimelineRawAsync(
+            $"/TrickplayCropper/Videos/{PreviewHttpTestValues.ItemId:D}/FrameTimeline?MediaSourceId=not-a-guid");
+        Assert.Equal(HttpStatusCode.BadRequest, badRequest.StatusCode);
+        Assert.Equal(0, malformed.Services.GetRequiredService<PreviewScenario>().MetadataReadCount);
     }
 
     [Fact]
