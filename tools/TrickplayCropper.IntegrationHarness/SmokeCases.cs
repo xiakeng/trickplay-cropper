@@ -6,18 +6,22 @@ namespace TrickplayCropper.IntegrationHarness;
 /// <summary>Checks authentication, concealment, Timeline, and direct-index previews.</summary>
 public sealed class SmokeCases(HttpClient http, TextWriter output)
 {
-    public async Task RunAsync(HarnessInput input, CancellationToken cancellationToken)
+    public async Task<IReadOnlyDictionary<Guid, PlaybackTimeline>> RunAsync(
+        HarnessInput input,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(input);
         await VerifyAuthenticationAsync(input.PlayableItems[0], cancellationToken).ConfigureAwait(false);
         await VerifyConcealmentAsync(input.InvisibleItem, cancellationToken).ConfigureAwait(false);
+        Dictionary<Guid, PlaybackTimeline> timelines = [];
         foreach ((Guid item, int ordinal) in input.PlayableItems.Select((item, index) => (item, index + 1)))
         {
             PlaybackMetadata metadata = await PlaybackMetadata.ReadAsync(http, item, cancellationToken).ConfigureAwait(false);
-            (long intervalTicks, int frameCount) = await PlaybackMetadata.ReadTimelineAsync(http, item, cancellationToken)
+            PlaybackTimeline timeline = await PlaybackMetadata.ReadTimelineAsync(http, item, cancellationToken)
                 .ConfigureAwait(false);
-            Require(intervalTicks == checked((long)metadata.Interval * TimeSpan.TicksPerMillisecond)
-                && frameCount == metadata.Count, "Frame Timeline disagrees with independent metadata.");
+            Require(timeline.IntervalTicks == checked((long)metadata.Interval * TimeSpan.TicksPerMillisecond)
+                && timeline.FrameCount == metadata.Count, "Frame Timeline disagrees with independent metadata.");
+            timelines.Add(item, timeline);
             output.WriteLine($"Reading Frame Timeline for Item {ordinal}: count={metadata.Count}, interval={metadata.Interval}ms.");
             foreach (int frameIndex in new[] { 0, metadata.LastFrameIndex })
             {
@@ -29,6 +33,8 @@ public sealed class SmokeCases(HttpClient http, TextWriter output)
                 PreviewRoute(item, metadata.Count), cancellationToken).ConfigureAwait(false);
             Require(outOfRange.StatusCode == HttpStatusCode.BadRequest, "FrameIndex == frameCount must return 400.");
         }
+
+        return timelines;
     }
 
     private async Task VerifyAuthenticationAsync(Guid item, CancellationToken cancellationToken)

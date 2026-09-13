@@ -9,7 +9,7 @@ internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int
 {
     public int LastFrameIndex => Count - 1;
 
-    public static async Task<(long IntervalTicks, int FrameCount)> ReadTimelineAsync(
+    public static async Task<PlaybackTimeline> ReadTimelineAsync(
         HttpClient http,
         Guid item,
         CancellationToken cancellationToken)
@@ -31,7 +31,7 @@ internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int
             throw new InvalidDataException("Frame Timeline must contain exactly intervalTicks and frameCount.");
         }
 
-        return (root.GetProperty("intervalTicks").GetInt64(), root.GetProperty("frameCount").GetInt32());
+        return new PlaybackTimeline(root.GetProperty("intervalTicks").GetInt64(), root.GetProperty("frameCount").GetInt32());
     }
 
     public static async Task<PlaybackMetadata> ReadAsync(HttpClient http, Guid item, CancellationToken cancellationToken)
@@ -97,3 +97,5 @@ internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
     }
 }
+
+public sealed record PlaybackTimeline(long IntervalTicks, int FrameCount);

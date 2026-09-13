@@ -58,6 +58,11 @@ internal sealed class JellyfinPreviewContextResolver : IPreviewContextResolver
             return MapAuthorization(authorization);
         }
 
+        if (query.FrameIndex < 0)
+        {
+            return new PreviewContextResolution.BadRequest();
+        }
+
         TrickplayFrameCalculationResolution calculation = await calculationResolver
             .ResolveForPreviewAsync(query, resolved.NormalizationSourceWidth, cancellationToken)
             .ConfigureAwait(false);

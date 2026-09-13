@@ -13,10 +13,14 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
     public ScrubStormReport Report { get; } = new();
 
     /// <summary>Runs two replay rounds for each approved shape and enforces every hard acceptance condition.</summary>
-    public async Task RunAsync(HarnessInput input, CancellationToken cancellationToken)
+    public async Task RunAsync(
+        HarnessInput input,
+        IReadOnlyDictionary<Guid, PlaybackTimeline> timelines,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(input);
-        PreviewRequest[] subjects = await ReadSubjectsAsync(input, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(timelines);
+        PreviewRequest[] subjects = await ReadSubjectsAsync(input, timelines, cancellationToken).ConfigureAwait(false);
         StormObservations observations = new(await CacheTreeSnapshot.ReadAsync(cacheRoot, cancellationToken).ConfigureAwait(false));
         DateTimeOffset since = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         output.WriteLine("Checking Scrub Storm: seed=0x5EEDC0DE, clients=2, lanes/client=3, positions/lane/Item=12, rounds/shape=2.");
@@ -38,16 +42,18 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
         output.WriteLine($"PASS Scrub Storm: {observations.IdentityCount} distinct Preview identities; canonical JPEGs and no temporary residue.");
     }
 
-    private async Task<PreviewRequest[]> ReadSubjectsAsync(HarnessInput input, CancellationToken cancellationToken)
+    private async Task<PreviewRequest[]> ReadSubjectsAsync(
+        HarnessInput input,
+        IReadOnlyDictionary<Guid, PlaybackTimeline> timelines,
+        CancellationToken cancellationToken)
     {
         List<PreviewRequest> subjects = [];
         foreach (Guid item in input.PlayableItems)
         {
             PlaybackMetadata metadata = await PlaybackMetadata.ReadAsync(http, item, cancellationToken).ConfigureAwait(false);
-            (long intervalTicks, int frameCount) = await PlaybackMetadata.ReadTimelineAsync(http, item, cancellationToken)
-                .ConfigureAwait(false);
-            if (intervalTicks != checked((long)metadata.Interval * TimeSpan.TicksPerMillisecond)
-                || frameCount != metadata.Count)
+            if (!timelines.TryGetValue(item, out PlaybackTimeline? timeline)
+                || timeline.IntervalTicks != checked((long)metadata.Interval * TimeSpan.TicksPerMillisecond)
+                || timeline.FrameCount != metadata.Count)
             {
                 throw new InvalidDataException("Frame Timeline disagrees with independent metadata.");
             }

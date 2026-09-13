@@ -52,6 +52,11 @@ public sealed class TrickplayPreviewGetResponseHttpSpecs
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
+        using SKBitmap decoded = SKBitmap.Decode(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
+        SKColor center = decoded.GetPixel(160, 90);
+        Assert.InRange(center.Red, 240, 255);
+        Assert.InRange(center.Green, 240, 255);
+        Assert.InRange(center.Blue, 0, 15);
     }
 
     [Fact]
