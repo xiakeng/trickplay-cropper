@@ -16,6 +16,7 @@ stage of Trickplay Cropper. It extends the completed v1 server plugin with:
 
 - source-specific adaptive selection from Jellyfin's current Trickplay
   Resolution Targets;
+- an authorized client-cached Frame Timeline for each playback source;
 - a HEAD-based Trickplay Frame Probe on the existing Preview route;
 - bounded-lifetime generated-metadata observations shared with GET;
 - stable, structured Debug observability for cache and concurrency behavior;
@@ -56,9 +57,9 @@ The following v1 decisions remain authoritative:
 - Preview Cache Entries remain derived, server-local, and safe to discard under
   the existing cleanup policy.
 
-The implementation uses the exact source-specific policy below. GET is the
-user-authorized representation operation; HEAD is a user-independent calculation
-operation after Jellyfin's ordinary endpoint policy accepts the request.
+The implementation uses the exact source-specific policy below. Frame Timeline and
+GET are user-authorized operations; HEAD is a user-independent calculation operation
+after Jellyfin's ordinary endpoint policy accepts the request.
 
 ## 3. Request fronts and shared Frame Index calculation
 
@@ -95,6 +96,30 @@ The effective request values are:
 
 There is no `Width` parameter. The caller cannot select a target or generated
 width.
+
+The Frame Timeline route is:
+
+```http
+/TrickplayCropper/Videos/{ItemId}/FrameTimeline
+```
+
+It accepts the same optional `MediaSourceId` source-selection value, defaults it
+to `ItemId`, and performs the full current-user authorization boundary before
+reading one authoritative generated-metadata row. It has no playback-position
+parameter and does not construct a synthetic one. A successful response contains
+exactly the following lower-camel-case JSON properties:
+
+```json
+{"intervalTicks": 100000000, "frameCount": 4}
+```
+
+`intervalTicks` is a checked 64-bit conversion from the positive generated
+metadata interval in milliseconds; `frameCount` is the positive generated
+metadata `ThumbnailCount`. The response is `200 application/json` with
+`Cache-Control: private, no-cache`, omits ETag and Last-Modified, and ignores
+conditional representation headers. It performs no Source Sprite lookup, Preview
+Cache access, conditional processing, or encoding. A later Preview repeats the
+authorization boundary and does not treat the Timeline as permission.
 
 GET keeps typed ASP.NET binding. HEAD uses nullable raw strings without
 required-binding metadata, then parses at the action or probe boundary. The two
@@ -335,7 +360,27 @@ the compatible `preview-v1` namespace; there is no migration or proactive
 deletion when configuration changes. Unselected compatible entries age out
 through normal cleanup.
 
-## 7. Trickplay Frame Probe contract
+## 7. Frame Timeline and Trickplay Frame Probe contracts
+
+### 7.1 Frame Timeline contract
+
+The Frame Timeline is fetched once per playback subject and selected Media
+Source, then retained by the client for local frame selection during that
+playback. It is not a server-side authorization token and has no coherence or
+freshness promise for later Preview requests. Clients repeat the Timeline request
+when playback changes its logical Item or Media Source and repeat Preview
+authorization for every frame request.
+
+The successful response is a body-bearing `200` JSON response with exactly
+`intervalTicks` and `frameCount`. It uses `Cache-Control: private, no-cache` and
+does not emit ETag or Last-Modified. Missing or concealed content, missing exact
+metadata, or no configured target maps to `404`; malformed identifiers map to
+`400`; authentication and playback boundaries retain the `401`/`403` distinction;
+invalid configuration, invalid required metadata, arithmetic overflow, and host
+failures map to `500`. The Timeline path performs no Source Sprite, Preview Cache,
+conditional-representation, or encoder work.
+
+### 7.2 Trickplay Frame Probe contract
 
 Add HTTP HEAD on the existing Preview route as the Trickplay Frame Probe. A
 dedicated `ITrickplayFrameProbe` accepts a normalized Preview query and cancellation

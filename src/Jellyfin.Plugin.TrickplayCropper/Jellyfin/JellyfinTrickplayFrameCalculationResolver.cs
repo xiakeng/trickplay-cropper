@@ -30,7 +30,11 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         int? normalizationSourceWidth,
         CancellationToken cancellationToken)
     {
-        var request = new CalculationRequest(query, normalizationSourceWidth, MetadataAccess.Preview);
+        var request = new CalculationRequest(
+            query.ResolvedMediaSourceId,
+            normalizationSourceWidth,
+            MetadataAccess.Preview,
+            query);
         return ResolveAsync(request, cancellationToken);
     }
 
@@ -40,7 +44,25 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         int? normalizationSourceWidth,
         CancellationToken cancellationToken)
     {
-        var request = new CalculationRequest(query, normalizationSourceWidth, MetadataAccess.Probe);
+        var request = new CalculationRequest(
+            query.ResolvedMediaSourceId,
+            normalizationSourceWidth,
+            MetadataAccess.Probe,
+            query);
+        return ResolveAsync(request, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<TrickplayFrameCalculationResolution> ResolveForTimelineAsync(
+        FrameTimelineQuery query,
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken)
+    {
+        var request = new CalculationRequest(
+            query.ResolvedMediaSourceId,
+            normalizationSourceWidth,
+            MetadataAccess.Timeline,
+            null);
         return ResolveAsync(request, cancellationToken);
     }
 
@@ -69,7 +91,9 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
                 request,
                 selectedResolution.Value,
                 cancellationToken).ConfigureAwait(false);
-            return SelectFrame(request.Query, metadata);
+            return request.Access == MetadataAccess.Timeline
+                ? SelectTimeline(metadata)
+                : SelectFrame(request.Query!, metadata);
         }
         catch (InvalidTrickplayMetadataException failure)
         {
@@ -89,11 +113,15 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         return request.Access switch
         {
             MetadataAccess.Preview => metadataCache.GetForPreviewAsync(
-                request.Query.ResolvedMediaSourceId,
+                request.SourceVideoId,
                 selectedResolution,
                 cancellationToken),
             MetadataAccess.Probe => metadataCache.GetForProbeAsync(
-                request.Query.ResolvedMediaSourceId,
+                request.SourceVideoId,
+                selectedResolution,
+                cancellationToken),
+            MetadataAccess.Timeline => metadataCache.ReadAuthoritativeAsync(
+                request.SourceVideoId,
                 selectedResolution,
                 cancellationToken),
             _ => throw new InvalidOperationException($"Unknown metadata access {request.Access}."),
@@ -147,14 +175,32 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         };
     }
 
+    private static TrickplayFrameCalculationResolution SelectTimeline(
+        TrickplayMetadataResolution metadataResolution)
+    {
+        return metadataResolution switch
+        {
+            TrickplayMetadataResolution.Available available =>
+                new TrickplayFrameCalculationResolution.Selected(available.Metadata, 0),
+            TrickplayMetadataResolution.NotFound { Reason: PreviewUnavailableReason.NoThumbnails } =>
+                throw new InvalidOperationException("Generated timeline metadata contains no frames."),
+            TrickplayMetadataResolution.NotFound notFound => new TrickplayFrameCalculationResolution.NotFound(
+                notFound.Reason),
+            _ => throw new InvalidOperationException(
+                $"Unknown Trickplay metadata resolution {metadataResolution.GetType().Name}."),
+        };
+    }
+
     private enum MetadataAccess
     {
         Preview,
         Probe,
+        Timeline,
     }
 
     private sealed record CalculationRequest(
-        PreviewQuery Query,
+        Guid SourceVideoId,
         int? NormalizationSourceWidth,
-        MetadataAccess Access);
+        MetadataAccess Access,
+        PreviewQuery? Query);
 }

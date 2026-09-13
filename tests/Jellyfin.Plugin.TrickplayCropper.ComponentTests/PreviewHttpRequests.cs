@@ -33,6 +33,18 @@ internal static class PreviewHttpRequests
         return SendAsync(fixture, HttpMethod.Get, ifNoneMatch, null, CancellationToken.None);
     }
 
+    public static Task<HttpResponseMessage> GetFrameTimelineAsync(this PreviewHostFixture fixture)
+    {
+        PreviewScenario scenario = fixture.Services.GetRequiredService<PreviewScenario>();
+        string mediaSourceQuery = scenario.UsesAlternateSource
+            ? $"?MediaSourceId={AlternateSourceId.ToString(scenario.MediaSourceIdFormat)}"
+            : string.Empty;
+        string path = string.Create(
+            CultureInfo.InvariantCulture,
+            $"/TrickplayCropper/Videos/{scenario.LogicalItemId:D}/FrameTimeline{mediaSourceQuery}");
+        return SendAsync(fixture, HttpMethod.Get, null, path, CancellationToken.None);
+    }
+
     public static Task<HttpResponseMessage> HeadAsync(this PreviewHostFixture fixture)
     {
         return fixture.HeadAsync(CancellationToken.None);

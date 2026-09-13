@@ -60,6 +60,22 @@ internal sealed class TrickplayMetadataCache
         return GetAsync(request, cancellationToken);
     }
 
+    /// <summary>
+    /// Reads one authoritative metadata snapshot without publishing or consulting observations.
+    /// </summary>
+    public async Task<TrickplayMetadataResolution> ReadAuthoritativeAsync(
+        Guid sourceVideoId,
+        int selectedResolution,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Dictionary<int, TrickplayInfo> resolutions = await trickplayManager
+            .GetTrickplayResolutions(sourceVideoId)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return Resolve(selectedResolution, CopyMetadata(resolutions));
+    }
+
     private async Task<TrickplayMetadataResolution> GetAsync(
         MetadataRequest request,
         CancellationToken cancellationToken)

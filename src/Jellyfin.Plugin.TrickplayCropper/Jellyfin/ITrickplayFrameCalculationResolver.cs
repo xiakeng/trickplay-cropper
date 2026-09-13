@@ -30,4 +30,12 @@ internal interface ITrickplayFrameCalculationResolver
         PreviewQuery query,
         int? normalizationSourceWidth,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads authoritative metadata for a Frame Timeline without using observations.
+    /// </summary>
+    Task<TrickplayFrameCalculationResolution> ResolveForTimelineAsync(
+        FrameTimelineQuery query,
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken);
 }

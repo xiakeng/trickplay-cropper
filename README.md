@@ -1,11 +1,19 @@
 # Trickplay Cropper
 
-Trickplay Cropper is a Jellyfin server plugin that exposes authenticated,
-single-frame Trickplay Previews from Jellyfin-owned Source Sprites.
+Trickplay Cropper is a Jellyfin server plugin that exposes authenticated
+client-side Frame Timelines and single-frame Trickplay Previews from
+Jellyfin-owned Source Sprites.
 
-The plugin serves one JPEG frame of a video for an authorized playback position,
-cropped from trickplay data Jellyfin already generated. It never generates,
-modifies, or repairs that data. What it adds on top:
+The plugin serves one calculation timeline for an authorized playback source and
+one JPEG frame for an authorized playback position, cropped from trickplay data
+Jellyfin already generated. It never generates, modifies, or repairs that data.
+What it adds on top:
+
+- **Client-cached Frame Timelines.** `GET /TrickplayCropper/Videos/{itemId}/FrameTimeline`
+  returns exactly `intervalTicks` and `frameCount` after the same current-user,
+  logical-item, Media Source membership, and Source Video visibility checks as a
+  Preview. The response is private and no-cache; clients use it for local Frame
+  Index selection, while every later Preview request repeats authorization.
 
 - **Adaptive resolution selection.** Every request derives the Selected Trickplay
   Resolution from the server's current Trickplay Resolution Targets — minimum
@@ -14,7 +22,8 @@ modifies, or repairs that data. What it adds on top:
 - **The Trickplay Frame Probe.** A bodyless HTTP HEAD operation answers *which
   frame does this position select?* for an Item and real Media Source accepted by
   Jellyfin's ordinary endpoint policy, then stops before user-scoped preview
-  authorization or any image work.
+  authorization or any image work. It remains available until the next-stage
+  direct Frame Index slice retires it.
 - **Bounded source and metadata reuse.** A warm HEAD reuses immutable Item/source
   membership, matched-source width, and generated metadata for 30 minutes; explicit
   absence lives for 5 minutes. GET always rechecks current user authority and source

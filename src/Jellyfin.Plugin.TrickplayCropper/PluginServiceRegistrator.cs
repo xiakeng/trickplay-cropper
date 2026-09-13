@@ -32,8 +32,11 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     private static void RegisterPreviewServices(IServiceCollection serviceCollection)
     {
         serviceCollection.AddSingleton<ITrickplayPreview, TrickplayPreview>();
+        serviceCollection.AddSingleton<IFrameTimeline, FrameTimeline>();
         serviceCollection.AddSingleton<ITrickplayFrameProbe, TrickplayFrameProbe>();
-        serviceCollection.AddSingleton<IPreviewContextResolver, JellyfinPreviewContextResolver>();
+        serviceCollection.AddSingleton<JellyfinPreviewContextResolver>();
+        serviceCollection.AddSingleton<IPreviewContextResolver>(
+            static services => services.GetRequiredService<JellyfinPreviewContextResolver>());
         serviceCollection.AddSingleton<TrickplaySourceFactsCache>();
         serviceCollection.AddSingleton<ITrickplayFrameProbeContextResolver, JellyfinTrickplayFrameProbeContextResolver>();
         serviceCollection.AddSingleton<TrickplayMetadataCache>();

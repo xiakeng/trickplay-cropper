@@ -4,6 +4,7 @@ using Jellyfin.Plugin.TrickplayCropper.Preview;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Api;
@@ -55,6 +56,39 @@ public sealed class TrickplayPreviewController : ControllerBase
             cancellationToken).ConfigureAwait(false);
 
         return MapOutcome(outcome);
+    }
+
+    /// <summary>
+    /// Gets the authorized calculation inputs for client-side Frame Index selection.
+    /// </summary>
+    [Authorize]
+    [HttpGet("~/TrickplayCropper/Videos/{itemId}/FrameTimeline")]
+    public async Task<IActionResult> GetFrameTimelineAsync(
+        [FromRoute] string? itemId,
+        [FromQuery] string? mediaSourceId,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(itemId, out Guid parsedItemId))
+        {
+            return BadRequest();
+        }
+
+        Guid? parsedMediaSourceId = null;
+        if (!string.IsNullOrEmpty(mediaSourceId))
+        {
+            if (!Guid.TryParse(mediaSourceId, out Guid parsedSourceId))
+            {
+                return BadRequest();
+            }
+
+            parsedMediaSourceId = parsedSourceId;
+        }
+
+        FrameTimelineOutcome outcome = await HttpContext.RequestServices.GetRequiredService<IFrameTimeline>().GetAsync(
+            new FrameTimelineQuery(parsedItemId, parsedMediaSourceId),
+            User,
+            cancellationToken).ConfigureAwait(false);
+        return MapFrameTimelineOutcome(outcome);
     }
 
     /// <summary>
@@ -131,6 +165,29 @@ public sealed class TrickplayPreviewController : ControllerBase
             TrickplayFrameProbeOutcome.InternalError => CreateBodylessResult(StatusCodes.Status500InternalServerError),
             _ => throw new InvalidOperationException($"Unknown Trickplay Frame Probe outcome {outcome.GetType().Name}."),
         };
+    }
+
+    private IActionResult MapFrameTimelineOutcome(FrameTimelineOutcome outcome)
+    {
+        return outcome switch
+        {
+            FrameTimelineOutcome.Success success => MapFrameTimelineSuccess(success),
+            FrameTimelineOutcome.BadRequest => BadRequest(),
+            FrameTimelineOutcome.Unauthorized => Unauthorized(),
+            FrameTimelineOutcome.Forbidden => Forbid(),
+            FrameTimelineOutcome.NotFound => NotFound(),
+            FrameTimelineOutcome.InternalError => StatusCode(StatusCodes.Status500InternalServerError),
+            _ => throw new InvalidOperationException(
+                $"Unknown Frame Timeline outcome {outcome.GetType().Name}."),
+        };
+    }
+
+    private OkObjectResult MapFrameTimelineSuccess(FrameTimelineOutcome.Success outcome)
+    {
+        Response.Headers.CacheControl = CacheControlHeaderValue;
+        Response.Headers.Remove(HeaderNames.ETag);
+        Response.Headers.Remove(HeaderNames.LastModified);
+        return Ok(new { intervalTicks = outcome.IntervalTicks, frameCount = outcome.FrameCount });
     }
 
     private EmptyResult CreateFrameIndexResult(int frameIndex)
