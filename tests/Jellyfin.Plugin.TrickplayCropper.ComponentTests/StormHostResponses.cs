@@ -8,6 +8,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 internal sealed class StormHostResponses(string root, string fault = "") : HttpMessageHandler
 {
+    private const string SourceStamp = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private readonly HttpMessageInvoker previews = new(new SmokeHostResponses(fault));
     private readonly SemaphoreSlim gate = new(1);
     private readonly StringBuilder log = new();
@@ -109,8 +110,7 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
             EventName = "TrickplayPreviewCacheDisposition",
             CacheDisposition = fault == "log-disposition" ? "Miss" : disposition == "MISS" ? "Miss" : "Hit",
         }));
-        string stamp = response.Headers.ETag!.Tag.AsSpan(1, 32).ToString();
-        string path = Path.Combine(root, item, "w0320", string.Concat("s000000-", stamp),
+        string path = Path.Combine(root, item, "w0320", string.Concat("s000000-", SourceStamp),
             FormattableString.Invariant($"f{frame:D10}.jpg"));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await File.WriteAllBytesAsync(path, await response.Content.ReadAsByteArrayAsync(cancellationToken), cancellationToken);

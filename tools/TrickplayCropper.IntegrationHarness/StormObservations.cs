@@ -74,9 +74,8 @@ internal sealed class StormObservations(IReadOnlyDictionary<string, byte[]> base
     private static string CanonicalPath(Response response)
     {
         PreviewRequest preview = response.Request;
-        string stamp = response.Tag.Substring(1, 32);
         return FormattableString.Invariant(
-            $"{preview.Item:N}/w{preview.Metadata.Width:D4}/s{preview.SpriteIndex:D6}-{stamp}/f{preview.FrameIndex:D10}.jpg");
+            $"{preview.Item:N}/w{preview.Metadata.Width:D4}/s{preview.SpriteIndex:D6}-*/f{preview.FrameIndex:D10}.jpg");
     }
 
     /// <summary>A verified GET with its request-wave ordinal for causal MISS-to-HIT checks.</summary>
