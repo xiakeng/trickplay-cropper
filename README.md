@@ -15,6 +15,10 @@ modifies, or repairs that data. What it adds on top:
   frame does this position select?* for an Item and real Media Source accepted by
   Jellyfin's ordinary endpoint policy, then stops before user-scoped preview
   authorization or any image work.
+- **The Frame Timeline.** An authenticated `GET /TrickplayCropper/Videos/{itemId}/FrameTimeline`
+  returns exactly the positive generated frame interval in Jellyfin ticks and frame count for
+  the selected Media Source. It performs the current-user authorization and one authoritative
+  metadata read, then stops before Source Sprite, Preview Cache, conditional, or encoder work.
 - **Bounded source and metadata reuse.** A warm HEAD reuses immutable Item/source
   membership, matched-source width, and generated metadata for 30 minutes; explicit
   absence lives for 5 minutes. GET always rechecks current user authority and source

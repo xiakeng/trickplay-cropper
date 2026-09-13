@@ -60,6 +60,34 @@ internal sealed class TrickplayMetadataCache
         return GetAsync(request, cancellationToken);
     }
 
+    /// <summary>
+    /// Reads one authoritative generated-metadata row without publishing an observation.
+    /// </summary>
+    public async Task<TrickplayMetadataResolution> ReadAuthoritativeAsync(
+        Guid sourceVideoId,
+        int selectedResolution,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Task<Dictionary<int, TrickplayInfo>> query = trickplayManager.GetTrickplayResolutions(sourceVideoId);
+        Dictionary<int, TrickplayInfo> resolutions = await query.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return Resolve(selectedResolution, CopyMetadata(resolutions));
+    }
+
+    /// <summary>
+    /// Reads one authoritative row for a Frame Timeline without requiring crop geometry.
+    /// </summary>
+    public async Task<TrickplayMetadataResolution> ReadAuthoritativeTimelineAsync(
+        Guid sourceVideoId,
+        int selectedResolution,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Task<Dictionary<int, TrickplayInfo>> query = trickplayManager.GetTrickplayResolutions(sourceVideoId);
+        Dictionary<int, TrickplayInfo> resolutions = await query.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return ResolveTimeline(selectedResolution, CopyMetadata(resolutions));
+    }
+
     private async Task<TrickplayMetadataResolution> GetAsync(
         MetadataRequest request,
         CancellationToken cancellationToken)
@@ -211,6 +239,34 @@ internal sealed class TrickplayMetadataCache
         }
 
         ValidateMetadata(metadata, selectedResolution, resolutions.Keys);
+        return new TrickplayMetadataResolution.Available(metadata);
+    }
+
+    private static TrickplayMetadataResolution ResolveTimeline(
+        int selectedResolution,
+        Dictionary<int, TrickplayMetadata> resolutions)
+    {
+        if (resolutions.Count == 0 || !resolutions.TryGetValue(selectedResolution, out TrickplayMetadata? metadata))
+        {
+            return new TrickplayMetadataResolution.NotFound(
+                resolutions.Count == 0
+                    ? PreviewUnavailableReason.NoGeneratedMetadata
+                    : PreviewUnavailableReason.SelectedResolutionMissing);
+        }
+
+        if (metadata.FrameWidth <= 0 || metadata.IntervalMilliseconds <= 0 || metadata.ThumbnailCount <= 0)
+        {
+            throw new InvalidTrickplayMetadataException(metadata, "TimelineInputsPositive", metadata.IntervalMilliseconds);
+        }
+
+        if (metadata.FrameWidth != selectedResolution)
+        {
+            throw new InvalidTrickplayMetadataException(
+                metadata,
+                "FrameWidthMatchesResolutionKey",
+                metadata.FrameWidth);
+        }
+
         return new TrickplayMetadataResolution.Available(metadata);
     }
 

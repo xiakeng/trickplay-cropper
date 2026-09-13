@@ -117,7 +117,7 @@ internal static class PreviewHttpMetadataFake
             TileWidth = 2,
             TileHeight = 2,
             ThumbnailCount = 4,
-            Interval = 10_000,
+            Interval = scenario.MetadataIntervalMilliseconds,
         };
         switch (availability)
         {

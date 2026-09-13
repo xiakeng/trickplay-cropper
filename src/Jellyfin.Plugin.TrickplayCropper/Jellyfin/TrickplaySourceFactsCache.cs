@@ -83,22 +83,33 @@ internal sealed class TrickplaySourceFactsCache
     /// <returns>The ordered read-start observation used if the request verifies source facts.</returns>
     public PreviewObservation BeginForPreview(PreviewQuery query)
     {
+        return BeginForPreview(query.ItemId, query.ResolvedMediaSourceId);
+    }
+
+    /// <summary>
+    /// Starts an authoritative source read for one logical Item and selected source.
+    /// </summary>
+    /// <param name="itemId">The logical Item identifier.</param>
+    /// <param name="sourceVideoId">The selected Source Video identifier.</param>
+    /// <returns>The ordered read-start observation.</returns>
+    public PreviewObservation BeginForPreview(Guid itemId, Guid sourceVideoId)
+    {
         while (true)
         {
-            ItemState item = items.GetOrAdd(query.ItemId, static _ => new ItemState());
-            ReadRegistration? registration = item.Reserve(query.ResolvedMediaSourceId);
+            ItemState item = items.GetOrAdd(itemId, static _ => new ItemState());
+            ReadRegistration? registration = item.Reserve(sourceVideoId);
             if (registration is not null)
             {
                 return new PreviewObservation(
                     this,
-                    query.ItemId,
-                    query.ResolvedMediaSourceId,
+                    itemId,
+                    sourceVideoId,
                     item,
                     registration,
                     CreateStamp());
             }
 
-            items.TryRemove(query.ItemId, item);
+            items.TryRemove(itemId, item);
         }
     }
 

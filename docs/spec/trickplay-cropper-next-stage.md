@@ -60,6 +60,25 @@ The implementation uses the exact source-specific policy below. GET is the
 user-authorized representation operation; HEAD is a user-independent calculation
 operation after Jellyfin's ordinary endpoint policy accepts the request.
 
+### Delivered in issue #156: Frame Timeline
+
+The authenticated `GET /TrickplayCropper/Videos/{itemId}/FrameTimeline` endpoint is the
+first implementation slice of the client-cached playback model described in issue #155.
+It accepts an optional GUID `MediaSourceId` (defaulting to `ItemId`) and returns exactly
+`intervalTicks` (a checked positive 64-bit conversion of the selected generated row's
+interval) and `frameCount` (the positive generated thumbnail count). It repeats the full
+current-user authorization and source-membership boundary already used by Preview, reads
+one authoritative generated-metadata row for the current Selected Trickplay Resolution, and
+returns `Cache-Control: private, no-cache` without ETag, Last-Modified, conditional handling,
+Source Sprite lookup, Preview Cache access, or encoding. Missing or concealed content and no
+configured target return `404`; malformed binding returns `400`; authentication and playback
+failures preserve `401`/`403`; invalid configuration, checked arithmetic, invalid metadata,
+or operational failures return `500`.
+
+The existing Preview and Trickplay Frame Probe behavior remains authoritative until the later
+direct Frame Index migration. This slice does not publish or reuse either observation cache for
+Timeline requests and does not make a Timeline response future authorization evidence.
+
 ## 3. Request fronts and shared Frame Index calculation
 
 GET and the Trickplay Frame Probe use separate request contexts. They converge only

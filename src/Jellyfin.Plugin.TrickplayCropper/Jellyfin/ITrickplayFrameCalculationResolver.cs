@@ -30,4 +30,16 @@ internal interface ITrickplayFrameCalculationResolver
         PreviewQuery query,
         int? normalizationSourceWidth,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves one authoritative generated-metadata row for a Frame Timeline.
+    /// </summary>
+    /// <param name="sourceVideoId">The authorized Source Video identifier.</param>
+    /// <param name="normalizationSourceWidth">The matched Media Source video-stream width.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <returns>The selected metadata or an expected unavailable result.</returns>
+    Task<TrickplayTimelineCalculationResolution> ResolveForTimelineAsync(
+        Guid sourceVideoId,
+        int? normalizationSourceWidth,
+        CancellationToken cancellationToken);
 }
