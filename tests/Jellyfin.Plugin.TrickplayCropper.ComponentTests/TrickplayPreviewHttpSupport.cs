@@ -113,8 +113,6 @@ internal static class TrickplayPreviewHttpSupport
             NotFoundCondition.NoConfiguredTarget => "NoConfiguredTarget",
             NotFoundCondition.GeneratedMetadataMissing => "NoGeneratedMetadata",
             NotFoundCondition.ExactMetadataMissing => "SelectedResolutionMissing",
-            NotFoundCondition.ThumbnailsMissing => "NoThumbnails",
-            NotFoundCondition.ThumbnailsNegative => "NoThumbnails",
             NotFoundCondition.ManagerPathMissing => "SourceSpriteUnavailable",
             NotFoundCondition.SourceSpriteMissing => "SourceSpriteUnavailable",
             _ => null,
@@ -158,14 +156,6 @@ internal static class TrickplayPreviewHttpSupport
             {
                 Metadata = MetadataAvailability.ExactWidthMissing,
             },
-            NotFoundCondition.ThumbnailsMissing => new PreviewScenario
-            {
-                Metadata = MetadataAvailability.NoThumbnails,
-            },
-            NotFoundCondition.ThumbnailsNegative => new PreviewScenario
-            {
-                Metadata = MetadataAvailability.NegativeThumbnails,
-            },
             NotFoundCondition.ManagerPathMissing => new PreviewScenario
             {
                 SourceSprite = SourceSpriteAvailability.ManagerPathMissing,
@@ -193,6 +183,14 @@ internal static class TrickplayPreviewHttpSupport
             InternalFailureCondition.FrameHeightZero => new PreviewScenario
             {
                 Metadata = MetadataAvailability.FrameHeightZero,
+            },
+            InternalFailureCondition.NoThumbnails => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.NoThumbnails,
+            },
+            InternalFailureCondition.NegativeThumbnails => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.NegativeThumbnails,
             },
             InternalFailureCondition.IntervalZero => new PreviewScenario
             {
@@ -240,6 +238,8 @@ internal static class TrickplayPreviewHttpSupport
             case InternalFailureCondition.FrameWidthZero:
             case InternalFailureCondition.FrameHeightZero:
             case InternalFailureCondition.IntervalZero:
+            case InternalFailureCondition.NoThumbnails:
+            case InternalFailureCondition.NegativeThumbnails:
             case InternalFailureCondition.TileWidthZero:
             case InternalFailureCondition.TileHeightZero:
                 Assert.Null(log.Properties["FrameIndex"]);
@@ -307,6 +307,8 @@ internal static class TrickplayPreviewHttpSupport
             InternalFailureCondition.FrameWidthZero => new TrickplayMetadata(0, 180, 10_000, 2, 2, 4),
             InternalFailureCondition.FrameHeightZero => new TrickplayMetadata(320, 0, 10_000, 2, 2, 4),
             InternalFailureCondition.IntervalZero => new TrickplayMetadata(320, 180, 0, 2, 2, 4),
+            InternalFailureCondition.NoThumbnails => new TrickplayMetadata(320, 180, 10_000, 2, 2, 0),
+            InternalFailureCondition.NegativeThumbnails => new TrickplayMetadata(320, 180, 10_000, 2, 2, -1),
             InternalFailureCondition.TileWidthZero => new TrickplayMetadata(320, 180, 10_000, 0, 2, 4),
             InternalFailureCondition.TileHeightZero => new TrickplayMetadata(320, 180, 10_000, 2, 0, 4),
             InternalFailureCondition.CropXOverflow => new TrickplayMetadata(

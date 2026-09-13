@@ -14,8 +14,6 @@ public enum NotFoundCondition
     NoConfiguredTarget,
     GeneratedMetadataMissing,
     ExactMetadataMissing,
-    ThumbnailsMissing,
-    ThumbnailsNegative,
     ManagerPathMissing,
     SourceSpriteMissing,
 }

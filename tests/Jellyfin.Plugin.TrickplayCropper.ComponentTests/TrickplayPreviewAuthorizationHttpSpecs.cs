@@ -138,8 +138,6 @@ public sealed class TrickplayPreviewAuthorizationHttpSpecs
     [InlineData(NotFoundCondition.NoConfiguredTarget)]
     [InlineData(NotFoundCondition.GeneratedMetadataMissing)]
     [InlineData(NotFoundCondition.ExactMetadataMissing)]
-    [InlineData(NotFoundCondition.ThumbnailsMissing)]
-    [InlineData(NotFoundCondition.ThumbnailsNegative)]
     public async Task ConcealsUnavailableResourceWithoutGetOnlyWork(NotFoundCondition condition)
     {
         PreviewScenario scenario = CreateNotFoundScenario(condition);

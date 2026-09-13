@@ -63,11 +63,6 @@ internal sealed class TrickplayMetadataReader
             return new TrickplayMetadataResolution.NotFound(PreviewUnavailableReason.SelectedResolutionMissing);
         }
 
-        if (metadata.ThumbnailCount <= 0)
-        {
-            return new TrickplayMetadataResolution.NotFound(PreviewUnavailableReason.NoThumbnails);
-        }
-
         try
         {
             if (allowNonPositiveInterval)

@@ -6,6 +6,8 @@ public enum InternalFailureCondition
     FrameWidthZero,
     FrameHeightZero,
     IntervalZero,
+    NoThumbnails,
+    NegativeThumbnails,
     TileWidthZero,
     TileHeightZero,
     CropXOverflow,

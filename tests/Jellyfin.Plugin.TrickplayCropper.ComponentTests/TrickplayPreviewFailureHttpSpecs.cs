@@ -46,6 +46,8 @@ public sealed class TrickplayPreviewFailureHttpSpecs
     [InlineData(InternalFailureCondition.ContradictoryFrameWidth, "FrameWidthMatchesResolutionKey", 640)]
     [InlineData(InternalFailureCondition.FrameWidthZero, "FrameWidthPositive", 0)]
     [InlineData(InternalFailureCondition.FrameHeightZero, "FrameHeightPositive", 0)]
+    [InlineData(InternalFailureCondition.NoThumbnails, "ThumbnailCountPositive", 0)]
+    [InlineData(InternalFailureCondition.NegativeThumbnails, "ThumbnailCountPositive", -1)]
     [InlineData(InternalFailureCondition.TileWidthZero, "TileWidthPositive", 0)]
     [InlineData(InternalFailureCondition.TileHeightZero, "TileHeightPositive", 0)]
     [InlineData(InternalFailureCondition.CropXOverflow, "CropXInt32", 2_240_000_000L)]
