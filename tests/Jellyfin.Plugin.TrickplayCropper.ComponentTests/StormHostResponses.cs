@@ -13,8 +13,6 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
     private readonly StringBuilder log = new();
     private readonly List<string> requests = [];
     private readonly List<TaskCompletionSource> waves = [];
-    private int heads;
-    private int gets;
 
     public IReadOnlyList<string> Requests => requests;
 
@@ -46,11 +44,7 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
             }
 
             HttpResponseMessage response = await previews.SendAsync(request, cancellationToken);
-            if (request.Method == HttpMethod.Get)
-            {
-                await PublishAsync(request, response, cancellationToken);
-            }
-
+            await PublishAsync(request, response, cancellationToken);
             return response;
         }
         finally
@@ -64,17 +58,6 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
         await gate.WaitAsync(cancellationToken);
         try
         {
-            if (request.Method == HttpMethod.Head)
-            {
-                Assert.Equal(heads / 144 * 144, gets);
-                heads++;
-            }
-            else
-            {
-                Assert.Equal((gets / 144 + 1) * 144, heads);
-                gets++;
-            }
-
             int ordinal = requests.Count;
             if (ordinal % 6 == 0)
             {
@@ -99,9 +82,8 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
 
     private async Task PublishAsync(HttpRequestMessage request, HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        long ticks = long.Parse(request.RequestUri!.Query.Split('=')[1], CultureInfo.InvariantCulture);
+        int frame = int.Parse(request.RequestUri!.Query.Split('=')[1], CultureInfo.InvariantCulture);
         string item = request.RequestUri.Segments[^2].TrimEnd('/');
-        int frame = (int)Math.Min(ticks / 25000000, item.StartsWith('1') ? 6 : 4);
         string disposition = response.Headers.GetValues("X-Trickplay-Cache").Single();
         if (fault == "all-hit")
         {
@@ -116,7 +98,7 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
             EventId = 1002,
             EventName = "TrickplayPreviewFrameSelected",
             FrameIndex = fault == "log-frame" ? 99 : frame,
-            SpriteIndex = fault == "log-sprite" ? 1 : 0,
+            SpriteIndex = fault == "log-sprite" ? 1 : frame / 100,
         }));
         log.AppendLine(prefix + JsonSerializer.Serialize(new
         {
@@ -124,7 +106,8 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
             EventName = "TrickplayPreviewCacheDisposition",
             CacheDisposition = fault == "log-disposition" ? "Miss" : disposition == "MISS" ? "Miss" : "Hit",
         }));
-        string path = Path.Combine(root, item, "w0320", string.Concat("s000000-", response.Headers.ETag!.Tag.AsSpan(1, 32)),
+        string stamp = response.Headers.ETag!.Tag.AsSpan(1, 32).ToString();
+        string path = Path.Combine(root, item, "w0320", string.Concat("s000000-", stamp),
             FormattableString.Invariant($"f{frame:D10}.jpg"));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await File.WriteAllBytesAsync(path, await response.Content.ReadAsByteArrayAsync(cancellationToken), cancellationToken);
@@ -160,6 +143,7 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
                     File.Delete(residue);
                 }
             }
+
             if (LogReads == 2 && fault.StartsWith("log-", StringComparison.Ordinal))
             {
                 throw new IOException("Stop the fixture after proving mismatched events cannot pass quiescence.");

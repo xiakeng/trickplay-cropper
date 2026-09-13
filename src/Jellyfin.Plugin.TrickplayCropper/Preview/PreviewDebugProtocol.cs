@@ -31,7 +31,7 @@ internal static partial class PreviewDebugProtocol
     /// Records the Frame Index and sprite index selected for one resolved GET.
     /// </summary>
     /// <param name="logger">The category logger of the module that selected the frame.</param>
-    /// <param name="frameIndex">The clamped zero-based Frame Index.</param>
+    /// <param name="frameIndex">The validated zero-based Frame Index.</param>
     /// <param name="spriteIndex">The Source Sprite index that carries the frame.</param>
     [LoggerMessage(
         EventId = 1002,

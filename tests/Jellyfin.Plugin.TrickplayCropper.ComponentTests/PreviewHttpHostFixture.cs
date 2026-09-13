@@ -71,11 +71,6 @@ internal sealed class PreviewHostFixture : IAsyncDisposable
             .Where(entry => entry.Level == LogLevel.Debug)
             .ToArray();
 
-    public RecordedLog[] ProbeDebugLogs =>
-        Services.GetRequiredService<RecordingLogger<TrickplayFrameProbe>>().Entries
-            .Where(entry => entry.Level == LogLevel.Debug)
-            .ToArray();
-
     public IServiceProvider Services => host.Services;
 
     public string SourceSpritePath { get; }
@@ -185,9 +180,6 @@ internal sealed class PreviewHostFixture : IAsyncDisposable
         var recordingLogger = new RecordingLogger<TrickplayPreview>();
         services.AddSingleton(recordingLogger);
         services.AddSingleton<ILogger<TrickplayPreview>>(recordingLogger);
-        var probeRecordingLogger = new RecordingLogger<TrickplayFrameProbe>();
-        services.AddSingleton(probeRecordingLogger);
-        services.AddSingleton<ILogger<TrickplayFrameProbe>>(probeRecordingLogger);
         string cacheRoot = Path.Combine(
             context.TemporaryDirectory,
             "Jellyfin.Plugin.TrickplayCropper",

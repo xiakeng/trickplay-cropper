@@ -5,8 +5,8 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 /// </summary>
 /// <param name="ItemId">The logical video identifier.</param>
 /// <param name="MediaSourceId">The optional alternate media source identifier.</param>
-/// <param name="PositionTicks">The playback position in Jellyfin ticks.</param>
-public sealed record PreviewQuery(Guid ItemId, Guid? MediaSourceId, long PositionTicks)
+/// <param name="FrameIndex">The requested zero-based generated frame index.</param>
+public sealed record PreviewQuery(Guid ItemId, Guid? MediaSourceId, int FrameIndex)
 {
     /// <summary>
     /// Gets the selected media source identifier, defaulting to the logical video.

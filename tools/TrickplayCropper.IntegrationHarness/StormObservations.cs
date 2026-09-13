@@ -29,6 +29,13 @@ internal sealed class StormObservations(IReadOnlyDictionary<string, byte[]> base
             }
             else
             {
+                if (representations.Any(pair => pair.Key.Item == identity.Item
+                    && pair.Key.Frame != identity.FrameIndex
+                    && pair.Value.Tag == response.Tag))
+                {
+                    throw new InvalidDataException("Different Frame Index requests returned one representation identity.");
+                }
+
                 representations.Add(identity, new Representation(response.Tag, response.Bytes));
             }
 

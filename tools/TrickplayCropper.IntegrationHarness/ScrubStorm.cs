@@ -13,10 +13,14 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
     public ScrubStormReport Report { get; } = new();
 
     /// <summary>Runs two replay rounds for each approved shape and enforces every hard acceptance condition.</summary>
-    public async Task RunAsync(HarnessInput input, CancellationToken cancellationToken)
+    public async Task RunAsync(
+        HarnessInput input,
+        IReadOnlyDictionary<Guid, PlaybackTimeline> timelines,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(input);
-        PreviewRequest[] subjects = await ReadSubjectsAsync(input, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(timelines);
+        PreviewRequest[] subjects = await ReadSubjectsAsync(input, timelines, cancellationToken).ConfigureAwait(false);
         StormObservations observations = new(await CacheTreeSnapshot.ReadAsync(cacheRoot, cancellationToken).ConfigureAwait(false));
         DateTimeOffset since = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         output.WriteLine("Checking Scrub Storm: seed=0x5EEDC0DE, clients=2, lanes/client=3, positions/lane/Item=12, rounds/shape=2.");
@@ -26,24 +30,33 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
             RequireIdentities(lanes);
             foreach (int round in Enumerable.Range(0, 2))
             {
-                output.WriteLine($"Scrub Storm {shapes[shape]}, round {round + 1}: HEAD fan-out then GET fan-out.");
+                output.WriteLine($"Scrub Storm {shapes[shape]}, round {round + 1}: direct Preview GET fan-out.");
                 await RunRoundAsync(lanes, observations, (shape * 2) + round, cancellationToken).ConfigureAwait(false);
             }
         }
 
         observations.VerifyTransition();
-        output.WriteLine("Scrub Storm HTTP passed: 864 HEAD and 864 GET; stable repeated JPEG bytes/ETags and MISS-to-HIT observed.");
+        output.WriteLine("Scrub Storm HTTP passed: direct Preview GET load; stable repeated JPEG bytes/ETags and MISS-to-HIT observed.");
         await VerifyQuiescenceAsync(observations, since, cancellationToken).ConfigureAwait(false);
         Report.MarkPassed();
         output.WriteLine($"PASS Scrub Storm: {observations.IdentityCount} distinct Preview identities; canonical JPEGs and no temporary residue.");
     }
 
-    private async Task<PreviewRequest[]> ReadSubjectsAsync(HarnessInput input, CancellationToken cancellationToken)
+    private async Task<PreviewRequest[]> ReadSubjectsAsync(
+        HarnessInput input,
+        IReadOnlyDictionary<Guid, PlaybackTimeline> timelines,
+        CancellationToken cancellationToken)
     {
         List<PreviewRequest> subjects = [];
         foreach (Guid item in input.PlayableItems)
         {
             PlaybackMetadata metadata = await PlaybackMetadata.ReadAsync(http, item, cancellationToken).ConfigureAwait(false);
+            if (!timelines.TryGetValue(item, out PlaybackTimeline? timeline)
+                || timeline.IntervalTicks != checked((long)metadata.Interval * TimeSpan.TicksPerMillisecond)
+                || timeline.FrameCount != metadata.Count)
+            {
+                throw new InvalidDataException("Frame Timeline disagrees with independent metadata.");
+            }
             subjects.Add(new PreviewRequest(item, 0, metadata));
         }
 
@@ -62,7 +75,6 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
     private async Task RunRoundAsync(PreviewRequest[][] lanes, StormObservations observations, int round,
         CancellationToken cancellationToken)
     {
-        await RunPhaseAsync(lanes, HttpMethod.Head, round, cancellationToken).ConfigureAwait(false);
         StormObservations.Response[] responses = await RunPhaseAsync(lanes, HttpMethod.Get, round, cancellationToken).ConfigureAwait(false);
         observations.Record(responses);
     }
@@ -115,12 +127,6 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
         if (response.StatusCode != HttpStatusCode.OK)
         {
             throw new InvalidDataException("Every Scrub Storm request must return 200.");
-        }
-
-        if (lane.Method == HttpMethod.Head)
-        {
-            await PreviewAssertions.VerifyHeadAsync(response, preview.FrameIndex, timeout.Token).ConfigureAwait(false);
-            return null;
         }
 
         byte[] bytes = await PreviewAssertions.VerifyJpegAsync(response, preview, timeout.Token).ConfigureAwait(false);

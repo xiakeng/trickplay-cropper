@@ -42,56 +42,23 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 internal static class TrickplayPreviewHttpSupport
 {
     internal const string ExpectedDefaultFrameToken = "f0000000000";
-    internal const string ExpectedDefaultSourceStamp = "d5b827fd3d17075e86151d7299ff22cd";
+    internal const string ExpectedDefaultSourceStamp = "e798208119ec2f8ce1406c8f2acb095c";
     internal const string ExpectedDefaultEntityTag =
         $"\"{ExpectedDefaultSourceStamp}-{ExpectedDefaultFrameToken}\"";
 
     public static TheoryData<string> MalformedPreviewRequestPaths => new()
     {
         { PreviewPath },
-        { $"{PreviewPath}?PositionTicks=not-a-number" },
-        { $"{PreviewPath}?PositionTicks=9223372036854775808" },
-        { $"{PreviewPath}?PositionTicks=-1" },
-        { $"{PreviewPath}?MediaSourceId=not-a-guid&PositionTicks=0" },
-        { "/TrickplayCropper/Videos/not-a-guid/Preview?PositionTicks=0" },
+        { $"{PreviewPath}?FrameIndex=not-a-number" },
+        { $"{PreviewPath}?FrameIndex=2147483648" },
+        { $"{PreviewPath}?FrameIndex=-1" },
+        { $"{PreviewPath}?MediaSourceId=not-a-guid&FrameIndex=0" },
+        { "/TrickplayCropper/Videos/not-a-guid/Preview?FrameIndex=0" },
     };
 
     internal static string PreviewPath => string.Create(
         CultureInfo.InvariantCulture,
         $"/TrickplayCropper/Videos/{ItemId:D}/Preview");
-
-    internal static PreviewScenario CreateKestrelScenario(TrickplayFrameProbeKestrelCondition condition)
-    {
-        return condition switch
-        {
-            TrickplayFrameProbeKestrelCondition.Success => new PreviewScenario(),
-            TrickplayFrameProbeKestrelCondition.MalformedInput => new PreviewScenario(),
-            TrickplayFrameProbeKestrelCondition.UnauthenticatedSession => new PreviewScenario
-            {
-                Authentication = AuthenticationState.Missing,
-            },
-            TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied => new PreviewScenario
-            {
-                DeniesDefaultAuthorizationPolicy = true,
-            },
-            TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser => new PreviewScenario
-            {
-                Authentication = AuthenticationState.ApiKeyWithoutCurrentUser,
-            },
-            TrickplayFrameProbeKestrelCondition.ConcealedResource => new PreviewScenario
-            {
-                LogicalVideo = ItemAvailability.Missing,
-            },
-            TrickplayFrameProbeKestrelCondition.InvalidMetadata => new PreviewScenario
-            {
-                Metadata = MetadataAvailability.ContradictoryFrameWidth,
-            },
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(condition),
-                condition,
-                "Unknown real-Kestrel Trickplay Frame Probe condition."),
-        };
-    }
 
     internal static string GetDefaultEntryPath(PreviewHostFixture fixture)
     {
@@ -146,8 +113,6 @@ internal static class TrickplayPreviewHttpSupport
             NotFoundCondition.NoConfiguredTarget => "NoConfiguredTarget",
             NotFoundCondition.GeneratedMetadataMissing => "NoGeneratedMetadata",
             NotFoundCondition.ExactMetadataMissing => "SelectedResolutionMissing",
-            NotFoundCondition.ThumbnailsMissing => "NoThumbnails",
-            NotFoundCondition.ThumbnailsNegative => "NoThumbnails",
             NotFoundCondition.ManagerPathMissing => "SourceSpriteUnavailable",
             NotFoundCondition.SourceSpriteMissing => "SourceSpriteUnavailable",
             _ => null,
@@ -191,14 +156,6 @@ internal static class TrickplayPreviewHttpSupport
             {
                 Metadata = MetadataAvailability.ExactWidthMissing,
             },
-            NotFoundCondition.ThumbnailsMissing => new PreviewScenario
-            {
-                Metadata = MetadataAvailability.NoThumbnails,
-            },
-            NotFoundCondition.ThumbnailsNegative => new PreviewScenario
-            {
-                Metadata = MetadataAvailability.NegativeThumbnails,
-            },
             NotFoundCondition.ManagerPathMissing => new PreviewScenario
             {
                 SourceSprite = SourceSpriteAvailability.ManagerPathMissing,
@@ -227,6 +184,14 @@ internal static class TrickplayPreviewHttpSupport
             {
                 Metadata = MetadataAvailability.FrameHeightZero,
             },
+            InternalFailureCondition.NoThumbnails => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.NoThumbnails,
+            },
+            InternalFailureCondition.NegativeThumbnails => new PreviewScenario
+            {
+                Metadata = MetadataAvailability.NegativeThumbnails,
+            },
             InternalFailureCondition.IntervalZero => new PreviewScenario
             {
                 Metadata = MetadataAvailability.IntervalZero,
@@ -242,22 +207,22 @@ internal static class TrickplayPreviewHttpSupport
             InternalFailureCondition.CropXOverflow => new PreviewScenario
             {
                 Metadata = MetadataAvailability.CropXOverflow,
-                RequestPositionTicks = 7_000_000 * TimeSpan.TicksPerMillisecond,
+                RequestFrameIndex = 7_000_000,
             },
             InternalFailureCondition.CropYOverflow => new PreviewScenario
             {
                 Metadata = MetadataAvailability.CropYOverflow,
-                RequestPositionTicks = 2 * TimeSpan.TicksPerMillisecond,
+                RequestFrameIndex = 2,
             },
             InternalFailureCondition.CropRightOverflow => new PreviewScenario
             {
                 Metadata = MetadataAvailability.CropRightOverflow,
-                RequestPositionTicks = 6_710_886 * TimeSpan.TicksPerMillisecond,
+                RequestFrameIndex = 6_710_886,
             },
             InternalFailureCondition.CropBottomOverflow => new PreviewScenario
             {
                 Metadata = MetadataAvailability.CropBottomOverflow,
-                RequestPositionTicks = TimeSpan.TicksPerMillisecond,
+                RequestFrameIndex = 1,
             },
             _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "Unknown failure condition."),
         };
@@ -273,6 +238,8 @@ internal static class TrickplayPreviewHttpSupport
             case InternalFailureCondition.FrameWidthZero:
             case InternalFailureCondition.FrameHeightZero:
             case InternalFailureCondition.IntervalZero:
+            case InternalFailureCondition.NoThumbnails:
+            case InternalFailureCondition.NegativeThumbnails:
             case InternalFailureCondition.TileWidthZero:
             case InternalFailureCondition.TileHeightZero:
                 Assert.Null(log.Properties["FrameIndex"]);
@@ -340,6 +307,8 @@ internal static class TrickplayPreviewHttpSupport
             InternalFailureCondition.FrameWidthZero => new TrickplayMetadata(0, 180, 10_000, 2, 2, 4),
             InternalFailureCondition.FrameHeightZero => new TrickplayMetadata(320, 0, 10_000, 2, 2, 4),
             InternalFailureCondition.IntervalZero => new TrickplayMetadata(320, 180, 0, 2, 2, 4),
+            InternalFailureCondition.NoThumbnails => new TrickplayMetadata(320, 180, 10_000, 2, 2, 0),
+            InternalFailureCondition.NegativeThumbnails => new TrickplayMetadata(320, 180, 10_000, 2, 2, -1),
             InternalFailureCondition.TileWidthZero => new TrickplayMetadata(320, 180, 10_000, 0, 2, 4),
             InternalFailureCondition.TileHeightZero => new TrickplayMetadata(320, 180, 10_000, 2, 0, 4),
             InternalFailureCondition.CropXOverflow => new TrickplayMetadata(
@@ -394,42 +363,6 @@ internal static class TrickplayPreviewHttpSupport
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
         Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
         Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
-    }
-
-    internal static async Task AssertTrickplayFrameProbeSuccessAsync(HttpResponseMessage response, int expectedFrameIndex)
-    {
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        await AssertBodylessWithoutGetOnlyHeadersAsync(response);
-        Assert.Equal(
-            expectedFrameIndex.ToString(CultureInfo.InvariantCulture),
-            response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
-        Assert.True(response.Headers.CacheControl?.Private);
-        Assert.True(response.Headers.CacheControl?.NoCache);
-    }
-
-    internal static async Task AssertBodylessTrickplayFrameProbeFailureAsync(
-        HttpResponseMessage response,
-        HttpStatusCode expectedStatus)
-    {
-        Assert.Equal(expectedStatus, response.StatusCode);
-        await AssertBodylessWithoutGetOnlyHeadersAsync(response);
-        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
-    }
-
-    internal static async Task AssertBodylessWithoutGetOnlyHeadersAsync(HttpResponseMessage response)
-    {
-        await AssertBodylessAsync(response);
-        Assert.False(response.Headers.Contains("ETag"));
-        Assert.False(response.Headers.Contains("Server-Timing"));
-        Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
-    }
-
-    internal static async Task AssertBodylessAsync(HttpResponseMessage response)
-    {
-        Assert.Null(response.Content.Headers.ContentType);
-        Assert.Null(response.Content.Headers.ContentDisposition);
-        Assert.Null(response.Content.Headers.ContentLength);
-        Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
     }
 
     internal static async Task AssertProblemDetailsResponseAsync(HttpResponseMessage response)

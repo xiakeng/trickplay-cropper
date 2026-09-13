@@ -93,7 +93,7 @@ internal sealed class PreviewScenario
 
     public bool MutatesConfiguredTargetsDuringMetadataRead { get; init; }
 
-    public long RequestPositionTicks { get; set; }
+    public int RequestFrameIndex { get; set; }
 
     public bool ReturnsMismatchedSourceIdentity { get; init; }
 

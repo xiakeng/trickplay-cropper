@@ -3,7 +3,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 /// <summary>
 /// Identifies one frame, Source Sprite, cell, and crop rectangle.
 /// </summary>
-/// <param name="FrameIndex">The clamped frame index.</param>
+/// <param name="FrameIndex">The validated frame index.</param>
 /// <param name="SpriteIndex">The Source Sprite index.</param>
 /// <param name="Row">The zero-based row within the Source Sprite.</param>
 /// <param name="Column">The zero-based column within the Source Sprite.</param>
@@ -25,10 +25,15 @@ internal sealed record FrameSelection(
     /// Locates the Source Sprite cell and crop rectangle of an already selected frame.
     /// </summary>
     /// <param name="metadata">The validated Jellyfin trickplay metadata.</param>
-    /// <param name="frameIndex">The clamped Frame Index from the GET Preview context.</param>
+    /// <param name="frameIndex">The validated Frame Index from the GET Preview context.</param>
     /// <returns>The selected Source Sprite cell and crop.</returns>
     public static FrameSelection Create(TrickplayMetadata metadata, int frameIndex)
     {
+        if (frameIndex < 0 || frameIndex >= metadata.ThumbnailCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(frameIndex));
+        }
+
         long selectedFrameIndex = frameIndex;
         long framesPerSprite = checked((long)metadata.TileWidth * metadata.TileHeight);
         long selectedSpriteIndex = selectedFrameIndex / framesPerSprite;

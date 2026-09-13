@@ -92,6 +92,6 @@ public sealed class TrickplayFrameTimelineHttpSpecs
         await using PreviewHostFixture geometry = await PreviewHostFixture.CreateAsync(
             new PreviewScenario { Metadata = MetadataAvailability.TileWidthZero });
         using HttpResponseMessage timeline = await geometry.GetFrameTimelineAsync();
-        Assert.Equal(HttpStatusCode.OK, timeline.StatusCode);
+        Assert.Equal(HttpStatusCode.InternalServerError, timeline.StatusCode);
     }
 }
