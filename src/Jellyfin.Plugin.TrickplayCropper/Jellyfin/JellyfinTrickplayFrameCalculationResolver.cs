@@ -30,25 +30,17 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         int? normalizationSourceWidth,
         CancellationToken cancellationToken)
     {
-        int[]? configuredTargets = serverConfigurationManager.Configuration?
-            .TrickplayOptions?
-            .WidthResolutions?
-            .ToArray();
-        int? selectedResolution = SelectResolution(configuredTargets, normalizationSourceWidth);
-        if (selectedResolution is null)
+        ResolutionSelection? selection = SelectConfiguredResolution(normalizationSourceWidth);
+        if (selection is null)
         {
             return new FrameTimelineCalculationResolution.NotFound(
                 PreviewUnavailableReason.NoConfiguredTarget);
         }
 
-        PreviewConfigurationDiagnostics configuration = CreateConfiguration(
-            configuredTargets!,
-            normalizationSourceWidth,
-            selectedResolution.Value);
         try
         {
             TrickplayMetadataResolution metadata = await metadataCache
-                .GetForFrameTimelineAsync(sourceVideoId, selectedResolution.Value, cancellationToken)
+                .GetForFrameTimelineAsync(sourceVideoId, selection.SelectedResolution, cancellationToken)
                 .ConfigureAwait(false);
             return metadata switch
             {
@@ -65,7 +57,7 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         }
         catch (InvalidTrickplayMetadataException failure)
         {
-            failure.Configuration = configuration with
+            failure.Configuration = selection.Diagnostics with
             {
                 GeneratedKeys = failure.Configuration?.GeneratedKeys,
             };
@@ -97,32 +89,24 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         CalculationRequest request,
         CancellationToken cancellationToken)
     {
-        int[]? configuredTargets = serverConfigurationManager.Configuration?
-            .TrickplayOptions?
-            .WidthResolutions?
-            .ToArray();
-        int? selectedResolution = SelectResolution(configuredTargets, request.NormalizationSourceWidth);
-        if (selectedResolution is null)
+        ResolutionSelection? selection = SelectConfiguredResolution(request.NormalizationSourceWidth);
+        if (selection is null)
         {
             return new TrickplayFrameCalculationResolution.NotFound(
                 PreviewUnavailableReason.NoConfiguredTarget);
         }
 
-        PreviewConfigurationDiagnostics configuration = CreateConfiguration(
-            configuredTargets!,
-            request.NormalizationSourceWidth,
-            selectedResolution.Value);
         try
         {
             TrickplayMetadataResolution metadata = await ResolveMetadataAsync(
                 request,
-                selectedResolution.Value,
+                selection.SelectedResolution,
                 cancellationToken).ConfigureAwait(false);
             return SelectFrame(request.Query, metadata);
         }
         catch (InvalidTrickplayMetadataException failure)
         {
-            failure.Configuration = configuration with
+            failure.Configuration = selection.Diagnostics with
             {
                 GeneratedKeys = failure.Configuration?.GeneratedKeys,
             };
@@ -166,6 +150,20 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         }
     }
 
+    private ResolutionSelection? SelectConfiguredResolution(int? normalizationSourceWidth)
+    {
+        int[]? configuredTargets = serverConfigurationManager.Configuration?
+            .TrickplayOptions?
+            .WidthResolutions?
+            .ToArray();
+        int? selectedResolution = SelectResolution(configuredTargets, normalizationSourceWidth);
+        return selectedResolution is int selected
+            ? new ResolutionSelection(
+                selected,
+                CreateConfiguration(configuredTargets!, normalizationSourceWidth, selected))
+            : null;
+    }
+
     private static PreviewConfigurationDiagnostics CreateConfiguration(
         int[] configuredTargets,
         int? normalizationSourceWidth,
@@ -206,4 +204,8 @@ internal sealed class JellyfinTrickplayFrameCalculationResolver : ITrickplayFram
         PreviewQuery Query,
         int? NormalizationSourceWidth,
         MetadataAccess Access);
+
+    private sealed record ResolutionSelection(
+        int SelectedResolution,
+        PreviewConfigurationDiagnostics Diagnostics);
 }
