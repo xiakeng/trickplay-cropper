@@ -75,6 +75,23 @@ for authentication failure, `403` for authenticated denial, `404` for concealed
 or unavailable data, and `500` for invalid server data or processing failures.
 Error bodies are not a plugin-specific DTO contract.
 
+## Harness verification
+
+The manual Integration Harness requests one successful Frame Timeline for each
+playable Item at playback start and compares its exact interval and count with an
+independent Jellyfin generated-metadata read. It retains those Timeline responses
+for both boundary smoke checks and the coordinated Scrub Storm; no stage requests
+another Timeline for the same playback. Smoke checks exercise Frame Index `0`,
+`frameCount - 1`, and `frameCount` (`400`), plus invalid-token and concealed-Item
+GET behavior for Timeline and Preview.
+
+Scrub Storm replays the existing six-lane trajectories as direct Preview GET load.
+It preserves barriers, cache MISS-to-HIT transitions, stable JPEG bytes and opaque
+ETags, Cache Tree and temporary-file checks, structured Debug-event reconciliation,
+cancellation, deployment/restoration, and host-health checks. Its report records
+GET and operational outcomes only; it intentionally omits HEAD fan-out and
+performance timing statistics.
+
 ## Retired model and verification
 
 The HEAD Frame Probe, PositionTicks selection, end clamping, Source Facts

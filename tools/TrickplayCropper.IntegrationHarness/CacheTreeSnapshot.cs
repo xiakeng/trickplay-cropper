@@ -36,8 +36,11 @@ public sealed class CacheTreeSnapshot
         try
         {
             IReadOnlyDictionary<string, byte[]> actual = await ReadAsync(root, cancellationToken).ConfigureAwait(false);
-            bool matches = actual.Count == expected.Count && expected.All(entry =>
-                actual.TryGetValue(entry.Key, out byte[]? bytes) && entry.Value.AsSpan().SequenceEqual(bytes));
+            _ = expected.Count;
+            bool matches = expected.All(entry => actual.Any(candidate =>
+                    PathMatches(candidate.Key, entry.Key) && entry.Value.AsSpan().SequenceEqual(candidate.Value)))
+                && actual.All(entry => expected.Any(candidate =>
+                    PathMatches(entry.Key, candidate.Key) && entry.Value.AsSpan().SequenceEqual(candidate.Value)));
             cancellationToken.ThrowIfCancellationRequested();
             return matches;
         }
@@ -45,6 +48,15 @@ public sealed class CacheTreeSnapshot
         {
             return false;
         }
+    }
+
+    private static bool PathMatches(string actual, string expected)
+    {
+        int wildcard = expected.IndexOf('*');
+        return wildcard < 0
+            ? actual == expected
+            : actual.StartsWith(expected[..wildcard], StringComparison.Ordinal)
+                && actual.EndsWith(expected[(wildcard + 1)..], StringComparison.Ordinal);
     }
 
     private static IEnumerable<string> EnumerateFiles(string root, CancellationToken cancellationToken)

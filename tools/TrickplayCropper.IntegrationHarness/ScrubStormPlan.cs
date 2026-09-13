@@ -25,7 +25,7 @@ internal sealed class ScrubStormPlan
     private static IEnumerable<PreviewRequest> CreatePositions(PreviewRequest subject, int shape, int lane)
     {
         Random random = new(Seed + (shape * 100) + lane);
-        int count = subject.Metadata.Count;
+        int count = subject.Timeline.FrameCount;
         int window = Math.Min(count, 5);
         int anchor = (count - window) / 2;
         int[] frames = Enumerable.Range(0, PositionsPerItem).Select(index => shape switch
