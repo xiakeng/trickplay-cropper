@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Preview;
 /// <summary>
 /// Resolves the authorized calculation inputs for one playback Frame Timeline.
 /// </summary>
-internal interface IFrameTimeline
+public interface IFrameTimeline
 {
     Task<FrameTimelineOutcome> GetAsync(
         FrameTimelineQuery query,
@@ -70,12 +70,12 @@ internal sealed class FrameTimeline : IFrameTimeline
     }
 }
 
-internal sealed record FrameTimelineQuery(Guid ItemId, Guid? MediaSourceId)
+public sealed record FrameTimelineQuery(Guid ItemId, Guid? MediaSourceId)
 {
     public Guid ResolvedMediaSourceId => MediaSourceId ?? ItemId;
 }
 
-internal abstract record FrameTimelineOutcome
+public abstract record FrameTimelineOutcome
 {
     internal sealed record Success(long IntervalTicks, int FrameCount) : FrameTimelineOutcome;
 
