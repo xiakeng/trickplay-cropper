@@ -23,14 +23,14 @@ public sealed class SmokeCases(HttpClient http, TextWriter output)
                 && timeline.FrameCount == metadata.Count, "Frame Timeline disagrees with independent metadata.");
             timelines.Add(item, timeline);
             output.WriteLine($"Reading Frame Timeline for Item {ordinal}: count={metadata.Count}, interval={metadata.Interval}ms.");
-            foreach (int frameIndex in new[] { 0, metadata.LastFrameIndex })
+            foreach (int frameIndex in new[] { 0, timeline.FrameCount - 1 })
             {
-                await VerifyBoundaryAsync(new PreviewRequest(item, frameIndex, metadata), cancellationToken)
+                await VerifyBoundaryAsync(new PreviewRequest(item, frameIndex, metadata, timeline), cancellationToken)
                     .ConfigureAwait(false);
             }
 
             using HttpResponseMessage outOfRange = await http.GetAsync(
-                PreviewRoute(item, metadata.Count), cancellationToken).ConfigureAwait(false);
+                PreviewRoute(item, timeline.FrameCount), cancellationToken).ConfigureAwait(false);
             Require(outOfRange.StatusCode == HttpStatusCode.BadRequest, "FrameIndex == frameCount must return 400.");
         }
 

@@ -36,6 +36,7 @@ public sealed class ScrubStormSpecs : IDisposable
         Assert.DoesNotContain("Samples", report, StringComparison.Ordinal);
         Assert.DoesNotContain("latency", report, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(864, handler.Requests.Count);
+        Assert.Equal(0, handler.TimelineRequests);
         Assert.All(handler.Requests, request =>
             Assert.StartsWith("GET ", request, StringComparison.Ordinal));
         Assert.All(handler.Requests, request =>

@@ -13,10 +13,13 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
     private readonly StringBuilder log = new();
     private readonly List<string> requests = [];
     private readonly List<TaskCompletionSource> waves = [];
+    private int timelineRequests;
 
     public IReadOnlyList<string> Requests => requests;
 
     public int LogReads { get; private set; }
+
+    public int TimelineRequests => timelineRequests;
 
     public TaskCompletionSource WaitingRequest { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -120,6 +123,11 @@ internal sealed class StormHostResponses(string root, string fault = "") : HttpM
     private async Task<HttpResponseMessage> ReadEndpointAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         string path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/FrameTimeline", StringComparison.Ordinal))
+        {
+            timelineRequests++;
+        }
+
         if (path == "/System/Logs")
         {
             return new HttpResponseMessage(HttpStatusCode.OK)
