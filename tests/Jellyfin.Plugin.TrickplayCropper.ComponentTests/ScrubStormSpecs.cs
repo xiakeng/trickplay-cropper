@@ -31,6 +31,10 @@ public sealed class ScrubStormSpecs : IDisposable
         Assert.Contains("GET requests dispatched: **864**", report, StringComparison.Ordinal);
         Assert.Contains("Cache HIT responses: **852**", report, StringComparison.Ordinal);
         Assert.Contains("Cache MISS responses: **12**", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("HEAD", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("Response times", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("Samples", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("latency", report, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(864, handler.Requests.Count);
         Assert.All(handler.Requests, request =>
             Assert.StartsWith("GET ", request, StringComparison.Ordinal));

@@ -14,6 +14,8 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
 
     public int BoundaryRequests { get; private set; }
 
+    public int TimelineRequests { get; private set; }
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         string route = request.RequestUri!.PathAndQuery;
@@ -35,8 +37,14 @@ internal sealed class SmokeHostResponses(string fault = "") : HttpMessageHandler
 
         if (route.Contains("/FrameTimeline", StringComparison.Ordinal))
         {
+            TimelineRequests++;
             bool first = route.Contains(FirstItem, StringComparison.Ordinal);
             int count = first ? 7 : 5;
+            if (fault == "timeline-mismatch" && first)
+            {
+                count++;
+            }
+
             return Task.FromResult(Json($"{{\"intervalTicks\":25000000,\"frameCount\":{count}}}"));
         }
 

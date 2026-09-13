@@ -27,6 +27,7 @@ public sealed class SmokeCasesSpecs
         Assert.Contains("Reading Frame Timeline for Item 1: count=7, interval=2500ms.", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("Reading Frame Timeline for Item 2: count=5, interval=2500ms.", output.ToString(), StringComparison.Ordinal);
         Assert.Equal(10, handler.BoundaryRequests);
+        Assert.Equal(2, handler.TimelineRequests);
         Assert.DoesNotContain("abc123", output.ToString(), StringComparison.Ordinal);
     }
 
@@ -44,6 +45,7 @@ public sealed class SmokeCasesSpecs
 
     [Theory]
     [InlineData("timing")]
+    [InlineData("timeline-mismatch")]
     [InlineData("missing-length")]
     [InlineData("concealed-get")]
     [InlineData("get-weak-tag")]

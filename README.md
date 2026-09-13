@@ -139,7 +139,11 @@ GitHub Release, and CI's Package Validator is the package-install contract.
 The Integration Harness is a manually invoked, no-mock `net9.0` console program
 that deploys a Debug build of the plugin to the local Jellyfin host, runs four
 fixed smoke cases (invalid token, GET concealment, playback boundaries, Scrub
-Storm), and restores the host logging configuration afterwards. It targets the
+Storm), and restores the host logging configuration afterwards. At playback start
+it requests one Frame Timeline per playable Item, checks its interval and count
+against Jellyfin's independent generated-metadata oracle, and retains those
+Timelines for the boundary and Scrub Storm stages. The storm uses direct Preview
+GET requests at client-selected Frame Index values. It targets the
 local native Jellyfin installation at `http://localhost:8096` with fixed
 `/etc/jellyfin` and `/var/lib/jellyfin` paths, and requires Python 3 plus an
 unprivileged account with interactive sudo. Each run crosses exactly two `sudo`
@@ -151,11 +155,11 @@ video Item IDs, and one Item that exists but is invisible to that user. Keep the
 file private (`chmod 600 harness.json`); it grants the user's administrator
 access and is only ever sent to localhost in an HTTP authorization header.
 
-The concealed-Item case is a GET authorization assertion only. Successful GET
-responses, including `304 Not Modified`, use an opaque strong ETag and do not expose
-the Frame Index in a response header. The current live harness is temporarily
-incompatible with the direct-index contract; parent completion requires its migrated
-real-host evidence. Default,
+The concealed-Item case is a GET authorization assertion for both Timeline and
+Preview. Successful GET responses, including `304 Not Modified`, use an opaque
+strong ETag and do not expose the Frame Index in a response header. The Scrub Storm
+report records direct-GET/cache, JPEG, Debug-event, Cache Tree, cleanup, and
+restoration evidence; it does not claim Timeline or Preview latency. Default,
 local alternate, linked, and eligible dynamic source compatibility is grounded in the
 pinned Jellyfin source; the tests do not run its real provider or linked-source graph.
 
