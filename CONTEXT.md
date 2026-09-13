@@ -12,6 +12,12 @@ _Avoid_: Thumbnail, cropped image, preview image
 The lightweight HTTP HEAD operation that computes a Frame Index for an Item and real Media Source for a natively authenticated user identity or userless API key. It makes no user-visibility or playback decision and does not apply per-user remote-access or parental-schedule restrictions; a successful probe is not evidence of permission to retrieve a Trickplay Preview.
 _Avoid_: HEAD probe, frame probe, preview probe
 
+**Frame Timeline**:
+The authenticated calculation model for one logical Item and selected Media Source. It returns
+the positive generated frame interval in Jellyfin ticks and frame count for a playback client;
+it is not a permission token, representation validator, or coherence version.
+_Avoid_: timeline cache, frame range, preview authorization token
+
 **Source Sprite**:
 A Jellyfin-owned trickplay JPEG containing multiple preview frames. Trickplay Cropper consumes Source Sprites but never generates them.
 _Avoid_: Sprite sheet, source image, original preview
