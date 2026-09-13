@@ -4,7 +4,6 @@ using Jellyfin.Plugin.TrickplayCropper.Preview;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 
 namespace Jellyfin.Plugin.TrickplayCropper.Api;
@@ -21,16 +20,22 @@ public sealed class TrickplayPreviewController : ControllerBase
 
     private readonly ITrickplayFrameProbe trickplayFrameProbe;
     private readonly ITrickplayPreview trickplayPreview;
+    private readonly IFrameTimeline frameTimeline;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TrickplayPreviewController"/> class.
     /// </summary>
     /// <param name="trickplayFrameProbe">The Trickplay Frame Probe module.</param>
     /// <param name="trickplayPreview">The Trickplay Preview request module.</param>
-    public TrickplayPreviewController(ITrickplayFrameProbe trickplayFrameProbe, ITrickplayPreview trickplayPreview)
+    /// <param name="frameTimeline">The Frame Timeline request module.</param>
+    public TrickplayPreviewController(
+        ITrickplayFrameProbe trickplayFrameProbe,
+        ITrickplayPreview trickplayPreview,
+        IFrameTimeline frameTimeline)
     {
         this.trickplayFrameProbe = trickplayFrameProbe;
         this.trickplayPreview = trickplayPreview;
+        this.frameTimeline = frameTimeline;
     }
 
     /// <summary>
@@ -84,7 +89,7 @@ public sealed class TrickplayPreviewController : ControllerBase
             parsedMediaSourceId = parsedSourceId;
         }
 
-        FrameTimelineOutcome outcome = await HttpContext.RequestServices.GetRequiredService<IFrameTimeline>().GetAsync(
+        FrameTimelineOutcome outcome = await frameTimeline.GetAsync(
             new FrameTimelineQuery(parsedItemId, parsedMediaSourceId),
             User,
             cancellationToken).ConfigureAwait(false);
