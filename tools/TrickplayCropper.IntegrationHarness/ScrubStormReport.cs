@@ -4,86 +4,81 @@ using System.Text;
 
 namespace TrickplayCropper.IntegrationHarness;
 
-/// <summary>Collects one Scrub Storm's client-side HTTP timings and renders a redacted Markdown report.</summary>
+/// <summary>Collects one Scrub Storm's GET outcomes and renders a redacted Markdown report.</summary>
 public sealed class ScrubStormReport
 {
     private readonly TimeProvider clock;
     private readonly object sync = new();
-    private readonly List<(string Category, double Milliseconds)> samples = [];
     private DateTimeOffset? startedUtc;
-    private long? firstSend;
-    private long lastSend;
-    private long? lastCompletion;
     private int gets;
     private int responses;
     private int unclassifiedResponses;
     private int transportFailures;
+    private int hits;
+    private int misses;
     private bool passed;
 
-    /// <summary>Measures elapsed time with the system's monotonic clock.</summary>
     public ScrubStormReport() : this(TimeProvider.System)
     {
     }
 
-    /// <summary>Uses the supplied monotonic clock for repeatable measurement contracts.</summary>
     public ScrubStormReport(TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(clock);
         this.clock = clock;
     }
 
-    /// <summary>Counts an actual dispatch and times the complete buffered HTTP response, excluding local assertions.</summary>
+    /// <summary>Counts an actual GET dispatch and records its terminal response.</summary>
     public async Task<HttpResponseMessage> SendAsync(HttpClient http, HttpRequestMessage request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        long started = BeginRequest(request.Method);
+        BeginRequest(request.Method);
         try
         {
             HttpResponseMessage response = await http.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken)
                 .ConfigureAwait(false);
-            long completed = clock.GetTimestamp();
-            RecordResponse(request.Method, response, (started, completed));
+            RecordResponse(response);
             return response;
         }
         catch
         {
-            long completed = clock.GetTimestamp();
             lock (sync)
             {
                 transportFailures++;
-                lastCompletion = Math.Max(lastCompletion ?? completed, completed);
             }
 
             throw;
         }
     }
 
-    /// <summary>Marks the case passed only after its HTTP, representation, log, and filesystem checks succeed.</summary>
     internal void MarkPassed() => passed = true;
 
-    /// <summary>Summarizes actual attempts, terminal responses, and descriptive timings after the run has settled.</summary>
+    /// <summary>Summarizes actual attempts and terminal responses after the run has settled.</summary>
     public string ToMarkdown(bool harnessPassed)
     {
         lock (sync)
         {
             StringBuilder text = new("# Scrub Storm test report\n\n");
-            text.AppendLine(CultureInfo.InvariantCulture, $"- First dispatch (UTC): **{(startedUtc is { } utc ? utc.ToString("O", System.Globalization.CultureInfo.InvariantCulture) : "N/A")}**");
-            text.AppendLine(CultureInfo.InvariantCulture, $"- Scrub Storm outcome: **{(passed ? "Passed" : firstSend is null ? "Not run" : "Failed or cancelled")}**");
+            text.AppendLine(CultureInfo.InvariantCulture, $"- First dispatch (UTC): **{(startedUtc is { } utc ? utc.ToString("O", CultureInfo.InvariantCulture) : "N/A")}**");
+            text.AppendLine(CultureInfo.InvariantCulture, $"- Scrub Storm outcome: **{(passed ? "Passed" : startedUtc is null ? "Not run" : "Failed or cancelled")}**");
             text.AppendLine(CultureInfo.InvariantCulture, $"- Harness outcome (including restoration and health): **{(harnessPassed ? "Passed" : "Failed")}**");
-            AppendTotals(text);
-            text.AppendLine("\n## Response times\n");
-            text.AppendLine("| Category | Samples | Minimum (ms) | Maximum (ms) | Median (ms) | Mean (ms) |");
-            text.AppendLine("| --- | ---: | ---: | ---: | ---: | ---: |");
-            AppendStatistics(text, "MISS", "GET cache MISS");
-            AppendStatistics(text, "HIT", "GET cache HIT");
-            AppendDefinitions(text);
+            text.AppendLine(CultureInfo.InvariantCulture, $"- GET requests dispatched: **{gets}**");
+            text.AppendLine(CultureInfo.InvariantCulture, $"- HTTP responses received: **{responses}**");
+            text.AppendLine(CultureInfo.InvariantCulture, $"- Cache HIT responses: **{hits}**");
+            text.AppendLine(CultureInfo.InvariantCulture, $"- Cache MISS responses: **{misses}**");
+            text.AppendLine(CultureInfo.InvariantCulture, $"- Non-200 or unclassified responses: **{unclassifiedResponses}**");
+            text.AppendLine(CultureInfo.InvariantCulture, $"- Transport failures/cancellations: **{transportFailures}**");
+            text.AppendLine("\n## Measurement definitions\n");
+            text.AppendLine("- Seed: `0x5EEDC0DE`; two clients, three lanes/client, twelve positions/lane/Item, two rounds per shape.");
+            text.AppendLine("- Counts cover only Scrub Storm Preview GET SendAsync invocations, including failed attempts; a transport failure can precede server receipt.");
+            text.AppendLine("- Cache counts include only HTTP 200 responses with one exact HIT or MISS disposition; contract failures remain visible in the other totals.");
+            text.AppendLine("- Metadata reads, deployment, quiescence, log/cache verification, and restoration are outside these GET totals.");
             return text.ToString();
         }
     }
 
-    /// <summary>Writes a unique local report after restoration, retaining previous runs and cancelled-run measurements.</summary>
     public async Task<string> WriteAsync(string directory, bool harnessPassed)
     {
         Directory.CreateDirectory(directory);
@@ -95,7 +90,7 @@ public sealed class ScrubStormReport
         return path;
     }
 
-    private long BeginRequest(HttpMethod method)
+    private void BeginRequest(HttpMethod method)
     {
         lock (sync)
         {
@@ -104,25 +99,27 @@ public sealed class ScrubStormReport
                 throw new ArgumentException("Only Scrub Storm GET requests may be measured.", nameof(method));
             }
 
-            long timestamp = clock.GetTimestamp();
-            firstSend ??= timestamp;
             startedUtc ??= clock.GetUtcNow();
-            lastSend = timestamp;
-            gets += method == HttpMethod.Get ? 1 : 0;
-            return timestamp;
+            gets++;
         }
     }
 
-    private void RecordResponse(HttpMethod method, HttpResponseMessage response, (long Start, long End) interval)
+    private void RecordResponse(HttpResponseMessage response)
     {
         string category = ReadDisposition(response);
         lock (sync)
         {
             responses++;
-            lastCompletion = Math.Max(lastCompletion ?? interval.End, interval.End);
             if (response.StatusCode == HttpStatusCode.OK && category.Length > 0)
             {
-                samples.Add((category, clock.GetElapsedTime(interval.Start, interval.End).TotalMilliseconds));
+                if (category == "HIT")
+                {
+                    hits++;
+                }
+                else
+                {
+                    misses++;
+                }
             }
             else
             {
@@ -135,46 +132,5 @@ public sealed class ScrubStormReport
     {
         string[] values = response.Headers.TryGetValues("X-Trickplay-Cache", out IEnumerable<string>? headers) ? headers.ToArray() : [];
         return values.Length == 1 && values[0] is "HIT" or "MISS" ? values[0] : string.Empty;
-    }
-
-    private void AppendTotals(StringBuilder text)
-    {
-        double elapsed = firstSend is { } first && lastCompletion is { } last ? clock.GetElapsedTime(first, last).TotalSeconds : 0;
-        double span = firstSend is { } start ? clock.GetElapsedTime(start, lastSend).TotalSeconds : 0;
-        text.AppendLine(FormattableString.Invariant($"- Request dispatch span: **{span:F3} s**"));
-        text.AppendLine(FormattableString.Invariant($"- HTTP workload elapsed: **{elapsed:F3} s**"));
-        text.AppendLine(FormattableString.Invariant($"- GET requests dispatched: **{gets}**"));
-        text.AppendLine(FormattableString.Invariant($"- HTTP responses received: **{responses}**"));
-        text.AppendLine(FormattableString.Invariant($"- Cache HIT responses: **{samples.Count(sample => sample.Category == "HIT")}**"));
-        text.AppendLine(FormattableString.Invariant($"- Cache MISS responses: **{samples.Count(sample => sample.Category == "MISS")}**"));
-        text.AppendLine(FormattableString.Invariant($"- Non-200 or unclassified responses: **{unclassifiedResponses}**"));
-        text.AppendLine(FormattableString.Invariant($"- Transport failures/cancellations: **{transportFailures}**"));
-    }
-
-    private void AppendStatistics(StringBuilder text, string category, string label)
-    {
-        double[] durations = samples.Where(sample => sample.Category == category).Select(sample => sample.Milliseconds).Order().ToArray();
-        if (durations.Length == 0)
-        {
-            text.AppendLine(CultureInfo.InvariantCulture, $"| {label} | 0 | N/A | N/A | N/A | N/A |");
-            return;
-        }
-
-        int middle = durations.Length / 2;
-        double median = durations.Length % 2 == 0 ? (durations[middle - 1] / 2) + (durations[middle] / 2) : durations[middle];
-        text.AppendLine(FormattableString.Invariant(
-            $"| {label} | {durations.Length} | {durations[0]:F3} | {durations[^1]:F3} | {median:F3} | {durations.Average():F3} |"));
-    }
-
-    private static void AppendDefinitions(StringBuilder text)
-    {
-        text.AppendLine("\n## Measurement definitions\n");
-        text.AppendLine("- Seed: `0x5EEDC0DE`; two clients, three lanes/client, twelve positions/lane/Item, two rounds per shape.");
-        text.AppendLine("- Dispatch span: first SendAsync invocation to last invocation. HTTP workload elapsed: first invocation to last completion, including scheduling gaps.");
-        text.AppendLine("- Counts cover only Scrub Storm Preview GET SendAsync invocations, including failed attempts; a transport failure can precede server receipt.");
-        text.AppendLine("- Response time uses a monotonic clock from dispatch until the complete response body is buffered. Local assertions/JPEG decoding are excluded.");
-        text.AppendLine("- Timing groups contain HTTP 200 responses only; GET groups require an exact HIT/MISS header. HTTP contract failures can still fail the case after measurement.");
-        text.AppendLine("- Metadata reads, deployment, quiescence, log/cache verification, and restoration are excluded from HTTP workload elapsed.");
-        text.AppendLine("- Median is the middle sorted sample, or the mean of the two middle samples. Empty groups are N/A. Timings are diagnostics, not pass thresholds.");
     }
 }

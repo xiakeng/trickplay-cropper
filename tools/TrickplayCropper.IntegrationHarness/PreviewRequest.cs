@@ -1,7 +1,7 @@
 namespace TrickplayCropper.IntegrationHarness;
 
 /// <summary>A direct Frame Index with its independent generated-metadata oracle.</summary>
-internal sealed record PreviewRequest(Guid Item, int FrameIndex, PlaybackMetadata Metadata)
+internal sealed record PreviewRequest(Guid Item, int FrameIndex, PlaybackMetadata Metadata, PlaybackTimeline Timeline)
 {
     /// <summary>Gets the expected Source Sprite index.</summary>
     public int SpriteIndex => FrameIndex / Metadata.FramesPerSprite;
