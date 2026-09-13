@@ -3,7 +3,7 @@
 Trickplay Cropper is a Jellyfin server plugin that exposes authenticated,
 single-frame Trickplay Previews from Jellyfin-owned Source Sprites.
 
-The plugin serves one JPEG frame of a video for an authorized playback position,
+The plugin serves one JPEG frame of a video for an authorized direct Frame Index,
 cropped from trickplay data Jellyfin already generated. It never generates,
 modifies, or repairs that data. What it adds on top:
 
@@ -11,20 +11,17 @@ modifies, or repairs that data. What it adds on top:
   Resolution from the server's current Trickplay Resolution Targets — minimum
   target, Jellyfin's own normalization rule for the Media Source, and an exact
   generated-metadata match. No fallback width, no nearest substitute.
-- **The Trickplay Frame Probe.** A bodyless HTTP HEAD operation answers *which
-  frame does this position select?* for an Item and real Media Source accepted by
-  Jellyfin's ordinary endpoint policy, then stops before user-scoped preview
-  authorization or any image work.
+- **Direct Frame Index previews.** `GET /TrickplayCropper/Videos/{itemId}/Preview`
+  requires a 32-bit `FrameIndex`, validates it against one current authoritative
+  generated-metadata read, and never clamps or derives it from a playback position.
 - **The Frame Timeline.** An authenticated `GET /TrickplayCropper/Videos/{itemId}/FrameTimeline`
   returns exactly the positive generated frame interval in Jellyfin ticks and frame count for
   the selected Media Source. It performs the current-user authorization and one authoritative
   metadata read, then stops before Source Sprite, Preview Cache, conditional, or encoder work.
-- **Bounded source and metadata reuse.** A warm HEAD reuses immutable Item/source
-  membership, matched-source width, and generated metadata for 30 minutes; explicit
-  absence lives for 5 minutes. GET always rechecks current user authority and source
-  facts, publishes only verified user-neutral positives, and refreshes every
-  non-negative-short-circuited metadata observation — including JPEG HITs and
-  conditional requests.
+- **Authoritative per-request reads.** Every Timeline and valid Preview request
+  rechecks current-user authorization, exact source membership and visibility, and
+  reads the selected generated-metadata row. A retained Timeline is not permission
+  or representation evidence for later requests.
 - **User-scoped authorization with concealment.** Frames reach only callers who
   may play the logical video; GET makes hidden Items answer exactly like absent
   ones, and does not treat a server API key as a user.
@@ -154,13 +151,11 @@ video Item IDs, and one Item that exists but is invisible to that user. Keep the
 file private (`chmod 600 harness.json`); it grants the user's administrator
 access and is only ever sent to localhost in an HTTP authorization header.
 
-The concealed-Item case is a GET authorization assertion only. A successful HEAD
-is calculation availability, not permission evidence. Successful GET responses,
-including `304 Not Modified`, expose the selected Frame Index in
-`X-Trickplay-Frame-Index`; the ETag remains the independent representation identity.
-The current live harness does not expose backing source/metadata read counters, fake-time
-expiry, or publication barriers, so source-cache I/O and race coverage remains in the
-HTTP component seam with host API test doubles rather than the live fixture. Default,
+The concealed-Item case is a GET authorization assertion only. Successful GET
+responses, including `304 Not Modified`, use an opaque strong ETag and do not expose
+the Frame Index in a response header. The current live harness is temporarily
+incompatible with the direct-index contract; parent completion requires its migrated
+real-host evidence. Default,
 local alternate, linked, and eligible dynamic source compatibility is grounded in the
 pinned Jellyfin source; the tests do not run its real provider or linked-source graph.
 

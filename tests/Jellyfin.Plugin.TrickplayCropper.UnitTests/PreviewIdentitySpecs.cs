@@ -14,13 +14,13 @@ public sealed class PreviewIdentitySpecs
 
         PreviewIdentity identity = PreviewIdentity.Create(source);
 
-        Assert.Equal("06a51b2ba2d9de0bb1cc8117c4b7055a", identity.SourceStamp);
-        Assert.Equal("\"06a51b2ba2d9de0bb1cc8117c4b7055a-f0000000042\"", identity.EntityTag);
+        Assert.Equal("775a7b07146cc5eea63708951c49e282", identity.SourceStamp);
+        Assert.Equal("\"775a7b07146cc5eea63708951c49e282-f0000000042\"", identity.EntityTag);
         Assert.Equal(
             Path.Combine(
                 "00112233445566778899aabbccddeeff",
                 "w0320",
-                "s000002-06a51b2ba2d9de0bb1cc8117c4b7055a",
+                "s000002-775a7b07146cc5eea63708951c49e282",
                 "f0000000042.jpg"),
             identity.RelativePath);
     }
@@ -29,10 +29,8 @@ public sealed class PreviewIdentitySpecs
     [InlineData(IncludedSourceInput.MediaSourceId)]
     [InlineData(IncludedSourceInput.FrameWidth)]
     [InlineData(IncludedSourceInput.FrameHeight)]
-    [InlineData(IncludedSourceInput.IntervalMilliseconds)]
     [InlineData(IncludedSourceInput.TileWidth)]
     [InlineData(IncludedSourceInput.TileHeight)]
-    [InlineData(IncludedSourceInput.ThumbnailCount)]
     [InlineData(IncludedSourceInput.SpriteIndex)]
     [InlineData(IncludedSourceInput.SourceLength)]
     [InlineData(IncludedSourceInput.SourceLastWriteUtcTicks)]
@@ -87,8 +85,8 @@ public sealed class PreviewIdentitySpecs
 
             PreviewIdentity identity = PreviewIdentity.Create(CreateSource());
 
-            Assert.Equal("06a51b2ba2d9de0bb1cc8117c4b7055a", identity.SourceStamp);
-            Assert.Equal("\"06a51b2ba2d9de0bb1cc8117c4b7055a-f0000000042\"", identity.EntityTag);
+            Assert.Equal("775a7b07146cc5eea63708951c49e282", identity.SourceStamp);
+            Assert.Equal("\"775a7b07146cc5eea63708951c49e282-f0000000042\"", identity.EntityTag);
         }
         finally
         {
@@ -109,14 +107,8 @@ public sealed class PreviewIdentitySpecs
             },
             IncludedSourceInput.FrameWidth => ChangeMetadata(source, source.Metadata with { FrameWidth = 321 }),
             IncludedSourceInput.FrameHeight => ChangeMetadata(source, source.Metadata with { FrameHeight = 181 }),
-            IncludedSourceInput.IntervalMilliseconds => ChangeMetadata(
-                source,
-                source.Metadata with { IntervalMilliseconds = 10_001 }),
             IncludedSourceInput.TileWidth => ChangeMetadata(source, source.Metadata with { TileWidth = 6 }),
             IncludedSourceInput.TileHeight => ChangeMetadata(source, source.Metadata with { TileHeight = 5 }),
-            IncludedSourceInput.ThumbnailCount => ChangeMetadata(
-                source,
-                source.Metadata with { ThumbnailCount = 78 }),
             IncludedSourceInput.SpriteIndex => source with
             {
                 Selection = source.Selection with { SpriteIndex = 3 },
@@ -156,10 +148,8 @@ public sealed class PreviewIdentitySpecs
         MediaSourceId,
         FrameWidth,
         FrameHeight,
-        IntervalMilliseconds,
         TileWidth,
         TileHeight,
-        ThumbnailCount,
         SpriteIndex,
         SourceLength,
         SourceLastWriteUtcTicks,

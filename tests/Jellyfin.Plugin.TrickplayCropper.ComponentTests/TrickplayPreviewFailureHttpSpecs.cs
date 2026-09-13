@@ -46,7 +46,6 @@ public sealed class TrickplayPreviewFailureHttpSpecs
     [InlineData(InternalFailureCondition.ContradictoryFrameWidth, "FrameWidthMatchesResolutionKey", 640)]
     [InlineData(InternalFailureCondition.FrameWidthZero, "FrameWidthPositive", 0)]
     [InlineData(InternalFailureCondition.FrameHeightZero, "FrameHeightPositive", 0)]
-    [InlineData(InternalFailureCondition.IntervalZero, "IntervalMillisecondsPositive", 0)]
     [InlineData(InternalFailureCondition.TileWidthZero, "TileWidthPositive", 0)]
     [InlineData(InternalFailureCondition.TileHeightZero, "TileHeightPositive", 0)]
     [InlineData(InternalFailureCondition.CropXOverflow, "CropXInt32", 2_240_000_000L)]
@@ -195,10 +194,9 @@ public sealed class TrickplayPreviewFailureHttpSpecs
     [Fact]
     public async Task PreservesSelectionDiagnosticsWhenManagerPathResolutionFails()
     {
-        long positionTicks = 3L * 10_000 * TimeSpan.TicksPerMillisecond;
         var scenario = new PreviewScenario
         {
-            RequestPositionTicks = positionTicks,
+            RequestFrameIndex = 3,
             SourceSprite = SourceSpriteAvailability.ManagerFailure,
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
@@ -225,7 +223,7 @@ public sealed class TrickplayPreviewFailureHttpSpecs
     {
         var scenario = new PreviewScenario
         {
-            RequestPositionTicks = 10_000L * TimeSpan.TicksPerMillisecond,
+            RequestFrameIndex = 1,
             SourceSprite = SourceSpriteAvailability.DimensionMismatch,
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
@@ -246,11 +244,10 @@ public sealed class TrickplayPreviewFailureHttpSpecs
     [Fact]
     public async Task LogsOneCompleteRedactedDiagnosticForAnInternalFailure()
     {
-        long positionTicks = 3L * 10_000 * TimeSpan.TicksPerMillisecond;
         var scenario = new PreviewScenario
         {
             FailsCacheAccess = true,
-            RequestPositionTicks = positionTicks,
+            RequestFrameIndex = 3,
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
 
@@ -264,7 +261,7 @@ public sealed class TrickplayPreviewFailureHttpSpecs
         Assert.Null(log.Exception);
         Assert.Equal(ItemId, log.Properties["ItemId"]);
         Assert.Equal(ItemId, log.Properties["MediaSourceId"]);
-        Assert.Equal(positionTicks, log.Properties["PositionTicks"]);
+        Assert.Equal(3, log.Properties["FrameIndex"]);
         Assert.Equal(320, log.Properties["FrameWidth"]);
         Assert.Equal(180, log.Properties["FrameHeight"]);
         Assert.Equal(10_000, log.Properties["IntervalMilliseconds"]);

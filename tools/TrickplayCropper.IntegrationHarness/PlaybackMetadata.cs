@@ -7,9 +7,32 @@ namespace TrickplayCropper.IntegrationHarness;
 /// <summary>Reads generated Jellyfin metadata independently of plugin responses and implementation types.</summary>
 internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int Count, long RuntimeTicks, int FramesPerSprite)
 {
-    public long BeyondEndTicks => checked(RuntimeTicks + 1);
+    public int LastFrameIndex => Count - 1;
 
-    public int FrameIndex(long ticks) => (int)Math.Min(ticks / checked((long)Interval * TimeSpan.TicksPerMillisecond), Count - 1L);
+    public static async Task<(long IntervalTicks, int FrameCount)> ReadTimelineAsync(
+        HttpClient http,
+        Guid item,
+        CancellationToken cancellationToken)
+    {
+        using HttpResponseMessage response = await http.GetAsync(
+            $"/TrickplayCropper/Videos/{item:N}/FrameTimeline",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            throw new InvalidDataException("The Frame Timeline endpoint rejected a playable Item.");
+        }
+
+        using JsonDocument document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        JsonElement root = document.RootElement;
+        string[] properties = root.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal).ToArray();
+        if (!properties.SequenceEqual(["frameCount", "intervalTicks"], StringComparer.Ordinal))
+        {
+            throw new InvalidDataException("Frame Timeline must contain exactly intervalTicks and frameCount.");
+        }
+
+        return (root.GetProperty("intervalTicks").GetInt64(), root.GetProperty("frameCount").GetInt32());
+    }
 
     public static async Task<PlaybackMetadata> ReadAsync(HttpClient http, Guid item, CancellationToken cancellationToken)
     {

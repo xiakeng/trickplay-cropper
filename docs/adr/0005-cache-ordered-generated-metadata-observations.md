@@ -1,4 +1,6 @@
-# Cache ordered generated-metadata observations with bounded freshness
+# Superseded: Cache ordered generated-metadata observations with bounded freshness
+
+> Superseded by ADR 0006. This file preserves the historical decision record.
 
 Trickplay Cropper retains immutable generated-metadata observations by effective Source
 Video and exact Selected Trickplay Resolution. Positive metadata is current for 30 minutes;
