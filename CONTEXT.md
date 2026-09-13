@@ -5,12 +5,8 @@ Trickplay Cropper is a Jellyfin server plugin that exposes authenticated, single
 ## Language
 
 **Trickplay Preview**:
-A single JPEG frame selected for an authorized playback position and cropped from a Jellyfin-owned Source Sprite.
+A single JPEG frame selected by an authorized zero-based Frame Index and cropped from a Jellyfin-owned Source Sprite.
 _Avoid_: Thumbnail, cropped image, preview image
-
-**Trickplay Frame Probe**:
-The lightweight HTTP HEAD operation that computes a Frame Index for an Item and real Media Source for a natively authenticated user identity or userless API key. It makes no user-visibility or playback decision and does not apply per-user remote-access or parental-schedule restrictions; a successful probe is not evidence of permission to retrieve a Trickplay Preview.
-_Avoid_: HEAD probe, frame probe, preview probe
 
 **Frame Timeline**:
 The authenticated calculation model for one logical Item and selected Media Source. It returns
@@ -30,16 +26,8 @@ _Avoid_: Configured Trickplay Resolution, configured width
 The source-specific even width derived from the chosen Trickplay Resolution Target and required to match generated Trickplay metadata exactly.
 _Avoid_: Effective resolution, normalized width
 
-**Generated Metadata Observation**:
-An immutable read of Jellyfin's generated trickplay metadata for one effective Source Video, with read-start age and ordered publication; positive rows and scoped absence may be reused only for their defined lifetimes.
-_Avoid_: Metadata cache entry, calculation cache, metadata version
-
-**Source Facts Observation**:
-An immutable, user-independent observation of a Media Source's membership in a logical Item and its matched-source video width, or of explicit Item, membership, or Source Video absence. Each observation has its own read-start age and publication order.
-_Avoid_: Source cache entry, cached Video, cached playback source
-
 **Frame Index**:
-The zero-based ordinal of the preview frame a playback position selects from the generated trickplay sequence, clamped to the last available frame.
+The zero-based ordinal supplied by the playback client and accepted only when it is within the current authoritative generated frame count.
 _Avoid_: Frame number, thumbnail index, frame position
 
 **Preview Cache Entry**:

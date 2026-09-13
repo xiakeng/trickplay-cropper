@@ -42,69 +42,23 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 
 public sealed class TrickplayPreviewKestrelHttpSpecs
 {
-    [Theory]
-    [InlineData(TrickplayFrameProbeKestrelCondition.Success, HttpStatusCode.OK)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.MalformedInput, HttpStatusCode.BadRequest)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.UnauthenticatedSession, HttpStatusCode.Unauthorized)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.DefaultPolicyDenied, HttpStatusCode.OK)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.ApiKeyWithoutCurrentUser, HttpStatusCode.OK)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.ConcealedResource, HttpStatusCode.NotFound)]
-    [InlineData(TrickplayFrameProbeKestrelCondition.InvalidMetadata, HttpStatusCode.InternalServerError)]
-    public async Task ProvesBodylessTrickplayFrameProbeOutcomesOverRealKestrel(
-        TrickplayFrameProbeKestrelCondition condition,
-        HttpStatusCode expectedStatus)
-    {
-        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(
-            CreateKestrelScenario(condition));
-
-        using HttpResponseMessage response = condition == TrickplayFrameProbeKestrelCondition.MalformedInput
-            ? await fixture.HeadRawAsync(PreviewPath)
-            : await fixture.HeadAsync();
-
-        if (expectedStatus == HttpStatusCode.OK)
-        {
-            await AssertTrickplayFrameProbeSuccessAsync(response, 0);
-        }
-        else
-        {
-            await AssertBodylessTrickplayFrameProbeFailureAsync(response, expectedStatus);
-        }
-    }
-
-    [Fact]
-    public async Task ProvesApiKeyProbeAndPreviewAuthorizationSplitOverRealKestrel()
-    {
-        var scenario = new PreviewScenario
-        {
-            Authentication = AuthenticationState.ApiKeyWithoutCurrentUser,
-        };
-        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(scenario);
-
-        using HttpResponseMessage probeResponse = await fixture.HeadAsync();
-        await AssertTrickplayFrameProbeSuccessAsync(probeResponse, 0);
-
-        using HttpResponseMessage previewResponse = await fixture.GetAsync();
-        Assert.Equal(HttpStatusCode.Forbidden, previewResponse.StatusCode);
-        await AssertAuthorizationErrorResponseAsync(previewResponse);
-    }
-
     [Fact]
     public async Task ReturnsTheSelectedGetFrameIndexOverRealKestrelForImageAndConditionalSuccess()
     {
         var scenario = new PreviewScenario
         {
-            RequestPositionTicks = 30_000L * TimeSpan.TicksPerMillisecond,
+            RequestFrameIndex = 3,
         };
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateWithKestrelAsync(scenario);
 
         using HttpResponseMessage imageResponse = await fixture.GetAsync();
         Assert.Equal(HttpStatusCode.OK, imageResponse.StatusCode);
-        Assert.Equal("3", imageResponse.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.False(imageResponse.Headers.Contains("X-Trickplay-Frame-Index"));
         string entityTag = Assert.IsType<string>(imageResponse.Headers.ETag?.Tag);
 
         using HttpResponseMessage conditionalResponse = await fixture.GetConditionalAsync(entityTag);
         Assert.Equal(HttpStatusCode.NotModified, conditionalResponse.StatusCode);
-        Assert.Equal("3", conditionalResponse.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.False(conditionalResponse.Headers.Contains("X-Trickplay-Frame-Index"));
     }
 
 }

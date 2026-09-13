@@ -287,13 +287,12 @@ internal sealed class TrickplayPreview : ITrickplayPreview
             string message = string.Create(
                 CultureInfo.InvariantCulture,
                 $"Trickplay Preview request failed with {ExceptionType} for ItemId {query.ItemId}, "
-                + $"MediaSourceId {query.ResolvedMediaSourceId}, PositionTicks {query.PositionTicks}, "
+                + $"MediaSourceId {query.ResolvedMediaSourceId}, FrameIndex {query.FrameIndex}, "
                 + $"ElapsedMilliseconds {elapsedMilliseconds}.");
             KeyValuePair<string, object?>[] properties =
             [
                 new("ItemId", query.ItemId),
                 new("MediaSourceId", query.ResolvedMediaSourceId),
-                new("PositionTicks", query.PositionTicks),
                 new("ConfiguredTargets", ConfiguredTargets),
                 new("ChosenTarget", ChosenTarget),
                 new("SelectedResolution", SelectedResolution),
@@ -417,7 +416,7 @@ internal sealed class TrickplayPreview : ITrickplayPreview
     {
         public const string MessageTemplate =
             "Trickplay Preview request failed with {ExceptionType} for ItemId {ItemId}, "
-            + "MediaSourceId {MediaSourceId}, PositionTicks {PositionTicks}, "
+            + "MediaSourceId {MediaSourceId}, FrameIndex {FrameIndex}, "
             + "ElapsedMilliseconds {ElapsedMilliseconds}.";
 
         private readonly KeyValuePair<string, object?>[] properties;

@@ -13,8 +13,8 @@ public sealed class PreviewQueryParameters
     public Guid? MediaSourceId { get; init; }
 
     /// <summary>
-    /// Gets the requested playback position in Jellyfin ticks.
+    /// Gets the requested zero-based generated frame index.
     /// </summary>
     [BindRequired]
-    public long PositionTicks { get; init; }
+    public int FrameIndex { get; init; }
 }

@@ -71,7 +71,7 @@ public sealed class LocalJellyfin(HttpClient http)
         Console.WriteLine("Load-Proof gate passed; requesting a real Preview JPEG.");
         DateTimeOffset since = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         using HttpResponseMessage preview = await http.GetAsync(
-            $"/TrickplayCropper/Videos/{input.PlayableItems[0]:N}/Preview?PositionTicks=0", cancellationToken).ConfigureAwait(false);
+            $"/TrickplayCropper/Videos/{input.PlayableItems[0]:N}/Preview?FrameIndex=0", cancellationToken).ConfigureAwait(false);
         byte[] jpeg = await preview.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         Require(preview.StatusCode == HttpStatusCode.OK && preview.Content.Headers.ContentType?.MediaType == "image/jpeg"
             && jpeg.Length > 3 && jpeg[0] == 0xff && jpeg[1] == 0xd8 && jpeg[^2] == 0xff && jpeg[^1] == 0xd9,

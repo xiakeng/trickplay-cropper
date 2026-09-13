@@ -31,23 +31,15 @@ internal sealed record TrickplayMetadata(
     }
 
     /// <summary>
-    /// Selects the Frame Index that a Jellyfin playback position identifies.
+    /// Rejects invalid representation geometry while allowing a non-positive playback interval.
     /// </summary>
-    /// <param name="positionTicks">The non-negative playback position.</param>
-    /// <returns>The clamped zero-based Frame Index.</returns>
-    public int SelectFrameIndex(long positionTicks)
+    public void ValidateForPreview()
     {
-        if (positionTicks < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(positionTicks),
-                positionTicks,
-                "The playback position must be non-negative.");
-        }
-
-        long ticksPerFrame = checked((long)IntervalMilliseconds * TimeSpan.TicksPerMillisecond);
-        long selectedFrameIndex = Math.Min(positionTicks / ticksPerFrame, ThumbnailCount - 1L);
-        return checked((int)selectedFrameIndex);
+        ValidatePositive(FrameWidth, "FrameWidthPositive");
+        ValidatePositive(FrameHeight, "FrameHeightPositive");
+        ValidatePositive(TileWidth, "TileWidthPositive");
+        ValidatePositive(TileHeight, "TileHeightPositive");
+        ValidatePositive(ThumbnailCount, "ThumbnailCountPositive");
     }
 
     private void ValidatePositive(int value, string validation)

@@ -29,7 +29,7 @@ internal sealed class TrickplayFrameTimeline : IFrameTimeline
         try
         {
             AuthorizedSourceResolution authorization = await contextResolver
-                .ResolveAuthorizedSourceAsync(query, principal, publishSourceFacts: false, cancellationToken: cancellationToken)
+                .ResolveAuthorizedSourceAsync(query, principal, cancellationToken)
                 .ConfigureAwait(false);
             if (authorization is not AuthorizedSourceResolution.Resolved resolved)
             {

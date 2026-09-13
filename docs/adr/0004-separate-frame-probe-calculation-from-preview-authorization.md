@@ -1,4 +1,6 @@
-# Separate Frame Probe calculation from Preview authorization
+# Superseded: Separate Frame Probe calculation from Preview authorization
+
+> Superseded by ADR 0006. This file preserves the historical decision record.
 
 The v3 authentication boundary below is an accepted requirement-analysis decision;
 its implementation and before/after response-time measurements remain pending.

@@ -16,42 +16,35 @@ public sealed class ScrubStormSpecs : IDisposable
     public ScrubStormSpecs() => Directory.CreateDirectory(root);
 
     [Fact]
-    public async Task ReplaysSixBarrierControlledLanesAndPassesWithoutContentionObservations()
+    public async Task ReplaysDirectFrameIndexLanesAndReconcilesCacheAndDebugEvents()
     {
         using StormHostResponses handler = new(root);
         using HttpClient http = CreateClient(handler);
         using StringWriter output = new();
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
+
         ScrubStorm storm = new(http, output, root);
-        await storm.RunAsync(Input, timeout.Token);
+        await storm.RunAsync(Input, Timelines, timeout.Token);
 
         string report = storm.Report.ToMarkdown(true);
         Assert.Contains("Scrub Storm outcome: **Passed**", report, StringComparison.Ordinal);
-        Assert.Contains("HEAD requests dispatched: **864**", report, StringComparison.Ordinal);
         Assert.Contains("GET requests dispatched: **864**", report, StringComparison.Ordinal);
         Assert.Contains("Cache HIT responses: **852**", report, StringComparison.Ordinal);
         Assert.Contains("Cache MISS responses: **12**", report, StringComparison.Ordinal);
-        Assert.Equal(1728, handler.Requests.Count);
-        Assert.Equal(864, handler.Requests.Count(request => request.StartsWith("HEAD ", StringComparison.Ordinal)));
-        Assert.Equal(864, handler.Requests.Count(request => request.Contains(" 1 ", StringComparison.Ordinal)));
-        Assert.Equal(864, handler.Requests.Count(request => request.Contains(" 2 ", StringComparison.Ordinal)));
-        foreach (int shape in Enumerable.Range(0, 3))
+        Assert.Equal(864, handler.Requests.Count);
+        Assert.All(handler.Requests, request =>
+            Assert.StartsWith("GET ", request, StringComparison.Ordinal));
+        Assert.All(handler.Requests, request =>
+            Assert.Contains("FrameIndex=", request, StringComparison.Ordinal));
+        Assert.Equal(432, handler.Requests.Count(request => request.Contains(" 1 ", StringComparison.Ordinal)));
+        Assert.Equal(432, handler.Requests.Count(request => request.Contains(" 2 ", StringComparison.Ordinal)));
+        for (int shape = 0; shape < 3; shape++)
         {
-            string[] firstRound = handler.Requests.Skip(shape * 576).Take(288).Order(StringComparer.Ordinal).ToArray();
-            string[] secondRound = handler.Requests.Skip(shape * 576 + 288).Take(288).Order(StringComparer.Ordinal).ToArray();
+            string[] firstRound = handler.Requests.Skip(shape * 288).Take(144).Order(StringComparer.Ordinal).ToArray();
+            string[] secondRound = handler.Requests.Skip(shape * 288 + 144).Take(144).Order(StringComparer.Ordinal).ToArray();
             Assert.Equal(firstRound, secondRound);
         }
 
-        // Worked trajectory anchors for the fixture's 7-frame Item at 2.5-second intervals.
-        Assert.All(handler.Requests.Take(6), request => Assert.EndsWith("PositionTicks=0", request, StringComparison.Ordinal));
-        Assert.All(handler.Requests.Skip(24).Take(6), request =>
-            Assert.EndsWith("PositionTicks=150000000", request, StringComparison.Ordinal));
-        Assert.All(handler.Requests.Skip(1152).Take(6), request =>
-            Assert.EndsWith("PositionTicks=25000000", request, StringComparison.Ordinal));
-        Assert.All(handler.Requests.Skip(1176).Take(6), request =>
-            Assert.EndsWith("PositionTicks=125000000", request, StringComparison.Ordinal));
-        Assert.Contains(handler.Requests.Skip(576).Take(6), request => request.EndsWith("PositionTicks=0", StringComparison.Ordinal));
-        Assert.Contains(handler.Requests.Skip(576).Take(6), request => request.EndsWith("PositionTicks=150000000", StringComparison.Ordinal));
         Assert.Equal(12, (await CacheTreeSnapshot.ReadAsync(root, CancellationToken.None)).Count);
         Assert.Equal(1, handler.LogReads);
         Assert.Contains("MISS-to-HIT observed", output.ToString(), StringComparison.Ordinal);
@@ -65,6 +58,7 @@ public sealed class ScrubStormSpecs : IDisposable
     [InlineData("status")]
     [InlineData("repeat-bytes")]
     [InlineData("repeat-tag")]
+    [InlineData("second-item-frame")]
     [InlineData("all-hit")]
     [InlineData("log-frame")]
     [InlineData("log-sprite")]
@@ -75,10 +69,12 @@ public sealed class ScrubStormSpecs : IDisposable
         using HttpClient http = CreateClient(handler);
         using StringWriter output = new();
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
-        bool restored = false;
         ScrubStorm storm = new(http, output, root);
-        bool passed = await new DeploymentCycle(output).RunAsync(() => Task.FromResult(0),
-            () => storm.RunAsync(Input, timeout.Token),
+        bool restored = false;
+
+        bool passed = await new DeploymentCycle(output).RunAsync(
+            () => Task.FromResult(0),
+            () => storm.RunAsync(Input, Timelines, timeout.Token),
             () => { restored = true; return Task.CompletedTask; });
 
         Assert.Contains("Scrub Storm outcome: **Failed or cancelled**", storm.Report.ToMarkdown(passed), StringComparison.Ordinal);
@@ -99,7 +95,7 @@ public sealed class ScrubStormSpecs : IDisposable
         using HttpClient http = CreateClient(handler);
         using StringWriter output = new();
         using CancellationTokenSource cancellation = new();
-        Task run = new ScrubStorm(http, output, root).RunAsync(Input, cancellation.Token);
+        Task run = new ScrubStorm(http, output, root).RunAsync(Input, Timelines, cancellation.Token);
         await handler.WaitingRequest.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await cancellation.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
@@ -113,21 +109,29 @@ public sealed class ScrubStormSpecs : IDisposable
         using HttpClient http = CreateClient(handler);
         using StringWriter output = new();
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
-        await new ScrubStorm(http, output, root).RunAsync(Input, timeout.Token);
+
+        await new ScrubStorm(http, output, root).RunAsync(Input, Timelines, timeout.Token);
         Assert.Equal(2, handler.LogReads);
         Assert.Contains("PASS Scrub Storm", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task TimesOutStalledRequestsWithoutRelyingOnTheHttpClientTimeout()
+    public async Task TimesOutStalledRequestsWithoutRelyingOnHttpClientTimeout()
     {
         using StormHostResponses handler = new(root, "timeout");
         using HttpClient http = CreateClient(handler);
         using StringWriter output = new();
-        Task run = new ScrubStorm(http, output, root).RunAsync(Input, CancellationToken.None);
+        Task run = new ScrubStorm(http, output, root).RunAsync(Input, Timelines, CancellationToken.None);
+
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(15)));
         Assert.Equal(6, handler.Requests.Count);
     }
+
+    private static IReadOnlyDictionary<Guid, PlaybackTimeline> Timelines => new Dictionary<Guid, PlaybackTimeline>
+    {
+        [Guid.Parse("11111111111111111111111111111111")] = new(25000000, 7),
+        [Guid.Parse("22222222222222222222222222222222")] = new(25000000, 5),
+    };
 
     private static HttpClient CreateClient(HttpMessageHandler handler)
     {
@@ -136,5 +140,11 @@ public sealed class ScrubStormSpecs : IDisposable
         return http;
     }
 
-    public void Dispose() => Directory.Delete(root, true);
+    public void Dispose()
+    {
+        if (Directory.Exists(root))
+        {
+            Directory.Delete(root, true);
+        }
+    }
 }

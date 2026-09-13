@@ -36,9 +36,6 @@ internal sealed class ScrubStormPlan
             _ => throw new ArgumentOutOfRangeException(nameof(shape)),
         }).ToArray();
         frames[^1] = frames[0];
-        return frames.Select(frame => subject with
-        {
-            Ticks = checked((long)frame * subject.Metadata.Interval * TimeSpan.TicksPerMillisecond),
-        });
+        return frames.Select(frame => subject with { FrameIndex = frame });
     }
 }
