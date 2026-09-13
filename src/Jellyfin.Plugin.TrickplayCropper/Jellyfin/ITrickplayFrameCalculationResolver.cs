@@ -20,18 +20,6 @@ internal interface ITrickplayFrameCalculationResolver
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Applies the shared rules while permitting a current generated-metadata observation to be reused.
-    /// </summary>
-    /// <param name="query">The normalized Preview query.</param>
-    /// <param name="normalizationSourceWidth">The matched Media Source video-stream width.</param>
-    /// <param name="cancellationToken">The request cancellation token.</param>
-    /// <returns>The selected calculation or an expected unavailable result.</returns>
-    Task<TrickplayFrameCalculationResolution> ResolveForProbeAsync(
-        PreviewQuery query,
-        int? normalizationSourceWidth,
-        CancellationToken cancellationToken);
-
-    /// <summary>
     /// Resolves one authoritative generated-metadata row for a Frame Timeline.
     /// </summary>
     /// <param name="sourceVideoId">The authorized Source Video identifier.</param>

@@ -83,14 +83,15 @@ internal sealed class HarnessApplication
         cancellationToken.ThrowIfCancellationRequested();
         DeploymentCycle cycle = new(Console.Out);
         ScrubStorm storm = new(http, Console.Out, "/tmp/jellyfin/Jellyfin.Plugin.TrickplayCropper/preview-v1");
+        IReadOnlyDictionary<Guid, PlaybackTimeline>? timelines = null;
         bool success = await cycle.RunAsync(
             () => PrepareAsync(version),
             async () =>
             {
                 await host.VerifyDeploymentAsync(input, version, cancellationToken).ConfigureAwait(false);
                 Console.WriteLine("Health, Load-Proof, and fresh structured Debug-Proof gates passed.");
-                await new SmokeCases(http, Console.Out).RunAsync(input, cancellationToken).ConfigureAwait(false);
-                await storm.RunAsync(input, cancellationToken).ConfigureAwait(false);
+                timelines = await new SmokeCases(http, Console.Out).RunAsync(input, cancellationToken).ConfigureAwait(false);
+                await storm.RunAsync(input, timelines, cancellationToken).ConfigureAwait(false);
                 if (mode == "--verify-restoration")
                 {
                     Console.WriteLine("Injecting an assertion failure after the real smoke cases to exercise unconditional restoration.");

@@ -43,6 +43,36 @@ namespace Jellyfin.Plugin.TrickplayCropper.ComponentTests;
 public sealed class TrickplayPreviewGetResponseHttpSpecs
 {
     [Fact]
+    public async Task AcceptsTheLastAuthoritativeFrameIndex()
+    {
+        var scenario = new PreviewScenario { RequestFrameIndex = 3 };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
+        using SKBitmap decoded = SKBitmap.Decode(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
+        SKColor center = decoded.GetPixel(160, 90);
+        Assert.InRange(center.Red, 240, 255);
+        Assert.InRange(center.Green, 240, 255);
+        Assert.InRange(center.Blue, 0, 15);
+    }
+
+    [Fact]
+    public async Task RejectsAnIndexAtTheAuthoritativeCountBeforeRepresentationWork()
+    {
+        var scenario = new PreviewScenario { RequestFrameIndex = 4 };
+        await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync(scenario);
+
+        using HttpResponseMessage response = await fixture.GetAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, fixture.SourceSpritePathRequests);
+        Assert.Equal(0, fixture.Cache.CallCount);
+    }
+
+    [Fact]
     public async Task ServesGeneratedDefaultSourcePreview()
     {
         await using PreviewHostFixture fixture = await PreviewHostFixture.CreateAsync();
@@ -54,7 +84,7 @@ public sealed class TrickplayPreviewGetResponseHttpSpecs
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoCache);
         Assert.Equal(ExpectedDefaultEntityTag, response.Headers.ETag?.Tag);
-        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
         Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
         Assert.False(response.Headers.Contains("X-Trickplay-Cache-File"));
         Assert.Contains("lookup;dur=", response.Headers.GetValues("Server-Timing").Single(), StringComparison.Ordinal);
@@ -115,7 +145,7 @@ public sealed class TrickplayPreviewGetResponseHttpSpecs
         Assert.Equal("image/jpeg", cachedResponse.Content.Headers.ContentType?.MediaType);
         Assert.Equal("inline", cachedResponse.Content.Headers.ContentDisposition?.DispositionType);
         Assert.Equal(ExpectedDefaultEntityTag, cachedResponse.Headers.ETag?.Tag);
-        Assert.Equal("0", cachedResponse.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.False(cachedResponse.Headers.Contains("X-Trickplay-Frame-Index"));
         Assert.True(cachedResponse.Headers.CacheControl?.Private);
         Assert.True(cachedResponse.Headers.CacheControl?.NoCache);
         Assert.Equal("HIT", cachedResponse.Headers.GetValues("X-Trickplay-Cache").Single());
@@ -140,7 +170,7 @@ public sealed class TrickplayPreviewGetResponseHttpSpecs
         Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
         Assert.Empty(await response.Content.ReadAsByteArrayAsync(CancellationToken.None));
         Assert.Equal(entityTag, response.Headers.ETag?.Tag);
-        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
         Assert.True(response.Headers.CacheControl?.Private);
         Assert.True(response.Headers.CacheControl?.NoCache);
         Assert.False(response.Headers.Contains("X-Trickplay-Cache"));
@@ -171,7 +201,7 @@ public sealed class TrickplayPreviewGetResponseHttpSpecs
         using HttpResponseMessage response = await fixture.GetConditionalAsync(condition);
 
         Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
-        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
         Assert.Equal(1, fixture.Cache.CallCount);
     }
 
@@ -187,7 +217,7 @@ public sealed class TrickplayPreviewGetResponseHttpSpecs
         using HttpResponseMessage response = await fixture.GetConditionalAsync(originalEntityTag);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("0", response.Headers.GetValues("X-Trickplay-Frame-Index").Single());
+        Assert.False(response.Headers.Contains("X-Trickplay-Frame-Index"));
         Assert.NotEqual(originalEntityTag, response.Headers.ETag?.Tag);
         Assert.Equal("MISS", response.Headers.GetValues("X-Trickplay-Cache").Single());
         Assert.Equal(2, fixture.Cache.CallCount);

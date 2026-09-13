@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.TrickplayCropper.Jellyfin;
 /// <param name="MediaSourceId">The effective media source identifier.</param>
 /// <param name="SourceVideo">The user-visible Source Video selected by the authorized logical video.</param>
 /// <param name="Metadata">The exactly selected generated metadata.</param>
-/// <param name="FrameIndex">The clamped zero-based Frame Index.</param>
+/// <param name="FrameIndex">The validated zero-based Frame Index.</param>
 internal sealed record PreviewContext(
     Guid MediaSourceId,
     Video SourceVideo,

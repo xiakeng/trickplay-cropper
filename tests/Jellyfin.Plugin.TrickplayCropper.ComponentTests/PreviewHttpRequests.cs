@@ -61,34 +61,6 @@ internal static class PreviewHttpRequests
         return SendAsync(fixture, HttpMethod.Get, ifNoneMatch, null, CancellationToken.None);
     }
 
-    public static Task<HttpResponseMessage> HeadAsync(this PreviewHostFixture fixture)
-    {
-        return fixture.HeadAsync(CancellationToken.None);
-    }
-
-    public static Task<HttpResponseMessage> HeadAsync(
-        this PreviewHostFixture fixture,
-        CancellationToken cancellationToken)
-    {
-        return SendAsync(fixture, HttpMethod.Head, null, null, cancellationToken);
-    }
-
-    public static Task<HttpResponseMessage> HeadConditionalAsync(
-        this PreviewHostFixture fixture,
-        string ifNoneMatch)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(ifNoneMatch);
-        return SendAsync(fixture, HttpMethod.Head, ifNoneMatch, null, CancellationToken.None);
-    }
-
-    public static Task<HttpResponseMessage> HeadRawAsync(
-        this PreviewHostFixture fixture,
-        string requestPath)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(requestPath);
-        return SendAsync(fixture, HttpMethod.Head, null, requestPath, CancellationToken.None);
-    }
-
     public static Task<HttpResponseMessage> SendVerbAsync(this PreviewHostFixture fixture, string method)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(method);
@@ -135,6 +107,6 @@ internal static class PreviewHttpRequests
         return string.Create(
             CultureInfo.InvariantCulture,
             $"/TrickplayCropper/Videos/{scenario.LogicalItemId:D}/Preview?{mediaSourceQuery}"
-            + $"PositionTicks={scenario.RequestPositionTicks}");
+            + $"FrameIndex={scenario.RequestFrameIndex}");
     }
 }

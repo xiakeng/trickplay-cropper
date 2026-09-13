@@ -14,7 +14,6 @@ public sealed class ScrubStormReport
     private long? firstSend;
     private long lastSend;
     private long? lastCompletion;
-    private int heads;
     private int gets;
     private int responses;
     private int unclassifiedResponses;
@@ -77,7 +76,6 @@ public sealed class ScrubStormReport
             text.AppendLine("\n## Response times\n");
             text.AppendLine("| Category | Samples | Minimum (ms) | Maximum (ms) | Median (ms) | Mean (ms) |");
             text.AppendLine("| --- | ---: | ---: | ---: | ---: | ---: |");
-            AppendStatistics(text, "HEAD", "HEAD");
             AppendStatistics(text, "MISS", "GET cache MISS");
             AppendStatistics(text, "HIT", "GET cache HIT");
             AppendDefinitions(text);
@@ -101,16 +99,15 @@ public sealed class ScrubStormReport
     {
         lock (sync)
         {
-            if (method != HttpMethod.Head && method != HttpMethod.Get)
+            if (method != HttpMethod.Get)
             {
-                throw new ArgumentException("Only Scrub Storm HEAD and GET requests may be measured.", nameof(method));
+                throw new ArgumentException("Only Scrub Storm GET requests may be measured.", nameof(method));
             }
 
             long timestamp = clock.GetTimestamp();
             firstSend ??= timestamp;
             startedUtc ??= clock.GetUtcNow();
             lastSend = timestamp;
-            heads += method == HttpMethod.Head ? 1 : 0;
             gets += method == HttpMethod.Get ? 1 : 0;
             return timestamp;
         }
@@ -118,7 +115,7 @@ public sealed class ScrubStormReport
 
     private void RecordResponse(HttpMethod method, HttpResponseMessage response, (long Start, long End) interval)
     {
-        string category = method == HttpMethod.Head ? "HEAD" : ReadDisposition(response);
+        string category = ReadDisposition(response);
         lock (sync)
         {
             responses++;
@@ -146,7 +143,6 @@ public sealed class ScrubStormReport
         double span = firstSend is { } start ? clock.GetElapsedTime(start, lastSend).TotalSeconds : 0;
         text.AppendLine(FormattableString.Invariant($"- Request dispatch span: **{span:F3} s**"));
         text.AppendLine(FormattableString.Invariant($"- HTTP workload elapsed: **{elapsed:F3} s**"));
-        text.AppendLine(FormattableString.Invariant($"- HEAD requests dispatched: **{heads}**"));
         text.AppendLine(FormattableString.Invariant($"- GET requests dispatched: **{gets}**"));
         text.AppendLine(FormattableString.Invariant($"- HTTP responses received: **{responses}**"));
         text.AppendLine(FormattableString.Invariant($"- Cache HIT responses: **{samples.Count(sample => sample.Category == "HIT")}**"));
@@ -175,7 +171,7 @@ public sealed class ScrubStormReport
         text.AppendLine("\n## Measurement definitions\n");
         text.AppendLine("- Seed: `0x5EEDC0DE`; two clients, three lanes/client, twelve positions/lane/Item, two rounds per shape.");
         text.AppendLine("- Dispatch span: first SendAsync invocation to last invocation. HTTP workload elapsed: first invocation to last completion, including scheduling gaps.");
-        text.AppendLine("- Counts cover only Scrub Storm HEAD/GET SendAsync invocations, including failed attempts; a transport failure can precede server receipt.");
+        text.AppendLine("- Counts cover only Scrub Storm Preview GET SendAsync invocations, including failed attempts; a transport failure can precede server receipt.");
         text.AppendLine("- Response time uses a monotonic clock from dispatch until the complete response body is buffered. Local assertions/JPEG decoding are excluded.");
         text.AppendLine("- Timing groups contain HTTP 200 responses only; GET groups require an exact HIT/MISS header. HTTP contract failures can still fail the case after measurement.");
         text.AppendLine("- Metadata reads, deployment, quiescence, log/cache verification, and restoration are excluded from HTTP workload elapsed.");

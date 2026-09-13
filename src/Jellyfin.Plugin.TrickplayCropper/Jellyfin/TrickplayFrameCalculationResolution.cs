@@ -11,9 +11,11 @@ internal abstract record TrickplayFrameCalculationResolution
     /// Represents an available generated sequence and its selected Frame Index.
     /// </summary>
     /// <param name="Metadata">The exactly selected generated metadata.</param>
-    /// <param name="FrameIndex">The clamped zero-based Frame Index.</param>
+    /// <param name="FrameIndex">The validated zero-based Frame Index.</param>
     internal sealed record Selected(TrickplayMetadata Metadata, int FrameIndex)
         : TrickplayFrameCalculationResolution;
+
+    internal sealed record BadRequest : TrickplayFrameCalculationResolution;
 
     /// <summary>
     /// Represents calculation inputs that do not identify an available generated frame.

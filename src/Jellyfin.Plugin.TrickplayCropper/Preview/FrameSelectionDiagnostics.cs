@@ -31,7 +31,7 @@ internal sealed record FrameSelectionDiagnostics
     public required long CropY { get; init; }
 
     /// <summary>
-    /// Gets the clamped frame index.
+    /// Gets the validated frame index.
     /// </summary>
     public required long FrameIndex { get; init; }
 
