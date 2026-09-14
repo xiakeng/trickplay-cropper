@@ -23,7 +23,7 @@ calculates zero-based Frame Index values locally, and requests each Preview dire
 - A retained Timeline authorizes later requests or remains current after server changes.
 - A valid Timeline proves the Source Sprite exists.
 - Interval or frame count changes are a representation version; public ETags are opaque.
-- The server clamps an invalid index or accepts the former PositionTicks/HEAD interaction.
+- The server clamps an invalid index or derives one from a playback position.
 
 The client is the only participant that turns playback position into a Frame Index. Server-side
 authorization, source selection, crop, cache, and encoding remain plugin responsibilities.

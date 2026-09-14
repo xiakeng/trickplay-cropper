@@ -12,7 +12,8 @@ Each file below lives in the named suite's directory.
 | GET response and authorization behavior | `TrickplayPreviewGetResponseHttpSpecs.cs`, `TrickplayPreviewAuthorizationHttpSpecs.cs`, `TrickplayPreviewFailureHttpSpecs.cs` (ComponentTests) |
 | Frame Timeline HTTP contract, source binding, and no-image work | `TrickplayFrameTimelineHttpSpecs.cs` (ComponentTests) |
 | HTTP host, request, fake, authentication, scenario, metadata, source, and assertion support | `PreviewHttpHostFixture.cs`, `PreviewHttpRequests.cs`, `PreviewHttpJellyfinFakes.cs`, `PreviewHttpAuthentication.cs`, `PreviewHttpScenario.cs`, `MetadataReadPlan.cs`, `SourceReadPlan.cs`, `TrickplayPreviewHttpSupport.cs` (ComponentTests) |
-| GET outcome mapping, conditional ETag comparison, Debug events | `PreviewOutcomeSpecs.cs` (UnitTests) |
+| GET outcome mapping and conditional ETag comparison | `PreviewOutcomeSpecs.cs` (UnitTests) |
+| Stable Debug protocol parsing and event filtering | `DebugEventReaderSpecs.cs` (ComponentTests) |
 | Resolution selection, frame selection, metadata, and identity validation | `TrickplayResolutionSelectorSpecs.cs`, `FrameSelectionSpecs.cs`, `PreviewIdentitySpecs.cs` (UnitTests) |
 | Disk cache entry, path, cleanup, and failure behavior | `DiskPreviewCacheEntrySpecs.cs`, `DiskPreviewCachePathSafetySpecs.cs`, `DiskPreviewCacheCleanupEligibilitySpecs.cs`, `DiskPreviewCacheCleanupCoordinationSpecs.cs`, `DiskPreviewCacheFailureSpecs.cs`, `DiskPreviewCacheSupport.cs` (ComponentTests) |
 | Coordination, tree, and entry locks | `PreviewCacheCoordinationSpecs.cs`, `CacheTreeLockSpecs.cs`, `PreviewEntryLockRegistrySpecs.cs` (ComponentTests) |

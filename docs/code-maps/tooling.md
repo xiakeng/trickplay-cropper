@@ -9,8 +9,8 @@ version source for release automation. Test locations are on the [tests map](tes
 
 | Target | Responsibility |
 |---|---|
-| [verify_repository_structure.py](../../.github/scripts/verify_repository_structure.py) | CI-only implementation of tracked source/script line limits and Code Map token/link checks |
-| [ci.yml](../../.github/workflows/ci.yml) | Every push and pull request: repository size/link contracts, restore, format, build, both test suites, JPRM package, validation, checksum |
+| [verify_repository_structure.py](../../.github/scripts/verify_repository_structure.py) | CI-only implementation of tracked source/script line limits and Code Map token checks |
+| [ci.yml](../../.github/workflows/ci.yml) | Every push and pull request: repository size/token contracts, restore, format, build, both test suites, JPRM package, validation, checksum |
 | [auto-release.yml](../../.github/workflows/auto-release.yml) | Qualifying pushes to `main`: plan the next version and open or update the pending release pull request |
 | [publish-release.yml](../../.github/workflows/publish-release.yml) | On release-PR merge: re-run the gates, publish the stable GitHub Release, submit the manifest pull request |
 
@@ -23,8 +23,8 @@ manually invoked, no-mock verification against the local Jellyfin host.
 |---|---|---|
 | [HarnessApplication.cs](../../tools/TrickplayCropper.IntegrationHarness/HarnessApplication.cs) | `RunAsync` | Modes (`--check`, `--verify-restoration`), input parsing, run sequencing |
 | [SmokeCases.cs](../../tools/TrickplayCropper.IntegrationHarness/SmokeCases.cs) | `RunAsync` | Invalid token, concealed Timeline/Preview, timeline oracle, and playback boundaries |
-| [ScrubStorm.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStorm.cs) | `RunAsync`, `VerifyQuiescenceAsync` | Coordinated direct Frame Index GET storm |
-| [ScrubStormReport.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStormReport.cs) | `SendAsync`, `ToMarkdown` | Client-observed GET/cache, JPEG, Debug-event, cleanup, and restoration evidence |
+| [ScrubStorm.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStorm.cs) | `RunAsync`, `VerifyQuiescenceAsync` | Coordinated direct Frame Index GET storm; JPEG, Cache Tree, and Debug-event reconciliation |
+| [ScrubStormReport.cs](../../tools/TrickplayCropper.IntegrationHarness/ScrubStormReport.cs) | `SendAsync`, `ToMarkdown` | GET attempts, responses, and cache-disposition report |
 | [DeploymentCycle.cs](../../tools/TrickplayCropper.IntegrationHarness/DeploymentCycle.cs) | `RunAsync` | Prepare, verify, and restore around each verification run |
 | [host_operation.py](../../tools/TrickplayCropper.IntegrationHarness/host_operation.py) | prepare, restore | Privileged deployment and logging restoration |
 | [LocalJellyfin.cs](../../tools/TrickplayCropper.IntegrationHarness/LocalJellyfin.cs) | `ValidateAsync`, `WaitForHealthAsync` | Read-only host gates and deployment verification |

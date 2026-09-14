@@ -12,7 +12,7 @@ Installation, update, and rollback guidance lives in the
 
 ## Document base
 
-Documents are based on commit 'c66fd8cc0699944e2f403a399bf1e42c68de4e40'
+Documents are based on commit 'd4b2df5a47935f0c60bf6bb2b7aa1ce7b5e29950'
 
 ## Three layers, in reading order
 

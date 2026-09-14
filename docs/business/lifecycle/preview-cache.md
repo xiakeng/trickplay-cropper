@@ -7,7 +7,8 @@ This chapter is the mechanism._
 ## What makes two previews the same
 
 A **Preview Cache Entry** is the cached representation of one Trickplay Preview. Its
-identity is a digest over everything that determines the bytes:
+identity is assembled from the source and representation facts that determine the bytes,
+plus the direct Frame Index that selects the file:
 
 | Input | Why it is part of identity |
 |---|---|
@@ -24,27 +25,33 @@ The raw Trickplay Resolution Target is deliberately **not** an input: two target
 normalize to the same Selected Trickplay Resolution produce identical bytes and must
 share one entry, so keying on the raw target would fragment the cache for nothing.
 
-The **source version stamp** is derived from the sprite's length and last modification
-time. When the sprite is replaced, the stamp changes, so the identity changes, the entry
-path changes, and the ETag changes. Stale entries are not corrected or invalidated; they
+`PreviewIdentity` hashes the namespace, Media Source, frame and tile geometry, Source Sprite
+index, Source Sprite length and last-write ticks, and JPEG quality into a `SourceStamp`. The
+Frame Index is deliberately not in that digest: it is added to the ETag and the final filename.
+Changing a hashed input changes the stamp, path, and ETag; changing only the Frame Index keeps
+the stamp but changes the file and ETag. Stale entries are not corrected or invalidated; they
 become unreachable, and the [scheduled cleanup](scheduled-cleanup.md) removes them.
 
 ```mermaid
 flowchart TD
-    Where["Which frame<br/>Media Source, Source Sprite index,<br/>Frame Index"] --> D["Digest over everything<br/>that determines the bytes"]
+    Where["Which source<br/>Media Source, Source Sprite index"] --> D["Canonical source inputs"]
     Shape["What shape it has<br/>frame and tile dimensions"] --> D
-    Version["Which version of the sprite<br/>its length and last modification time"] --> D
+    Version["Which sprite version<br/>length and last modification time"] --> D
     How["How it was made<br/>cache namespace and encoding quality"] --> D
 
-    D --> Stamp["Source version stamp"]
-    Stamp --> Path["Preview Cache Entry path"]
+    D --> Hash["SHA-256 digest"]
+    Hash --> Stamp["SourceStamp"]
+    Stamp --> Path["Entry directory"]
+    Frame["Which frame<br/>Frame Index"] --> File["Entry filename"]
     Stamp --> Tag["ETag"]
+    Frame --> Tag
+    Stamp --> File
     Path --> Tree["Cache Tree"]
 ```
 
-Four groups of inputs feed one digest, and the stamp it yields feeds both
-caller-visible values. That is why no single input can be dropped without making
-two different artifacts share an identity.
+The canonical source inputs feed one digest. The resulting stamp identifies the entry
+directory, while the Frame Index completes the ETag and filename. That is why no source or
+representation input can be dropped without making different artifacts share an identity.
 
 ## What the identity produces
 
@@ -89,8 +96,8 @@ Two properties of the layout are business rules, not conveniences:
   [Cache coordination](cache-coordination.md).
 
 An empty file is never a valid entry. A zero-length file at an entry path means
-something went wrong while it was being written, and it is treated as absent
-rather than served.
+something went wrong while it was being written, so the cache raises invalid-data failure
+rather than serving or regenerating it.
 
 ## Staying inside the tree
 
@@ -101,7 +108,8 @@ followed, on every access and not only when an entry is created. What that preve
 
 ## Anchors
 
-`PreviewIdentity` computes the digest, the source version stamp, the ETag, and the
-entry path, and owns the namespace and encoding quality constants;
-`DiskPreviewCache` owns the Cache Tree, the containment and reparse-point checks,
-and the HIT/MISS disposition reported as `PreviewCacheDisposition`.
+`PreviewIdentity` computes the canonical digest, `SourceStamp`, ETag, and entry path, and owns
+the namespace and encoding quality constants; `PreviewCachePaths` owns containment and
+reparse-point checks; `DiskPreviewCacheEntryStore` owns read/generate/publish behavior; and
+`DiskPreviewCache` exposes the Cache Tree boundary and HIT/MISS disposition through
+`PreviewCacheDisposition`.

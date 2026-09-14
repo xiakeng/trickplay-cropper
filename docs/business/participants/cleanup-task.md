@@ -18,8 +18,8 @@ The plugin acting as its own janitor: the party that deletes.
   scheduled task, so an administrator sees it, reschedules it, and may trigger it by
   hand. The plugin does not decide its own cadence and has no internal timer.
 - **Whether an entry is still wanted.** Nothing consults clients, and no entry is
-  kept because someone might ask again. An entry becomes garbage when its identity
-  can no longer be computed — see
+  kept because someone might ask again. An entry becomes garbage when current request
+  inputs no longer compute its path — see
   [cache identity](../design/cache-identity-and-freshness.md) — and the run does not
   need to know why.
 

@@ -102,7 +102,8 @@ above did their job.
 
 ## Anchors
 
-`ClearTrickplayCropperCacheTask` is the scheduled task and its default trigger;
-`DiskPreviewCache` owns the run — the single-run bound, the cutoff, discovery,
-candidate classification, the pre-deletion re-check, and directory pruning — through
-its maintenance surface `IPreviewCacheMaintenance`.
+`ClearTrickplayCropperCacheTask.ExecuteAsync` invokes the maintenance surface
+`IPreviewCacheMaintenance`; `DiskPreviewCache.ClearAsync` delegates the run to
+`DiskPreviewCacheCleanup.ClearAsync`, which owns the single-run bound, cutoff, discovery,
+candidate classification, pre-deletion re-check, and directory pruning. The task also owns
+the default Jellyfin trigger.

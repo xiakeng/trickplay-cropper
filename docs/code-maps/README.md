@@ -1,6 +1,6 @@
 # Code Maps
 
-Documents are based on commit 'c66fd8cc0699944e2f403a399bf1e42c68de4e40'
+Documents are based on commit 'd4b2df5a47935f0c60bf6bb2b7aa1ce7b5e29950'
 
 Compact navigation for contributors and coding agents: each map names repository
 targets, key symbols, responsibilities, relationships, and test entry points, so a
