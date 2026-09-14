@@ -57,7 +57,7 @@ public sealed class ScrubStorm(HttpClient http, TextWriter output, string cacheR
             {
                 throw new InvalidDataException("Frame Timeline disagrees with independent metadata.");
             }
-            subjects.Add(new PreviewRequest(item, 0, metadata));
+            subjects.Add(new PreviewRequest(item, 0, metadata, timeline));
         }
 
         return subjects.ToArray();

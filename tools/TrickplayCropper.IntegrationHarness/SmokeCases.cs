@@ -23,14 +23,14 @@ public sealed class SmokeCases(HttpClient http, TextWriter output)
                 && timeline.FrameCount == metadata.Count, "Frame Timeline disagrees with independent metadata.");
             timelines.Add(item, timeline);
             output.WriteLine($"Reading Frame Timeline for Item {ordinal}: count={metadata.Count}, interval={metadata.Interval}ms.");
-            foreach (int frameIndex in new[] { 0, metadata.LastFrameIndex })
+            foreach (int frameIndex in new[] { 0, timeline.FrameCount - 1 })
             {
-                await VerifyBoundaryAsync(new PreviewRequest(item, frameIndex, metadata), cancellationToken)
+                await VerifyBoundaryAsync(new PreviewRequest(item, frameIndex, metadata, timeline), cancellationToken)
                     .ConfigureAwait(false);
             }
 
             using HttpResponseMessage outOfRange = await http.GetAsync(
-                PreviewRoute(item, metadata.Count), cancellationToken).ConfigureAwait(false);
+                PreviewRoute(item, timeline.FrameCount), cancellationToken).ConfigureAwait(false);
             Require(outOfRange.StatusCode == HttpStatusCode.BadRequest, "FrameIndex == frameCount must return 400.");
         }
 
@@ -39,17 +39,22 @@ public sealed class SmokeCases(HttpClient http, TextWriter output)
 
     private async Task VerifyAuthenticationAsync(Guid item, CancellationToken cancellationToken)
     {
-        using HttpRequestMessage request = new(HttpMethod.Get, PreviewRoute(item, 0));
-        request.Headers.Authorization = new AuthenticationHeaderValue("MediaBrowser", $"Token=\"{Guid.NewGuid():N}\"");
-        using HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        Require(response.StatusCode == HttpStatusCode.Unauthorized, "An invented invalid token must return 401.");
+        foreach (string route in new[] { PreviewRoute(item, 0), TimelineRoute(item) })
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get, route);
+            request.Headers.Authorization = new AuthenticationHeaderValue("MediaBrowser", $"Token=\"{Guid.NewGuid():N}\"");
+            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            Require(response.StatusCode == HttpStatusCode.Unauthorized, "An invented invalid token must return 401.");
+        }
     }
 
     private async Task VerifyConcealmentAsync(Guid item, CancellationToken cancellationToken)
     {
-        using HttpResponseMessage response = await http.GetAsync(
-            PreviewRoute(item, 0), cancellationToken).ConfigureAwait(false);
-        Require(response.StatusCode == HttpStatusCode.NotFound, "The invisible Item GET must return concealed 404.");
+        foreach (string route in new[] { PreviewRoute(item, 0), TimelineRoute(item) })
+        {
+            using HttpResponseMessage response = await http.GetAsync(route, cancellationToken).ConfigureAwait(false);
+            Require(response.StatusCode == HttpStatusCode.NotFound, "The invisible Item GET must return concealed 404.");
+        }
     }
 
     private async Task VerifyBoundaryAsync(PreviewRequest preview, CancellationToken cancellationToken)
@@ -65,6 +70,9 @@ public sealed class SmokeCases(HttpClient http, TextWriter output)
 
     private static string PreviewRoute(Guid item, int frameIndex) =>
         FormattableString.Invariant($"/TrickplayCropper/Videos/{item:N}/Preview?FrameIndex={frameIndex}");
+
+    private static string TimelineRoute(Guid item) =>
+        FormattableString.Invariant($"/TrickplayCropper/Videos/{item:N}/FrameTimeline");
 
     private static void Require(bool condition, string message)
     {

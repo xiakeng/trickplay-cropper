@@ -7,8 +7,6 @@ namespace TrickplayCropper.IntegrationHarness;
 /// <summary>Reads generated Jellyfin metadata independently of plugin responses and implementation types.</summary>
 internal sealed record PlaybackMetadata(int Width, int Height, int Interval, int Count, long RuntimeTicks, int FramesPerSprite)
 {
-    public int LastFrameIndex => Count - 1;
-
     public static async Task<PlaybackTimeline> ReadTimelineAsync(
         HttpClient http,
         Guid item,
