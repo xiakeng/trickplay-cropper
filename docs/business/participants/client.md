@@ -4,6 +4,43 @@ The playback client owns the per-playback interaction. It requests one authentic
 Timeline for the selected logical Item and Media Source, retains its interval and frame count,
 calculates zero-based Frame Index values locally, and requests each Preview directly.
 
+## API call sequence
+
+The client obtains the current timeline before requesting previews. It may send an opaque ETag
+from a retained JPEG on a later Preview request; the server rechecks the current request on
+every call, so a retained timeline or JPEG never replaces authorization or range validation.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Playback client
+    participant T as Frame Timeline API
+    participant P as Preview API
+
+    C->>T: GET /TrickplayCropper/Videos/{itemId}/FrameTimeline<br/>?mediaSourceId={optional}
+    alt Timeline available
+        T-->>C: 200 {intervalTicks, frameCount}
+        C->>C: Retain timeline and derive FrameIndex<br/>from each playback position
+        loop Each preview needed
+            C->>C: Check 0 <= FrameIndex < frameCount
+            C->>P: GET /TrickplayCropper/Videos/{itemId}/Preview<br/>?FrameIndex={index}&mediaSourceId={optional}<br/>If-None-Match: {opaque ETag, if retained}
+            alt Matching ETag
+                P-->>C: 304 Not Modified + opaque ETag
+                C->>C: Reuse retained JPEG
+            else New or changed representation
+                P-->>C: 200 image/jpeg + opaque ETag<br/>X-Trickplay-Cache: HIT or MISS
+                C->>C: Display and optionally retain JPEG
+            else Rejected or unavailable
+                P-->>C: 400 / 401 / 403 / 404 / 500
+                C->>C: Apply product error or retry policy
+            end
+        end
+    else Rejected or unavailable
+        T-->>C: 400 / 401 / 403 / 404 / 500
+        C->>C: Apply product error or retry policy
+    end
+```
+
 ## Owns
 
 - Timeline retention and playback-position arithmetic.
