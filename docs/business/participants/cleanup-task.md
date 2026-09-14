@@ -40,7 +40,7 @@ sequenceDiagram
         E-->>G: Granted
         G->>F: Read the final entry
         alt Entry exists
-            F-->>G: HIT; buffer the JPEG
+            F-->>G: HIT, buffer the JPEG
         else Entry was deleted
             G->>F: Generate, publish, and buffer
             F-->>G: MISS
