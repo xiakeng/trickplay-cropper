@@ -1,7 +1,7 @@
 # Participants
 
 Who is in the room, what each one owns, and what crosses the boundaries between
-them. This layer states no mechanism: how anything works is in
+them. This layer states no server-side mechanism: how anything works is in
 [the lifecycle layer](../lifecycle/README.md), and why it is shaped that way is in
 [the design layer](../design/README.md).
 
@@ -67,7 +67,8 @@ temporary storage, and the cleanup run faces both.
 
 ## What this layer deliberately does not say
 
-No ordering, no locks, no statuses, no arithmetic. A reader who wants to know what
-happens when a request arrives goes to [the lifecycle layer](../lifecycle/README.md);
-a reader who wants to know why the rules are what they are goes to
-[the design layer](../design/README.md).
+Full server-side ordering, locks, statuses, or arithmetic do not appear here. A caller-visible
+API exchange may show the minimum coordination boundary needed to clarify a participant's
+interaction; a reader who wants the complete request mechanism goes to
+[the lifecycle layer](../lifecycle/README.md), and a reader who wants to know why the rules are
+what they are goes to the [design layer](../design/README.md).

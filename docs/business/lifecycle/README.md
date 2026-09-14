@@ -39,9 +39,6 @@ current frame count before sprite lookup, cache, conditional comparison, or enco
 | [The response contract](response-contract.md) | Headers, JSON, and status codes |
 | [Scheduled cleanup](scheduled-cleanup.md) | Emptying the Cache Tree safely |
 
-The retired Frame Probe, PositionTicks calculation, end clamping, and observation caches are
-not part of the current product lifecycle.
-
 ## What this layer does not cover
 
 Tests, build, packaging, GitHub Actions, release publication, and the plugin manifest are

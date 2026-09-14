@@ -2,21 +2,25 @@
 
 ## The promise
 
-A cached JPEG remains identified by the Source Sprite version and the direct frame it
-represents. Current authorization and generated metadata are re-established before a Preview
-uses that entry.
+A cached JPEG remains identified by the Source Sprite and representation facts plus the direct
+frame it represents. Current authorization and generated metadata are re-established before a
+Preview uses that entry.
 
 ## Why this shape
 
 Preview identity includes the cache namespace, effective Media Source, frame and tile geometry,
 Source Sprite index, Source Sprite length and UTC last-write ticks, direct Frame Index, and JPEG
-quality. These are the values that determine the encoded bytes. The interval and thumbnail
-count are deliberately excluded: interval does not affect a direct-index image, and count is
-only the request's range boundary.
+quality. `PreviewIdentity` hashes every input except the direct Frame Index into `SourceStamp`,
+then adds the Frame Index to the ETag and entry filename. These are the values that determine
+the encoded bytes. The interval and thumbnail count are deliberately excluded: interval does
+not affect a direct-index image, and count is only the request's range boundary.
 
-The source version stamp uses the Sprite's length and modification time. A replacement changes
-the cache path and opaque strong ETag, leaving the old entry unreachable for scheduled cleanup.
-The stamp is taken once; the plugin does not promise detection of a Sprite replaced mid-request.
+The `SourceStamp` is a truncated SHA-256 digest of the canonical source and representation
+inputs; Sprite length and modification time are the freshness facts inside it. A replacement
+changes the cache path and opaque strong ETag, leaving the old entry unreachable for scheduled
+cleanup. The stamp is taken once; the plugin does not promise detection of a Sprite replaced
+mid-request. Two Frame Index values for the same source share a stamp but never share an ETag
+or entry filename.
 
 Every valid Preview performs the current-user boundary and one authoritative metadata read,
 including cache hits and conditional requests. A matching `If-None-Match` is compared only after

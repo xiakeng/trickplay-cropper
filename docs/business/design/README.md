@@ -1,9 +1,9 @@
 # Design
 
 What the product promises, what breaks without each promise, and why the mechanism
-is shaped the way it is. This layer never describes a mechanism: every "how" is a
-link into [the lifecycle layer](../lifecycle/README.md), and every "who owns it" is
-a link into [the participants layer](../participants/README.md).
+is shaped the way it is. Lifecycle chapters remain the source for mechanism; this layer
+links there for the definitive flow, and links to [participants](../participants/README.md)
+for ownership boundaries.
 
 Read this layer last. It makes sense once you know what happens, and it is the layer
 that answers *why not something else*.
@@ -15,7 +15,7 @@ that answers *why not something else*.
 | A frame reaches only someone who may play it, and an invisible Item does not exist | [Authorization and visibility](authorization-and-visibility.md) | [Source resolution](../lifecycle/source-resolution.md) | `401`, `403`, `404` |
 | The width served is one the server was configured to produce, exactly | [Resolution exactness](resolution-exactness.md) | [Source resolution](../lifecycle/source-resolution.md) | `404`, never a substitute |
 | Each direct Frame Index identifies one frame, and invalid indexes are rejected | [Frame determinism](frame-determinism.md) | [Frame Selection](../lifecycle/frame-selection.md) | JPEG or `400` |
-| Timeline calculation never costs image work, and never promises delivery | [Probe isolation](probe-isolation.md) | [Source resolution](../lifecycle/source-resolution.md) | Two-field JSON, no image work |
+| Timeline calculation never costs image work, and never promises delivery | [Timeline isolation](timeline-isolation.md) | [Source resolution](../lifecycle/source-resolution.md) | Two-field JSON, no image work |
 | Cached bytes keep source identity while metadata is read authoritatively | [Cache identity and freshness](cache-identity-and-freshness.md) | [Source resolution](../lifecycle/source-resolution.md), [Preview Cache Entry](../lifecycle/preview-cache.md) | ETag, `X-Trickplay-Cache` |
 | Nobody reads a partial entry, and one frame costs one generation | [Concurrency safety](concurrency-safety.md) | [Cache coordination](../lifecycle/cache-coordination.md) | `Server-Timing` |
 | The Cache Tree stays bounded, and emptying it disturbs nobody | [Resource bounds](resource-bounds.md) | [Scheduled cleanup](../lifecycle/scheduled-cleanup.md) | Nothing — no caller can observe this |
@@ -45,7 +45,7 @@ guarantee:
   generated metadata, there is no preview. See
   [resolution exactness](resolution-exactness.md).
 - **No Timeline-implies-preview.** A successful Timeline says nothing about whether the
-  Source Sprite exists. See [probe isolation](probe-isolation.md).
+  Source Sprite exists. See [Timeline isolation](timeline-isolation.md).
 - **No client cache lifetime.** The plugin supplies identity and freshness and
   prescribes no key, expiry, or invalidation rule. See
   [the client](../participants/client.md).
@@ -66,8 +66,7 @@ guarantee:
 
 ## How to read a chapter here
 
-Every chapter has the same five sections: the promise, what breaks without it, why
-the design has this shape and which alternatives were rejected, where it is
-enforced, and how a caller can observe it. An empty "where it is enforced" would be
-a defect in the product rather than in the document, which is what makes the layer
-auditable.
+Chapters share a core of promise, rationale, enforcement, and caller observation.
+Chapters add a failure-mode or bound section when that concern needs its own explanation.
+An empty "where it is enforced" would be a defect in the product rather than in the
+document, which is what makes the layer auditable.
