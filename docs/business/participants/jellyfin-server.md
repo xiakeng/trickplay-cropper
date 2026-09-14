@@ -6,8 +6,8 @@ Everything durable. The plugin derives from all of it and owns none of it.
 
 | Owned | Supplied to the plugin as |
 |---|---|
-| The library, Items, users, and playback authorization | User-scoped GET lookups and authorization, plus authoritative reads behind bounded user-independent HEAD facts |
-| Media Sources, including local, linked, and dynamic forms | User-shaped GET membership and full user-independent HEAD membership, plus the matched width and effective Source Video |
+| The library, Items, users, and playback authorization | User-scoped lookups and authorization for Timeline and Preview, plus authoritative metadata reads |
+| Media Sources, including local, linked, and dynamic forms | User-shaped membership, matched width, and effective Source Video |
 | The trickplay configuration | The current Trickplay Resolution Targets |
 | Generated trickplay metadata | Interval, tile geometry, thumbnail count, and recorded width per Media Source |
 | The Source Sprites | JPEG files the plugin crops frames out of |
@@ -34,9 +34,6 @@ left implicit:
   interval, geometry, and counts describe what was generated then.
 - **Metadata does not prove a file exists.** Recorded data can outlive the sprite
   it describes, and a sprite can exist without a row.
-- **An issued metadata query cannot be cancelled through its public interface.** Caller
-  cancellation can stop waiting for the result, but the query itself still settles and
-  must remain observed by the plugin.
 
 None of this is a defect to work around; it is the operating condition. The plugin's
 response to it — one exact Selected Trickplay Resolution with no fallback, and an
@@ -63,6 +60,5 @@ plugin's policy, and it is the reason
 The server-side interfaces the plugin reads through, and the version-specific
 behaviour behind every claim above, are recorded in the research notes under
 [the trickplay resolution contract](../../research/jellyfin-10.11.11-trickplay-resolution-contract.md)
-and [the Frame Probe source-enumeration contract](../../research/jellyfin-10.11.11-frame-probe-source-enumeration-contract.md),
-plus [the administration API contract](../../research/jellyfin-10.11.11-administration-api-contract.md).
+and [the administration API contract](../../research/jellyfin-10.11.11-administration-api-contract.md).
 This chapter states the boundary; those notes are the evidence.

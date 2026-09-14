@@ -1,120 +1,51 @@
 # Frame Selection
 
-_Why clamping is a rule rather than an error, and why a wrong frame is worse than a
-failure: [Frame determinism](../design/frame-determinism.md). This chapter is the
-mechanism._
+_Why direct indexes are bounded rather than clamped, and why checked geometry matters:
+[Frame determinism](../design/frame-determinism.md). This chapter is the mechanism._
 
-## The inputs
+## Inputs
 
-Frame Selection is pure arithmetic over five values recorded when Jellyfin
-generated the trickplay data, plus the requested position:
+Preview receives a client-selected zero-based `FrameIndex`. Authoritative generated metadata
+supplies the positive thumbnail count and the frame/tile geometry:
 
 | Input | Meaning |
 |---|---|
-| Position | where playback is, in ticks |
-| Interval | the gap between generated frames, in milliseconds |
-| Thumbnail count | how many frames were generated in total |
-| Tile width, tile height | how many frames sit in one Source Sprite, as columns and rows |
-| Frame width, frame height | the size of one frame inside a sprite, which is the Selected Trickplay Resolution and its matching height |
+| Frame Index | The requested generated-frame ordinal |
+| Thumbnail count | The current upper bound (exclusive) |
+| Tile width, tile height | Frames per Source Sprite, as columns and rows |
+| Frame width, frame height | Dimensions of one frame inside a Source Sprite |
 
-Frame width, frame height, interval, tile width, and tile height must be positive. A
-nonpositive thumbnail count remains the established no-thumbnails `404` classification;
-other nonpositive values make the selected metadata invalid and return `500` rather than
-being estimated around.
+The server accepts only `0 <= FrameIndex < ThumbnailCount`; negative and upper-out-of-range
+values return `400`, with no clamping. Timeline interval data is used by the client for local
+playback arithmetic and is not needed by Preview selection.
 
-One request performs this arithmetic from one immutable metadata observation. Equal
-position and observation values produce the same Frame Index. A request crossing a
-metadata refresh may use a different coherent observation and therefore return a different
-index without mixing fields from the two reads.
+## Derivation
 
-## The derivation
+1. Divide the Frame Index by `TileWidth * TileHeight` to obtain the Source Sprite index and
+   the remainder as the cell index.
+2. Divide the cell index by `TileWidth` for the row; the remainder is the column.
+3. Multiply column by frame width and row by frame height to obtain the crop origin. The crop
+   is exactly one frame wide and high.
 
-1. **Position to Frame Index.** Divide the position by the interval expressed in
-   ticks. The result is the ordinal of the frame that covers this position.
-2. **Clamp to the last frame.** The generated sequence is finite, and the video
-   usually runs past the last generated frame — the tail is covered by a partial
-   interval, or by nothing at all. Positions beyond the last frame resolve to the
-   last frame. Why this is a rule rather than an error is in
-   [frame determinism](../design/frame-determinism.md): *the end of a video still
-   has a preview, and it is the last one.*
-3. **Frame Index to Source Sprite.** One sprite holds tile width × tile height
-   frames. Divide the Frame Index by that product to get the sprite, and take the
-   remainder as the cell inside it.
-4. **Cell to row and column.** Divide the cell by the tile width for the row, and
-   take the remainder as the column.
-5. **Row and column to crop.** The crop's horizontal offset is the column times
-   the frame width; its vertical offset is the row times the frame height. The
-   crop is exactly one frame wide and one frame high.
-
-The Frame Index is the value a probe returns and the value that, together with the
-sprite's version stamp, identifies a Preview Cache Entry. Steps 3 to 5 are
-recomputed per request rather than stored, because they are cheap and because
-storing them would create a second source of truth about geometry.
+The arithmetic is checked for overflow and the selected index is validated before Source Sprite
+lookup, crop calculation, cache access, conditional comparison, or encoding. Geometry is
+recomputed from one metadata row rather than stored as a second source of truth.
 
 ```mermaid
 flowchart TD
-    P["Position in ticks"] --> D["Divide by the interval"]
-    D --> R["Raw frame ordinal"]
-    R --> C["Clamp to the last frame"]
-    C --> F["Frame Index"]
-
-    F --> S["Divide by frames per sprite"]
-    S --> SI["Source Sprite index"]
-    S --> CE["Remainder: cell index"]
-    CE --> ROW["Divide by tile width: row"]
-    CE --> COL["Remainder: column"]
-
-    COL --> X["Crop offset X =<br/>column x frame width"]
-    ROW --> Y["Crop offset Y =<br/>row x frame height"]
-    F --> ID["Preview Cache Entry identity"]
+    F["Validated FrameIndex"] --> S["Sprite = index / frames per sprite"]
+    S --> C["Cell = index % frames per sprite"]
+    C --> R["Row = cell / tile width"]
+    C --> Col["Column = cell % tile width"]
+    R --> Y["Crop Y = row × frame height"]
+    Col --> X["Crop X = column × frame width"]
 ```
 
-## Reading a Source Sprite
-
-A sprite is a grid of frames, read left to right, top to bottom. Cell numbering
-starts at zero in the top-left, so the cell index alone determines both the row
-and the column.
-
-With a tile width of four and a tile height of two, one sprite holds eight frames,
-and Frame Index 7 is its last cell:
-
-```mermaid
-flowchart TB
-    subgraph Sprite["One Source Sprite, tile width 4 x tile height 2"]
-        direction TB
-        subgraph Row0["row 0"]
-            direction LR
-            C0["0"] ~~~ C1["1"] ~~~ C2["2"] ~~~ C3["3"]
-        end
-        subgraph Row1["row 1"]
-            direction LR
-            C4["4"] ~~~ C5["5"] ~~~ C6["6"] ~~~ C7["7"]
-        end
-        Row0 ~~~ Row1
-    end
-    classDef picked fill:#dce8fc,stroke:#1a56db,stroke-width:2px
-    class C7 picked
-```
-
-Frame Index 7 therefore selects row 1, column 3, and the crop starts three frame
-widths across and one frame height down. Frame Index 8 would fall in the *next*
-sprite, cell 0.
-
-Only the selected columns are decoded and only the selected rows are read; see
-[Preview generation](preview-generation.md). The geometry above is what makes that
-possible, because the crop's horizontal extent is known before any pixel is
-touched.
-
-## Checking the arithmetic
-
-The derivation multiplies and divides recorded values whose magnitude the plugin does not
-control. Frame Selection verifies that every intermediate value fits, and fails the
-request with diagnostics attached if one does not. Why an overflow must not be estimated
-around is in [frame determinism](../design/frame-determinism.md).
+Sprites are row-major: cells run left to right, then top to bottom. A tile grid of 4 × 2
+therefore maps Frame Index 7 to sprite cell 7, row 1, column 3.
 
 ## Anchors
 
-`FrameSelection` performs the derivation and exposes the Frame Index, sprite
-index, cell, row, column, and crop; `TrickplayMetadata` carries the five recorded
-inputs; `FrameSelectionDiagnostics` and `InvalidTrickplayMetadataException` carry
-the overflow and consistency failures.
+`FrameSelection.Create` performs the direct-index derivation and checked conversion;
+`TrickplayMetadata` supplies the generated geometry; `FrameSelectionDiagnostics` and
+`InvalidTrickplayMetadataException` carry overflow and consistency failures.

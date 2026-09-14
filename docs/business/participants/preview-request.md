@@ -18,15 +18,11 @@ JPEG frame cropped from a Source Sprite.
 ## May assume
 
 A current user exists, the logical Item and Source Video are visible to that user, the
-user may play the logical video, the selected source belongs to the user-shaped Media
-Source enumeration, its current matched width is known, and the exact shared calculation
-succeeded. GET may publish those independently verified values as a user-neutral positive,
-but never consumes retained source facts as authority. A retained metadata absence can
-end the calculation only after those current checks; retained positive metadata never
-replaces GET's authoritative metadata read. It also requires a
-Source Sprite for the selected frame to resolve and exist. The Frame Probe shares only
-the calculation; it establishes none of GET's user authority and never reaches the
-sprite gate. See [the Trickplay Frame Probe](frame-probe.md).
+user may play the logical video, the selected source belongs to the user's Media Source
+enumeration, its current matched width is known, and one authoritative metadata read has
+validated the direct Frame Index and geometry. It also requires a Source Sprite for the
+selected frame to resolve and exist. A prior Frame Timeline never substitutes for these
+checks.
 
 ## Must not
 

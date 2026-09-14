@@ -63,11 +63,9 @@ Resolution. The tiles exist; the policy still returns `404`, and logs both the t
 and the recorded widths so the mismatch is diagnosable. Serving them would mean
 cropping with metadata the plugin did not match.
 
-**Cached absence is exact too.** An empty generated dictionary is evidence about the
-whole Source Video, but one absent key or nonpositive thumbnail count is evidence only
-about that Selected Trickplay Resolution. Applying it to another current target would be
-a negative form of fallback: one width's history would decide another width's outcome.
-Each missing-width observation therefore keeps its own scope and 5-minute read-start age.
+**The authoritative read is exact too.** Every request resolves the current selected width
+and reads its generated metadata row. A missing exact row is `404`; invalid metadata is
+`500`. No retained row for another width can become a fallback.
 
 ## Where it is enforced
 
