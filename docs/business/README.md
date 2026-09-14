@@ -1,7 +1,7 @@
 # Business documentation
 
 Trickplay Cropper is a Jellyfin server plugin that serves one JPEG frame of a video for an
-authorized playback position, cropped from trickplay data that Jellyfin already generated.
+authorized direct Frame Index, cropped from trickplay data that Jellyfin already generated.
 It never generates, modifies, or repairs that data.
 
 These chapters explain the business logic: what the product does, why it does it that way,
@@ -12,7 +12,7 @@ Installation, update, and rollback guidance lives in the
 
 ## Document base
 
-Documents are based on commit 'd1af4327c0535649d578d6bbc57c7ec107891c08'
+Documents are based on commit 'c66fd8cc0699944e2f403a399bf1e42c68de4e40'
 
 ## Three layers, in reading order
 
@@ -30,10 +30,9 @@ keep depending on. Start here.
 
 ### 2. [Lifecycle](lifecycle/README.md) — what actually happens
 
-What happens, in order, when a request arrives: the separate GET authorization and HEAD
-source fronts, the selection of one exact resolution, Frame Selection, the probe's
-stopping point, generation, the cache and its coordination, the response contract, and
-the cleanup run.
+What happens, in order, when a request arrives: current-user source authorization, the
+selection of one exact resolution, the Frame Timeline and direct Frame Index flow,
+generation, the cache and its coordination, the response contract, and the cleanup run.
 
 *The only layer that describes mechanism. If you want to know how something works, this is
 where the answer lives.*
@@ -56,7 +55,7 @@ something else".*
 | Which headers and statuses an operation can produce | [The response contract](lifecycle/response-contract.md) |
 | Where a frame is cached, and what makes two previews the same | [Preview Cache Entry](lifecycle/preview-cache.md) |
 | Why there is no nearest-resolution fallback | [Resolution exactness](design/resolution-exactness.md) |
-| Why a successful probe can be followed by a `404` | [Probe isolation](design/probe-isolation.md) |
+| Why Timeline data is not permission or representation evidence | [Authorization and visibility](design/authorization-and-visibility.md) |
 | Why the cache is not guarded by one lock | [Concurrency safety](design/concurrency-safety.md) |
 | What the product refuses to promise | [Design, deliberate non-promises](design/README.md) |
 
@@ -85,7 +84,7 @@ Two structural rules follow from the layers' jobs:
 
 ## Language
 
-The terms used here — Trickplay Preview, Trickplay Frame Probe, Source Sprite, Trickplay
+The terms used here — Trickplay Preview, Frame Timeline, Source Sprite, Trickplay
 Resolution Target, Selected Trickplay Resolution, Frame Index, Preview Cache Entry, Cache
 Tree — are defined in the repository's [CONTEXT.md](../../CONTEXT.md), together with the
 synonyms this documentation deliberately avoids.

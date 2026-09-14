@@ -4,8 +4,7 @@
 
 No caller reads a partially written entry, two callers asking for the same frame pay
 for one generation, emptying the Cache Tree never disturbs a request in flight, and a
-caller that gives up leaves nothing held behind. An older source-fact or generated-metadata read never
-overwrites a newer observation merely because it completes later.
+caller that gives up leaves nothing held behind.
 
 ## What breaks without it
 
@@ -20,8 +19,6 @@ overwrites a newer observation merely because it completes later.
   deadlock; a stream of requests can starve the run that is supposed to bound the tree.
 - **Leaked holds.** A caller that disconnects mid-wait, still holding a lock, blocks
   every later caller for that entry until the process restarts.
-- **Completion order reverses metadata history.** A slow read begun before deletion or
-  invalid data can finish later and resurrect an observation that the newer read removed.
 
 ## Why this shape
 
@@ -74,24 +71,10 @@ while someone holds or waits on it, and is discarded when the count reaches zero
 alternative — keeping a lock per path forever — would make the registry a second,
 unbounded cache of every path ever requested, which is its own leak.
 
-**Metadata reads are ordered without being serialized.** Each issued host read receives
-an order at its authoritative start. Same-key and different-width reads may run at once;
-publication compares their start order, not completion time. A caller that cancels stops
-waiting, while the non-cancellable host query remains observed so its ordering record is
-not discarded underneath an older completion. Tombstones and active-read bookkeeping are
-removed once no in-progress publication can need them.
-
-**Metadata and JPEG coordination make different promises.** Metadata misses are not
-coalesced, so concurrent requests may issue concurrent host queries. Preview Cache Entry
-misses remain single-flight because duplicate JPEG decoding is the expensive work this
-chapter promises to avoid. Neither rule is generalized into a global lock.
-
-**Source reads have their own order and age.** Source misses also execute independently.
-GET's current source checks and HEAD's user-independent cold reads publish immutable
-facts under the same source order, without borrowing metadata age. In-flight source reads
-keep their registration until settlement so reclamation cannot allow a late old result
-to replace newer evidence. Host source enumeration receives the caller's cancellation
-token; failure or cancellation does not turn user-filtered refusal into global absence.
+**Metadata and JPEG coordination make different promises.** Each valid request performs
+its authoritative metadata read; those reads are independent and are not a replacement
+cache. Preview Cache Entry misses remain single-flight because duplicate JPEG decoding is
+the expensive work this chapter promises to avoid.
 
 **Paths are re-checked, and reparse points are refused.** The tree lives in storage the
 plugin does not control, and entry paths are built from values derived from server
@@ -111,8 +94,7 @@ cancellation behaviour are verified by component tests instead.
 ## Where it is enforced
 
 [Cache coordination](../lifecycle/cache-coordination.md), which draws the acquisition
-order, the two-caller case, and the representation publication race. Generated-metadata
-publication order is enforced in [source resolution](../lifecycle/source-resolution.md).
+order, the two-caller case, and the representation publication race.
 
 ## How a caller observes it
 

@@ -95,35 +95,19 @@ rather than refuse data the server considers good. The bound covers host CPU as 
 disk: it is a statement about the whole cost of being a tenant in the server process, not
 only about the bytes written to the tree.
 
-## Source and metadata state is reclaimed, not capacity-bounded
+## No speculative memory bound
 
-The in-memory metadata module removes expired observations, obsolete publication
-tombstones, completed-read tracking, and empty per-source state after no in-progress older
-read needs them. This prevents ordinary expiry and cancellation history from becoming
-permanent bookkeeping. Request traffic opportunistically revisits all retained source state
-at most once per 5-minute negative lifetime, avoiding both idle-source leaks and an internal
-cleanup timer.
-
-Source facts use the same reclamation policy, with separate state by logical Item and
-Media Source. Each in-flight source read protects its publication order until settlement;
-GET releases that registration on success, refusal, cancellation, and failure. Reclamation
-does not extend source age or metadata age, and preserves no mutable host Video or playback
-DTO. A retained expired observation can protect ordering but cannot answer a request.
-
-It deliberately adds no entry capacity, admission queue, load-concurrency limit, overload
-status, or same-key coalescing. Those are not implied by the 30-minute positive and
-5-minute negative lifetimes: enough distinct sources can still consume memory within one
-lifetime, and enough concurrent misses can still issue concurrent host queries. This
-ticket chooses freshness and correct ordering without inventing an unapproved overload
-contract.
+The current implementation adds no replacement metadata cache, entry capacity, admission
+queue, overload status, or source-load policy. Every valid request reads generated metadata
+authoritatively; only Preview JPEG generation is bounded by decode permits. This keeps the
+contract small and leaves host-level memory and source data ownership with Jellyfin.
 
 ## Where it is enforced
 
 [Scheduled cleanup](../lifecycle/scheduled-cleanup.md), which draws the run: cutoff,
-discovery, classification, re-check, deletion, pruning. The decode permit bound is
-enforced in [preview generation](../lifecycle/preview-generation.md), as the first step
-before a sprite is opened. Metadata-state reclamation is part of
-[source resolution](../lifecycle/source-resolution.md).
+discovery, classification, re-check, deletion, and pruning. The decode permit bound is
+enforced in [preview generation](../lifecycle/preview-generation.md), before a Sprite is
+opened.
 
 ## How a caller observes it
 

@@ -14,9 +14,7 @@ identity is a digest over everything that determines the bytes:
 | The cache namespace | A change to how entries are laid out abandons the whole tree instead of migrating it |
 | The Media Source | Alternate versions of the same video are different videos |
 | The Selected Trickplay Resolution, and its matching height | A different width is a different image |
-| The generation interval | A different interval means a different position-to-frame mapping |
 | The tile width and tile height | Different geometry means a different crop for the same Frame Index |
-| The thumbnail count | A different count means a different clamp, so a different final frame |
 | The Source Sprite index | A different sprite holds different frames |
 | The sprite's version stamp | A replaced sprite holds different pixels at the same coordinates |
 | The Frame Index | The frame itself |
@@ -34,7 +32,7 @@ become unreachable, and the [scheduled cleanup](scheduled-cleanup.md) removes th
 ```mermaid
 flowchart TD
     Where["Which frame<br/>Media Source, Source Sprite index,<br/>Frame Index"] --> D["Digest over everything<br/>that determines the bytes"]
-    Shape["What shape it has<br/>Selected Trickplay Resolution and its height,<br/>tile width and tile height, generation interval,<br/>thumbnail count"] --> D
+    Shape["What shape it has<br/>frame and tile dimensions"] --> D
     Version["Which version of the sprite<br/>its length and last modification time"] --> D
     How["How it was made<br/>cache namespace and encoding quality"] --> D
 

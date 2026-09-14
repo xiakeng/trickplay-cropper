@@ -24,15 +24,15 @@ flowchart TD
 
     subgraph Plugin["Trickplay Cropper owns"]
         direction TB
-        Probe["The Trickplay Frame Probe answer"]
+        Timeline["The Frame Timeline calculation model"]
         Preview["The Trickplay Preview bytes,<br/>and their ETag"]
         Tree["The Cache Tree: every<br/>Preview Cache Entry"]
-        Probe ~~~ Preview ~~~ Tree
+        Timeline ~~~ Preview ~~~ Tree
     end
 
     subgraph ClientSide["The client owns"]
         direction TB
-        Scrub["When to probe, when to ask"]
+        Scrub["When to request a Timeline and Preview"]
         Policy["Its cache policy: key,<br/>expiry, invalidation"]
         Scrub ~~~ Policy
     end
@@ -56,13 +56,13 @@ Two lines do most of the work in this product:
 |---|---|---|
 | The client | [client.md](client.md) | When to ask, and what to do with the answer |
 | Jellyfin Server | [jellyfin-server.md](jellyfin-server.md) | The library, the configuration, the generated data, the storage, the schedule |
-| The Trickplay Frame Probe | [frame-probe.md](frame-probe.md) | The answer to "which frame", and no claim about obtaining it |
+| The Frame Timeline | [client.md](client.md) | The authorized interval and generated frame count |
 | The preview request | [preview-request.md](preview-request.md) | The Trickplay Preview bytes and their identity |
 | The Cache Tree | [cache-tree.md](cache-tree.md) | Every derived artifact the plugin holds |
 | The cleanup run | [cleanup-task.md](cleanup-task.md) | Deletion inside the Cache Tree, and nothing outside it |
 
 The last four are all Trickplay Cropper, split by the boundary each one faces: the
-probe and the preview request face the client, the Cache Tree faces the server's
+Timeline and the preview request face the client, the Cache Tree faces the server's
 temporary storage, and the cleanup run faces both.
 
 ## What this layer deliberately does not say
